@@ -1,0 +1,755 @@
+.portalPage {
+  position: relative;
+  isolation: isolate;
+  height: 100dvh;
+  min-height: 100svh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  color: #173c2b;
+  background: #e8f0eb;
+}
+
+.portalPage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -6;
+  background-image: url("/assets/images/plp_campus_login_background.png");
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  filter: blur(5px);
+  transform: scale(1.035);
+  transform-origin: center;
+}
+
+.backgroundOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: -5;
+  background:
+    linear-gradient(180deg, rgba(247, 252, 249, 0.16) 0%, rgba(247, 252, 249, 0.2) 58%, rgba(247, 252, 249, 0.3) 100%),
+    linear-gradient(90deg, rgba(239, 249, 244, 0.12), rgba(255, 251, 241, 0.16));
+}
+
+.siteHeader {
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  padding: clamp(9px, 1.8vh, 14px) 30px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  z-index: 3;
+}
+
+.universityBrand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.headerLogo {
+  width: clamp(52px, 7.8vh, 60px);
+  height: clamp(52px, 7.8vh, 60px);
+  object-fit: contain;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 3px 8px rgba(10, 75, 42, 0.15));
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.universityName {
+  color: #0e5d36;
+  font-size: clamp(1.25rem, 2.05vh, 1.7rem);
+  font-weight: 760;
+  line-height: 1.08;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+  text-shadow: 0 1px 10px rgba(255, 255, 255, 0.45);
+}
+
+.universitySubtitle {
+  margin-top: 5px;
+  color: #44546a;
+  font-size: clamp(0.68rem, 1.05vh, 0.76rem);
+  font-weight: 720;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+.portalMain {
+  position: relative;
+  z-index: 3;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(0px, 0.8vh, 6px) 20px clamp(12px, 2.8vh, 22px);
+}
+
+.loginCard {
+  width: min(100%, 438px);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(245, 250, 247, 0.9));
+  box-shadow:
+    0 18px 42px rgba(19, 69, 47, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(22px) saturate(112%);
+  -webkit-backdrop-filter: blur(22px) saturate(112%);
+}
+
+.staffCard {
+  padding: clamp(12px, calc(4.7vh - 16px), 20px) 28px clamp(14px, calc(4.7vh - 14px), 22px);
+}
+
+.studentCard {
+  width: min(100%, 430px);
+  padding: clamp(13px, calc(4.7vh - 15px), 21px) 28px clamp(14px, calc(4.7vh - 14px), 22px);
+}
+
+.cardLogo {
+  display: block;
+  width: clamp(54px, 8.4vh, 64px);
+  height: clamp(54px, 8.4vh, 64px);
+  margin: 0 auto clamp(5px, 1.18vh, 9px);
+  object-fit: contain;
+  filter: drop-shadow(0 6px 12px rgba(8, 73, 39, 0.1));
+}
+
+.systemTitle,
+.studentPortalTitle {
+  color: #0d5634;
+  text-align: center;
+  font-weight: 790;
+  letter-spacing: -0.03em;
+}
+
+.systemTitle {
+  font-size: clamp(1.08rem, 2.47vh, 1.18rem);
+}
+
+.studentPortalTitle {
+  margin-top: 3px;
+  font-size: clamp(1.42rem, 3.3vh, 1.58rem);
+  line-height: 1.15;
+}
+
+.studentPortalSubtitle {
+  margin-top: clamp(4px, 0.65vh, 5px);
+  color: #4a596a;
+  text-align: center;
+  font-size: clamp(0.76rem, 1.8vh, 0.86rem);
+  font-weight: 500;
+}
+
+.titleRule {
+  display: block;
+  width: 46px;
+  height: 2px;
+  margin: clamp(8px, 1.7vh, 13px) auto;
+  border-radius: 999px;
+  background: #1d8d55;
+}
+
+.staffHeadingRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.staffHeadingRow h1 {
+  color: #123c2a;
+  font-size: clamp(1.6rem, 3.72vh, 1.78rem);
+  font-weight: 820;
+  line-height: 1;
+  letter-spacing: -0.045em;
+}
+
+.staffIcon {
+  width: clamp(36px, 5.25vh, 40px);
+  height: clamp(28px, 4.05vh, 31px);
+  color: #188a4e;
+}
+
+.staffSubtitle {
+  margin-top: clamp(6px, 1.05vh, 8px);
+  color: #4f5e70;
+  text-align: center;
+  font-size: clamp(0.76rem, 1.72vh, 0.82rem);
+  font-weight: 520;
+}
+
+.rolePill {
+  width: 100%;
+  margin: clamp(6px, 1.3vh, 10px) 0 clamp(9px, 2.1vh, 16px);
+  padding: clamp(4px, 0.65vh, 5px) 10px;
+  border: 1px solid rgba(91, 111, 100, 0.09);
+  border-radius: 8px;
+  color: #526173;
+  background: rgba(102, 123, 112, 0.11);
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+
+.studentAudience {
+  max-width: 385px;
+  margin: 0 auto clamp(10px, 2.2vh, 17px);
+  color: #516174;
+  text-align: center;
+  font-size: clamp(0.72rem, 1.62vh, 0.77rem);
+  line-height: 1.4;
+}
+
+.loginForm {
+  --validation-space: clamp(20px, 2.75vh, 21px);
+  display: flex;
+  flex-direction: column;
+}
+
+.fieldGroup {
+  position: relative;
+  margin-bottom: var(--validation-space);
+}
+
+.fieldLabel {
+  display: block;
+  margin: 0 0 clamp(4px, 0.92vh, 7px);
+  color: #17472f;
+  font-size: clamp(0.76rem, 1.68vh, 0.8rem);
+  font-weight: 740;
+}
+
+.inputShell {
+  min-height: clamp(39px, 5.5vh, 42px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid rgba(106, 123, 136, 0.34);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 3px rgba(22, 55, 40, 0.04);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.inputShell:focus-within {
+  border-color: #238b56;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 3px rgba(35, 139, 86, 0.14);
+}
+
+.inputShellError {
+  border-color: #b34747;
+}
+
+.inputShell input {
+  min-width: 0;
+  flex: 1;
+  height: clamp(37px, 5.25vh, 40px);
+  border: 0;
+  outline: 0;
+  color: #1d2e37;
+  background: transparent;
+  font-size: 0.81rem;
+}
+
+.inputShell input::placeholder {
+  color: #7a8795;
+  opacity: 1;
+}
+
+.inputIcon,
+.eyeIcon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: #5f6c79;
+}
+
+.passwordToggle {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  margin-right: -7px;
+  border: 0;
+  border-radius: 8px;
+  color: #5e6b78;
+  background: transparent;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.passwordToggle:hover {
+  color: #12633b;
+  background: rgba(21, 117, 67, 0.08);
+}
+
+.passwordToggle:focus-visible,
+.forgotPassword:focus-visible,
+.primaryButton:focus-visible,
+.studentPortalAction:focus-visible,
+.secondaryActionButton:focus-visible,
+.backToStaff:focus-visible {
+  outline: 3px solid rgba(24, 137, 78, 0.38);
+  outline-offset: 3px;
+}
+
+.fieldError {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--validation-space) * -1 + 4px);
+  margin: 0;
+  color: #9d3131;
+  font-size: 0.65rem;
+  line-height: 1.15;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.fieldErrorVisible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.forgotPassword {
+  align-self: flex-end;
+  margin: 1px 0 clamp(7px, 1.58vh, 12px);
+  padding: 2px 0;
+  border: 0;
+  color: #165e3b;
+  background: transparent;
+  font-size: 0.72rem;
+  font-weight: 590;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.primaryButton {
+  min-height: clamp(40px, 5.75vh, 44px);
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #0d713f;
+  border-radius: 9px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #159150 0%, #08733a 100%);
+  box-shadow: 0 8px 18px rgba(11, 104, 57, 0.17);
+  font-size: 0.9rem;
+  font-weight: 690;
+  cursor: pointer;
+  transition: transform 130ms ease, box-shadow 130ms ease, filter 130ms ease;
+}
+
+.primaryButton:hover {
+  filter: brightness(1.04);
+  box-shadow: 0 10px 20px rgba(11, 104, 57, 0.22);
+}
+
+.primaryButton:active {
+  transform: translateY(1px);
+  box-shadow: 0 5px 12px rgba(11, 104, 57, 0.16);
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.buttonIcon {
+  width: 18px;
+  height: 18px;
+}
+
+.formStatus,
+.admissionStatus {
+  min-height: 0;
+  color: #526173;
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.formStatus {
+  margin-top: 7px;
+}
+
+.formStatus:empty,
+.admissionStatus:empty {
+  display: none;
+}
+
+.admissionStatus {
+  margin-top: 7px;
+}
+
+.sectionDivider,
+.orDivider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 13px;
+  color: #687688;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.sectionDivider {
+  margin: clamp(8px, 1.7vh, 13px) 0 clamp(7px, 1.57vh, 12px);
+}
+
+.orDivider {
+  margin: clamp(8px, 1.7vh, 13px) 0 clamp(7px, 1.57vh, 12px);
+}
+
+.sectionDivider span,
+.orDivider span {
+  height: 1px;
+  background: rgba(82, 105, 94, 0.3);
+}
+
+.sectionDivider strong {
+  font-size: 0.66rem;
+  letter-spacing: 0.18em;
+}
+
+.orDivider strong {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+}
+
+.studentPortalAction,
+.secondaryActionButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(31, 129, 76, 0.34);
+  border-radius: 10px;
+  color: #18482f;
+  background: rgba(249, 255, 251, 0.78);
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.studentPortalAction {
+  min-height: clamp(52px, 7.6vh, 58px);
+  gap: 10px;
+  padding: 7px 11px;
+  border: 2px solid rgba(16, 123, 65, 0.62);
+  background: linear-gradient(135deg, rgba(227, 248, 235, 0.96), rgba(247, 253, 249, 0.94));
+  box-shadow:
+    0 8px 20px rgba(13, 111, 57, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+}
+
+.studentPortalAction:hover {
+  transform: translateY(-1px);
+  border-color: rgba(9, 111, 55, 0.85);
+  background: linear-gradient(135deg, rgba(218, 245, 228, 0.98), rgba(246, 253, 249, 0.98));
+  box-shadow:
+    0 10px 24px rgba(10, 102, 50, 0.18),
+    0 0 0 3px rgba(35, 145, 82, 0.07);
+}
+
+.secondaryActionButton:hover {
+  transform: translateY(-1px);
+  border-color: rgba(25, 123, 69, 0.52);
+  background: rgba(251, 255, 252, 0.9);
+  box-shadow: 0 7px 16px rgba(16, 87, 51, 0.08);
+}
+
+.studentPortalIconBox {
+  width: 48px;
+  height: clamp(38px, 5.5vh, 42px);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #08713e;
+  background: rgba(39, 160, 88, 0.18);
+}
+
+.studentPortalIcon {
+  width: 31px;
+  height: 31px;
+}
+
+.studentPortalActionText {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.studentPortalActionText strong {
+  color: #16482f;
+  font-size: 0.9rem;
+}
+
+.studentPortalActionText small {
+  color: #5a6878;
+  font-size: 0.64rem;
+  line-height: 1.35;
+}
+
+.actionArrow {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: #155a38;
+}
+
+.secondaryActionButton {
+  min-height: clamp(40px, 5.75vh, 44px);
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 0 12px;
+  font-size: 0.85rem;
+  font-weight: 710;
+}
+
+.secondaryActionButton span {
+  flex: 1;
+  text-align: left;
+}
+
+.secondaryActionIcon {
+  width: 21px;
+  height: 21px;
+  color: #08713e;
+}
+
+.backToStaff {
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin: clamp(6px, 1.3vh, 10px) auto 0;
+  padding: 4px 7px;
+  border-radius: 8px;
+  color: #245a3c;
+  font-size: 0.72rem;
+  font-weight: 590;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.backIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.siteFooter {
+  position: relative;
+  z-index: 3;
+  min-height: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px 12px;
+  color: #506076;
+  text-align: center;
+  font-size: 0.66rem;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+}
+
+.footerAccent {
+  width: 42px;
+  height: 2px;
+  margin-bottom: 8px;
+  border-radius: 999px;
+  background: #1d9157;
+}
+
+@media (max-height: 680px) and (min-width: 981px) {
+  .portalMain {
+    transform: translateY(-10px);
+  }
+
+  .siteFooter {
+    min-height: 22px;
+    padding-bottom: 4px;
+    font-size: 0.62rem;
+  }
+
+  .footerAccent {
+    margin-bottom: 3px;
+  }
+}
+
+@media (max-width: 980px) {
+  .portalPage {
+    height: auto;
+    min-height: 100svh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .siteHeader {
+    padding: 20px 24px 4px;
+  }
+
+  .universityName {
+    font-size: 1.45rem;
+  }
+
+  .universitySubtitle {
+    font-size: 0.75rem;
+    letter-spacing: 0.25em;
+  }
+
+  .portalMain {
+    align-items: flex-start;
+    padding-top: 28px;
+    padding-bottom: 52px;
+  }
+}
+
+@media (max-width: 640px) {
+  .portalPage {
+    background-position: 54% center;
+  }
+
+  .portalPage::before {
+    background-position: 54% center;
+  }
+
+  .siteHeader {
+    justify-content: center;
+    padding: 18px 18px 0;
+  }
+
+  .universityBrand {
+    gap: 11px;
+  }
+
+  .headerLogo {
+    width: 58px;
+    height: 58px;
+  }
+
+  .brandText {
+    max-width: 300px;
+  }
+
+  .universityName {
+    font-size: clamp(1.05rem, 5vw, 1.35rem);
+    white-space: normal;
+  }
+
+  .universitySubtitle {
+    margin-top: 4px;
+    font-size: 0.66rem;
+    letter-spacing: 0.18em;
+  }
+
+  .portalMain {
+    padding: 22px 14px 34px;
+  }
+
+  .loginCard,
+  .staffCard,
+  .studentCard {
+    width: min(100%, 450px);
+    padding: 20px 20px 22px;
+    border-radius: 22px;
+  }
+
+  .cardLogo {
+    width: 76px;
+    height: 76px;
+  }
+
+  .systemTitle {
+    font-size: 1.32rem;
+  }
+
+  .studentPortalTitle {
+    font-size: 1.7rem;
+  }
+
+  .studentPortalSubtitle {
+    font-size: 0.95rem;
+  }
+
+  .staffHeadingRow h1 {
+    font-size: 1.9rem;
+  }
+
+  .staffIcon {
+    width: 47px;
+    height: 36px;
+  }
+
+  .rolePill {
+    font-size: 0.73rem;
+    line-height: 1.4;
+  }
+
+  .studentPortalActionText small {
+    font-size: 0.68rem;
+  }
+
+  .siteFooter {
+    padding-bottom: 14px;
+    font-size: 0.65rem;
+    letter-spacing: 0.04em;
+  }
+
+}
+
+@media (max-width: 390px) {
+  .loginCard,
+  .staffCard,
+  .studentCard {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .studentPortalAction {
+    gap: 9px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .studentPortalIconBox {
+    width: 49px;
+  }
+
+  .studentPortalActionText strong {
+    font-size: 0.92rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portalPage,
+  .portalPage *,
+  .portalPage *::before,
+  .portalPage *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
