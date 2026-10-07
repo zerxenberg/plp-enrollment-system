@@ -1,4 +1,5 @@
 import { Geist } from "next/font/google";
+import { DemoDataProvider } from "@/features/demo-data/DemoDataProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -18,7 +19,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={geistSans.variable}>
-      <body>{children}</body>
+      <body><DemoDataProvider>{children}</DemoDataProvider></body>
     </html>
   );
 }

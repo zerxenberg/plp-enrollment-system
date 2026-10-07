@@ -30,7 +30,7 @@ export default function StaffLoginPortal() {
           <h1 id="staff-login-title">Staff Login</h1>
         </div>
         <p className={styles.staffSubtitle}>For authorized staff only</p>
-        <p className={styles.rolePill}>Registrar • Academic Coordinator • System Administrator</p>
+        <p className={styles.rolePill}>Registrar Demo Access</p>
 
         <LoginForm
           mode="staff"

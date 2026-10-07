@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { EyeIcon, LockIcon, UserIcon } from "./PortalIcons";
+import { authenticateDemoAccount, saveDemoSession } from "@/lib/auth/demo-auth";
 import styles from "./auth-portal.module.css";
 
 export default function LoginForm({
@@ -10,6 +12,7 @@ export default function LoginForm({
   submitLabel,
   mode,
 }) {
+  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
@@ -47,9 +50,20 @@ export default function LoginForm({
       return;
     }
 
-    setStatus(
-      "The login interface is ready for Supabase Authentication. Credentials are not sent until backend integration is configured.",
-    );
+    const session = authenticateDemoAccount({ mode, identity: normalizedIdentity, password });
+
+    if (!session) {
+      setStatus(
+        mode === "student"
+          ? "The Student ID, registered email, or password does not match the temporary Student demo account."
+          : "The username, staff email, or password does not match the temporary Registrar demo account.",
+      );
+      return;
+    }
+
+    saveDemoSession(session);
+    setStatus(`Signed in as ${session.name}. Opening the ${session.role === "student" ? "Student" : "Registrar"} Portal.`);
+    router.push(session.redirect);
   }
 
   function handleForgotPassword() {

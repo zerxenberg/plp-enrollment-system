@@ -1,0 +1,58 @@
+{
+  "registrar": {
+    "accountId": "REG-0001",
+    "fullName": "Maria Santos",
+    "email": "registrar.demo@plp.edu.ph",
+    "role": "Registrar",
+    "office": "Office of the University Registrar",
+    "accountStatus": "Active"
+  },
+  "students": [
+    {"studentNumber":"2024-00123","admissionReference":"APP-2024-01987","fullName":"Juan Dela Cruz","program":"BSIT","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"IN_PROGRESS","email":"juan.delacruz@student.plp.edu.ph","contactNumber":"0917 555 0123"},
+    {"studentNumber":"2026-01896","admissionReference":"APP-2026-03144","fullName":"Katrina Mendoza","program":"BSIT","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"FOR_VALIDATION","email":"katrina.mendoza@student.plp.edu.ph","contactNumber":"0917 555 0144"},
+    {"studentNumber":"2023-01988","admissionReference":"APP-2023-01218","fullName":"Jasmine Bautista","program":"BSBA","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"REQUIRES_CORRECTION","email":"jasmine.bautista@student.plp.edu.ph","contactNumber":"0917 555 0218"},
+    {"studentNumber":"2024-02211","admissionReference":"APP-2024-02405","fullName":"Gilor Garcia","program":"BSA","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"VALIDATED","email":"gilor.garcia@student.plp.edu.ph","contactNumber":"0917 555 0405"},
+    {"studentNumber":"2024-00097","admissionReference":"APP-2024-00554","fullName":"Patrick Lim","program":"BSP","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"CONFIRMED","email":"patrick.lim@student.plp.edu.ph","contactNumber":"0917 555 0554"},
+    {"studentNumber":"2026-00108","admissionReference":"APP-2026-00094","fullName":"Dencie Aquino","program":"BSIT","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"SUBMITTED","email":"dencie.aquino@student.plp.edu.ph","contactNumber":"0917 555 0094"},
+    {"studentNumber":"2025-01122","admissionReference":"APP-2025-01488","fullName":"Teresa Tomes","program":"BSIT","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"NEEDS_ACADEMIC_REVIEW","email":"teresa.tomes@student.plp.edu.ph","contactNumber":"0917 555 1488"},
+    {"studentNumber":"2025-00334","admissionReference":"APP-2025-00631","fullName":"Angela Villanueva","program":"BSBA","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"FOR_VALIDATION","email":"angela.villanueva@student.plp.edu.ph","contactNumber":"0917 555 0631"},
+    {"studentNumber":"2025-01456","admissionReference":"APP-2025-01822","fullName":"Maria Santos L.","program":"BSA","academicTerm":"1st Sem 2026","studentStatus":"ACTIVE","enrollmentStatus":"CONFIRMED","email":"maria.santos.l@student.plp.edu.ph","contactNumber":"0917 555 1822"}
+  ],
+  "enrollments": [
+    {"reference":"ENR-2026-0201","studentNumber":"2026-01896","studentName":"Katrina Mendoza","program":"BSIT","term":"1st Sem 2026","units":18,"status":"FOR_VALIDATION","submittedDate":"May 28, 2026","curriculum":"BSIT Curriculum 2024","validationPreset":"pass","subjects":[{"code":"IT301","name":"Data Structures and Algorithms","units":3,"section":"CTC 301","schedule":"Mon 8:00 AM to 10:00 AM","room":"CTC 201"},{"code":"IT302","name":"Web Systems Development","units":3,"section":"CTC 205","schedule":"Tue 1:00 PM to 4:00 PM","room":"CTC 205"}]},
+    {"reference":"ENR-2026-0202","studentNumber":"2023-01988","studentName":"Jasmine Bautista","program":"BSBA","term":"1st Sem 2026","units":15,"status":"REQUIRES_CORRECTION","submittedDate":"May 27, 2026","curriculum":"BSBA Curriculum 2023","validationPreset":"correction","lastValidatedAt":"May 27, 2026 4:15 PM","correctionReason":"Section conflict must be corrected before resubmission.","subjects":[{"code":"BA301","name":"Operations Management","units":3,"section":"AB 102","schedule":"Mon 9:00 AM to 12:00 PM","room":"AB 102"}]},
+    {"reference":"ENR-2026-0203","studentNumber":"2024-02211","studentName":"Gilor Garcia","program":"BSA","term":"1st Sem 2026","units":21,"status":"VALIDATED","submittedDate":"May 27, 2026","curriculum":"BSA Curriculum 2024","validationPreset":"pass","lastValidatedAt":"May 28, 2026 3:15 PM","subjects":[{"code":"ACC301","name":"Intermediate Accounting","units":3,"section":"AB 202","schedule":"Wed 8:00 AM to 11:00 AM","room":"AB 202"}]},
+    {"reference":"ENR-2026-0204","studentNumber":"2024-00097","studentName":"Patrick Lim","program":"BSP","term":"1st Sem 2026","units":18,"status":"CONFIRMED","submittedDate":"May 26, 2026","curriculum":"BSP Curriculum 2024","validationPreset":"pass","lastValidatedAt":"May 27, 2026 2:10 PM","confirmationReference":"CONF-2026-0041","confirmationDate":"May 28, 2026","subjects":[{"code":"PSY301","name":"Abnormal Psychology","units":3,"section":"AB 302","schedule":"Thu 1:00 PM to 4:00 PM","room":"AB 302"}]},
+    {"reference":"ENR-2026-0205","studentNumber":"2026-00108","studentName":"Dencie Aquino","program":"BSIT","term":"1st Sem 2026","units":18,"status":"SUBMITTED","submittedDate":"May 26, 2026","curriculum":"BSIT Curriculum 2024","validationPreset":"review","subjects":[{"code":"IT304","name":"Networks and Communications","units":3,"section":"CTC 209","schedule":"Thu 8:00 AM to 11:00 AM","room":"CTC 209"}]},
+    {"reference":"ENR-2026-0206","studentNumber":"2025-01122","studentName":"Teresa Tomes","program":"BSIT","term":"1st Sem 2026","units":12,"status":"NEEDS_ACADEMIC_REVIEW","submittedDate":"May 25, 2026","curriculum":"BSIT Curriculum 2024","validationPreset":"review","lastValidatedAt":"May 26, 2026 10:30 AM","subjects":[{"code":"IT305","name":"Advanced Programming","units":3,"section":"CTC 208","schedule":"Fri 9:00 AM to 12:00 PM","room":"CTC 208"}]},
+    {"reference":"ENR-2026-0207","studentNumber":"2025-00334","studentName":"Angela Villanueva","program":"BSBA","term":"1st Sem 2026","units":18,"status":"FOR_VALIDATION","submittedDate":"May 24, 2026","curriculum":"BSBA Curriculum 2025","validationPreset":"pass","subjects":[{"code":"BA302","name":"Business Analytics","units":3,"section":"AB 203","schedule":"Tue 10:00 AM to 1:00 PM","room":"AB 203"}]},
+    {"reference":"ENR-2026-0208","studentNumber":"2025-01456","studentName":"Maria Santos L.","program":"BSA","term":"1st Sem 2026","units":21,"status":"CONFIRMED","submittedDate":"May 23, 2026","curriculum":"BSA Curriculum 2025","validationPreset":"pass","lastValidatedAt":"May 26, 2026 2:45 PM","confirmationReference":"CONF-2026-0038","confirmationDate":"May 27, 2026","subjects":[{"code":"ACC302","name":"Taxation","units":3,"section":"AB 205","schedule":"Mon 1:00 PM to 4:00 PM","room":"AB 205"}]}
+  ],
+  "sections": [
+    {"code":"CTC 201","subject":"IT301","capacity":50,"confirmed":50,"status":"Full","schedule":"Mon 8:00 AM to 10:00 AM","room":"CTC 201"},
+    {"code":"AB 101","subject":"GE201","capacity":42,"confirmed":41,"status":"Near Capacity","schedule":"Tue 9:00 AM to 12:00 PM","room":"AB 101"},
+    {"code":"CTC 203","subject":"IT303","capacity":40,"confirmed":38,"status":"Near Capacity","schedule":"Wed 10:00 AM to 1:00 PM","room":"CTC 203"},
+    {"code":"CTC 207","subject":"IT303","capacity":40,"confirmed":28,"status":"Available","schedule":"Thu 8:00 AM to 11:00 AM","room":"CTC 207"},
+    {"code":"AB 201","subject":"MATH101","capacity":56,"confirmed":48,"status":"Near Capacity","schedule":"Fri 1:00 PM to 4:00 PM","room":"AB 201"},
+    {"code":"CTC 301","subject":"IT301","capacity":40,"confirmed":31,"status":"Available","schedule":"Mon 8:00 AM to 10:00 AM","room":"CTC 201"},
+    {"code":"CTC 205","subject":"IT302","capacity":40,"confirmed":28,"status":"Available","schedule":"Tue 1:00 PM to 4:00 PM","room":"CTC 205"},
+    {"code":"AB 102","subject":"BA301","capacity":40,"confirmed":34,"status":"Available","schedule":"Mon 9:00 AM to 12:00 PM","room":"AB 102"},
+    {"code":"AB 202","subject":"ACC301","capacity":40,"confirmed":36,"status":"Available","schedule":"Wed 8:00 AM to 11:00 AM","room":"AB 202"},
+    {"code":"AB 302","subject":"PSY301","capacity":40,"confirmed":39,"status":"Near Capacity","schedule":"Thu 1:00 PM to 4:00 PM","room":"AB 302"},
+    {"code":"CTC 209","subject":"IT304","capacity":40,"confirmed":27,"status":"Available","schedule":"Thu 8:00 AM to 11:00 AM","room":"CTC 209"},
+    {"code":"CTC 208","subject":"IT305","capacity":35,"confirmed":25,"status":"Available","schedule":"Fri 9:00 AM to 12:00 PM","room":"CTC 208"},
+    {"code":"AB 203","subject":"BA302","capacity":40,"confirmed":30,"status":"Available","schedule":"Tue 10:00 AM to 1:00 PM","room":"AB 203"},
+    {"code":"AB 205","subject":"ACC302","capacity":40,"confirmed":37,"status":"Near Capacity","schedule":"Mon 1:00 PM to 4:00 PM","room":"AB 205"}
+  ],
+  "activity": [
+    {"id":"ACT-1","date":"May 28, 2026 9:23 PM","registrar":"Maria Santos","student":"Juan Dela Cruz","reference":"ENR-2026-0101","action":"Enrollment updated","previousStatus":"ELIGIBLE","newStatus":"IN_PROGRESS","reason":"Student continued subject registration."},
+    {"id":"ACT-2","date":"May 28, 2026 3:15 PM","registrar":"Maria Santos","student":"Gilor Garcia","reference":"ENR-2026-0203","action":"Validation completed","previousStatus":"FOR_VALIDATION","newStatus":"VALIDATED","reason":"All automatic validation checks passed."},
+    {"id":"ACT-3","date":"May 27, 2026 4:22 PM","registrar":"Maria Santos","student":"Jasmine Bautista","reference":"ENR-2026-0202","action":"Returned for correction","previousStatus":"FOR_VALIDATION","newStatus":"REQUIRES_CORRECTION","reason":"Section conflict requires student correction."}
+  ],
+  "outboundStudentNotifications": [],
+  "dataQuality": [
+    {"id":"DQ-1","issue":"Missing Student Identifier","record":"Imported admission handoff 2026-0451","severity":"High"},
+    {"id":"DQ-2","issue":"Duplicate Admission Reference","record":"APP-2026-00931","severity":"Medium"},
+    {"id":"DQ-3","issue":"Incomplete Enrollment Information","record":"ENR-2026-0213","severity":"Medium"}
+  ]
+}

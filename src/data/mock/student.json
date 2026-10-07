@@ -1,0 +1,73 @@
+{
+  "profile": {
+    "studentNumber": "2024-00123",
+    "applicantReference": "APP-2024-01987",
+    "fullName": "Juan Dela Cruz",
+    "email": "juan.delacruz@student.plp.edu.ph",
+    "contactNumber": "0917 555 0123",
+    "address": "Pasig City, Metro Manila",
+    "emergencyContact": "Ana Dela Cruz • 0917 555 0198",
+    "program": "BS Information Technology",
+    "programCode": "BSIT",
+    "college": "College of Computer Studies and Information Technology",
+    "yearLevel": "3rd Year",
+    "studentType": "Continuing Student",
+    "studentStatus": "ACTIVE",
+    "academicClassification": "IRREGULAR",
+    "progressionStatus": "ELIGIBLE_WITH_DEFICIENCIES",
+    "curriculum": "BSIT Curriculum 2024",
+    "accountStatus": "Active",
+    "admissionDate": "August 14, 2024",
+    "admissionType": "New Student",
+    "admissionCompletionStatus": "Completed"
+  },
+  "term": {
+    "id": "TERM-2026-1",
+    "label": "First Semester 2026 to 2027",
+    "shortLabel": "1st Sem 2026",
+    "academicYear": "2026 to 2027",
+    "semester": "First Semester",
+    "enrollmentStart": "June 10, 2026",
+    "enrollmentEnd": "June 30, 2026",
+    "status": "Open"
+  },
+  "enrollment": {
+    "reference": "ENR-2026-0101",
+    "programCode": "BSIT",
+    "status": "IN_PROGRESS",
+    "eligibilityStatus": "ELIGIBLE",
+    "demoMaximumUnits": 21,
+    "selectedSubjectCodes": ["IT301", "IT302", "IT303"],
+    "selectedSections": {
+      "IT301": "CTC301-A",
+      "IT302": "CTC205-A",
+      "IT303": "CTC203-A"
+    },
+    "submittedDate": null,
+    "confirmationReference": null,
+    "confirmationDate": null,
+    "correctionReason": null
+  },
+  "academicResults": [
+    {"code":"IT101","name":"Introduction to Computing","units":3,"term":"1st Sem 2024","status":"COMPLETED"},
+    {"code":"IT102","name":"Computer Programming 1","units":3,"term":"1st Sem 2024","status":"COMPLETED"},
+    {"code":"IT201","name":"Computer Programming 2","units":3,"term":"1st Sem 2025","status":"COMPLETED"},
+    {"code":"IT202","name":"Information Management","units":3,"term":"1st Sem 2025","status":"COMPLETED"},
+    {"code":"IT203","name":"Data Structures Fundamentals","units":3,"term":"2nd Sem 2025","status":"COMPLETED"},
+    {"code":"IT204","name":"Object Oriented Programming","units":3,"term":"2nd Sem 2025","status":"FAILED"},
+    {"code":"GE201","name":"Science, Technology and Society","units":3,"term":"2nd Sem 2025","status":"INCOMPLETE"},
+    {"code":"GE102","name":"Mathematics in the Modern World","units":3,"term":"1st Sem 2024","status":"CREDITED"}
+  ],
+  "confirmedSchedule": {
+    "term": "Second Semester 2025 to 2026",
+    "items": [
+      {"code":"IT203","name":"Data Structures Fundamentals","section":"CTC201","day":"Monday","start":"8:00 AM","end":"10:00 AM","room":"CTC 201","instructor":"Prof. A. Villanueva"},
+      {"code":"IT204","name":"Object Oriented Programming","section":"CTC205","day":"Tuesday","start":"1:00 PM","end":"4:00 PM","room":"CTC 205","instructor":"Prof. R. Mendoza"},
+      {"code":"GE201","name":"Science, Technology and Society","section":"AB301","day":"Friday","start":"1:00 PM","end":"4:00 PM","room":"AB 301","instructor":"Prof. L. Reyes"}
+    ]
+  },
+  "enrollmentHistory": [
+    {"term":"Second Semester 2025 to 2026","program":"BS Information Technology","status":"CONFIRMED","units":18,"confirmationDate":"January 8, 2026"},
+    {"term":"First Semester 2025 to 2026","program":"BS Information Technology","status":"CONFIRMED","units":21,"confirmationDate":"June 18, 2025"}
+  ]
+}

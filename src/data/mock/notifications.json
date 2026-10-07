@@ -1,0 +1,14 @@
+{
+  "student": [
+    {"id":"SN-1","title":"Online Enrollment for First Semester 2026","message":"Enrollment is open from June 10 to June 30, 2026.","date":"May 28, 2026","category":"Enrollment","read":false,"relatedHref":"/student/enrollment"},
+    {"id":"SN-2","title":"Academic Deficiency Reminder","message":"Review your failed IT204 result before selecting dependent subjects.","date":"May 26, 2026","category":"Academic","read":false,"relatedHref":"/student/academic-records"},
+    {"id":"SN-3","title":"Updated Curriculum Guide","message":"The current BSIT curriculum reference is available in Academic Records.","date":"May 20, 2026","category":"Academic","read":true,"relatedHref":"/student/academic-records"},
+    {"id":"SN-4","title":"System Maintenance Advisory","message":"The enrollment system will undergo scheduled maintenance on June 5, 2026.","date":"May 18, 2026","category":"System","read":true,"relatedHref":"/student/dashboard"}
+  ],
+  "registrar": [
+    {"id":"RN-1","title":"Enrollment queue requires attention","message":"Two submitted transactions are ready for Registrar review.","date":"May 28, 2026","category":"Enrollment","read":false,"relatedHref":"/registrar/enrollment"},
+    {"id":"RN-2","title":"Student correction response received","message":"A student updated a previously returned enrollment transaction.","date":"May 28, 2026","category":"Correction","read":false,"relatedHref":"/registrar/enrollment"},
+    {"id":"RN-3","title":"Section capacity concern","message":"CTC 201 has reached full confirmed capacity.","date":"May 27, 2026","category":"Capacity","read":false,"relatedHref":"/registrar/academic-scheduling"},
+    {"id":"RN-4","title":"Enrollment period notice","message":"First Semester 2026 enrollment dates are active in the current term.","date":"May 26, 2026","category":"Operations","read":true,"relatedHref":"/registrar/dashboard"}
+  ]
+}

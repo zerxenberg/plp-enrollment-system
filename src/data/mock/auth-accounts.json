@@ -1,0 +1,18 @@
+[
+  {
+    "role": "student",
+    "name": "Juan Dela Cruz",
+    "identifier": "2024-00123",
+    "alternateIdentifier": "juan.delacruz@student.plp.edu.ph",
+    "password": "Student@123",
+    "redirect": "/student/dashboard"
+  },
+  {
+    "role": "registrar",
+    "name": "Maria Santos",
+    "identifier": "registrar.demo",
+    "alternateIdentifier": "registrar.demo@plp.edu.ph",
+    "password": "Registrar@123",
+    "redirect": "/registrar/dashboard"
+  }
+]
