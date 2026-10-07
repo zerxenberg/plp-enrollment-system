@@ -1,6 +1,8 @@
+
 import accounts from "@/data/mock/auth-accounts.json";
 
 const SESSION_KEY = "plp-demo-session";
+const STAFF_ROLES = new Set(["registrar", "academic-coordinator", "system-administrator"]);
 
 function matchesKnownDemoAccount(session) {
   if (!session || typeof session !== "object") return false;
@@ -8,18 +10,24 @@ function matchesKnownDemoAccount(session) {
     account.role === session.role &&
     account.name === session.name &&
     account.identifier === session.identifier &&
-    account.redirect === session.redirect,
+    account.redirect === session.redirect
   );
 }
 
 export function authenticateDemoAccount({ mode, identity, password }) {
   const normalizedIdentity = identity.trim().toLowerCase();
-  const allowedRole = mode === "student" ? "student" : "registrar";
+
   const account = accounts.find((candidate) => {
     const matchesIdentity =
-      candidate.identifier.toLowerCase() === normalizedIdentity ||
-      candidate.alternateIdentifier.toLowerCase() === normalizedIdentity;
-    return candidate.role === allowedRole && matchesIdentity && candidate.password === password;
+      String(candidate.identifier || "").toLowerCase() === normalizedIdentity ||
+      String(candidate.alternateIdentifier || "").toLowerCase() === normalizedIdentity;
+
+    const isAllowedRole =
+      mode === "student"
+        ? candidate.role === "student"
+        : STAFF_ROLES.has(candidate.role);
+
+    return isAllowedRole && matchesIdentity && candidate.password === password;
   });
 
   if (!account) return null;
@@ -40,14 +48,18 @@ export function saveDemoSession(session) {
 
 export function getDemoSession() {
   if (typeof window === "undefined") return null;
+
   try {
     const raw = window.localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
+
     const session = JSON.parse(raw);
+
     if (!matchesKnownDemoAccount(session)) {
       window.localStorage.removeItem(SESSION_KEY);
       return null;
     }
+
     return session;
   } catch {
     return null;
@@ -55,5 +67,7 @@ export function getDemoSession() {
 }
 
 export function clearDemoSession() {
-  if (typeof window !== "undefined") window.localStorage.removeItem(SESSION_KEY);
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(SESSION_KEY);
+  }
 }

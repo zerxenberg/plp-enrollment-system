@@ -14,5 +14,21 @@
     "alternateIdentifier": "registrar.demo@plp.edu.ph",
     "password": "Registrar@123",
     "redirect": "/registrar/dashboard"
+  },
+  {
+    "role": "system-administrator",
+    "name": "Adrian Reyes",
+    "identifier": "sysadmin.demo",
+    "alternateIdentifier": "adrian.reyes@plp.edu.ph",
+    "password": "SysAdmin@123",
+    "redirect": "/system-administrator/dashboard"
+  },
+  {
+    "role": "academic-coordinator",
+    "name": "Elena Cruz",
+    "identifier": "academic.coordinator.demo",
+    "alternateIdentifier": "elena.cruz@plp.edu.ph",
+    "password": "Coordinator@123",
+    "redirect": "/academic-coordinator/dashboard"
   }
 ]

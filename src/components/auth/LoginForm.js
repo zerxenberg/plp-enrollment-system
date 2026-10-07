@@ -56,13 +56,19 @@ export default function LoginForm({
       setStatus(
         mode === "student"
           ? "The Student ID, registered email, or password does not match the temporary Student demo account."
-          : "The username, staff email, or password does not match the temporary Registrar demo account.",
+          : "The username, staff email, Staff ID, or password does not match an authorized staff demo account.",
       );
       return;
     }
 
     saveDemoSession(session);
-    setStatus(`Signed in as ${session.name}. Opening the ${session.role === "student" ? "Student" : "Registrar"} Portal.`);
+    const portalLabels = {
+      student: "Student",
+      registrar: "Registrar",
+      "academic-coordinator": "Academic Coordinator",
+      "system-administrator": "System Administrator",
+    };
+    setStatus(`Signed in as ${session.name}. Opening the ${portalLabels[session.role] || "authorized"} Portal.`);
     router.push(session.redirect);
   }
 

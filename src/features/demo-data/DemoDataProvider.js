@@ -5,6 +5,8 @@ import studentSource from "@/data/mock/student.json";
 import catalogSource from "@/data/mock/catalog.json";
 import registrarSource from "@/data/mock/registrar.json";
 import notificationSource from "@/data/mock/notifications.json";
+import systemAdministratorSource from "@/data/mock/system-administrators.json";
+import academicCoordinatorSource from "@/data/mock/academic-coordinators.json";
 import { validateStudentEnrollment } from "@/lib/validation/enrollment-validation";
 import { getDemoSession } from "@/lib/auth/demo-auth";
 
@@ -59,6 +61,8 @@ export function DemoDataProvider({ children }) {
   const [student, setStudent] = useState(() => clone(studentSource));
   const [registrar, setRegistrar] = useState(() => clone(registrarSource));
   const [notifications, setNotifications] = useState(() => clone(notificationSource));
+  const [systemAdministrators] = useState(() => clone(systemAdministratorSource));
+  const [academicCoordinators] = useState(() => clone(academicCoordinatorSource));
   const catalog = catalogSource;
   const hasRole = (role) => getDemoSession()?.role === role;
 
@@ -184,7 +188,7 @@ export function DemoDataProvider({ children }) {
     if (!hasRole(role)) return false;
     setNotifications((current) => ({
       ...current,
-      [role]: current[role].map((item) => (item.id === id ? { ...item, read } : item)),
+      [role]: (current[role] || []).map((item) => (item.id === id ? { ...item, read } : item)),
     }));
     return true;
   }
@@ -193,7 +197,7 @@ export function DemoDataProvider({ children }) {
     if (!hasRole(role)) return false;
     setNotifications((current) => ({
       ...current,
-      [role]: current[role].map((item) => ({ ...item, read: true })),
+      [role]: (current[role] || []).map((item) => ({ ...item, read: true })),
     }));
     return true;
   }
@@ -395,6 +399,8 @@ export function DemoDataProvider({ children }) {
     student,
     catalog,
     registrar,
+    systemAdministrators,
+    academicCoordinators,
     notifications,
     addStudentSubject,
     removeStudentSubject,

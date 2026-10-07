@@ -1,0 +1,67 @@
+[
+  {
+    "userId": "USR-AC-001",
+    "employeeId": "PLP-AC-001",
+    "fullName": "Elena Cruz",
+    "username": "academic.coordinator.demo",
+    "email": "elena.cruz@plp.edu.ph",
+    "assignedRole": "Academic Coordinator",
+    "department": "College of Computer Studies",
+    "position": "Academic Coordinator",
+    "accountStatus": "Active",
+    "lastLogin": "07 Oct 2026 \u00b7 4:55 PM",
+    "dateCreated": "08 Jul 2025"
+  },
+  {
+    "userId": "USR-AC-002",
+    "employeeId": "PLP-AC-002",
+    "fullName": "Roberto Villanueva",
+    "username": "roberto.villanueva",
+    "email": "roberto.villanueva@plp.edu.ph",
+    "assignedRole": "Academic Coordinator",
+    "department": "College of Education",
+    "position": "Academic Coordinator",
+    "accountStatus": "Active",
+    "lastLogin": "07 Oct 2026 \u00b7 2:34 PM",
+    "dateCreated": "12 Jul 2025"
+  },
+  {
+    "userId": "USR-AC-003",
+    "employeeId": "PLP-AC-003",
+    "fullName": "Michelle Ramos",
+    "username": "michelle.ramos",
+    "email": "michelle.ramos@plp.edu.ph",
+    "assignedRole": "Academic Coordinator",
+    "department": "College of Business Administration",
+    "position": "Academic Coordinator",
+    "accountStatus": "Active",
+    "lastLogin": "07 Oct 2026 \u00b7 1:16 PM",
+    "dateCreated": "15 Jul 2025"
+  },
+  {
+    "userId": "USR-AC-004",
+    "employeeId": "PLP-AC-004",
+    "fullName": "Daniel Lim",
+    "username": "daniel.lim",
+    "email": "daniel.lim@plp.edu.ph",
+    "assignedRole": "Academic Coordinator",
+    "department": "College of Arts and Sciences",
+    "position": "Academic Coordinator",
+    "accountStatus": "Active",
+    "lastLogin": "06 Oct 2026 \u00b7 5:05 PM",
+    "dateCreated": "18 Jul 2025"
+  },
+  {
+    "userId": "USR-AC-005",
+    "employeeId": "PLP-AC-005",
+    "fullName": "Sofia Navarro",
+    "username": "sofia.navarro",
+    "email": "sofia.navarro@plp.edu.ph",
+    "assignedRole": "Academic Coordinator",
+    "department": "College of Engineering",
+    "position": "Academic Coordinator",
+    "accountStatus": "Inactive",
+    "lastLogin": "30 Sep 2026 \u00b7 9:40 AM",
+    "dateCreated": "20 Jul 2025"
+  }
+]

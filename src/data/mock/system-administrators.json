@@ -1,0 +1,67 @@
+[
+  {
+    "userId": "USR-SA-001",
+    "employeeId": "PLP-SA-001",
+    "fullName": "Adrian Reyes",
+    "username": "sysadmin.demo",
+    "email": "adrian.reyes@plp.edu.ph",
+    "assignedRole": "System Administrator",
+    "department": "Information Technology Services",
+    "position": "System Administrator",
+    "accountStatus": "Active",
+    "lastLogin": "07 Oct 2026 \u00b7 5:52 PM",
+    "dateCreated": "15 May 2025"
+  },
+  {
+    "userId": "USR-SA-002",
+    "employeeId": "PLP-SA-002",
+    "fullName": "Karen Mendoza",
+    "username": "karen.mendoza",
+    "email": "karen.mendoza@plp.edu.ph",
+    "assignedRole": "System Administrator",
+    "department": "Information Technology Services",
+    "position": "System Administrator",
+    "accountStatus": "Active",
+    "lastLogin": "07 Oct 2026 \u00b7 3:12 PM",
+    "dateCreated": "20 May 2025"
+  },
+  {
+    "userId": "USR-SA-003",
+    "employeeId": "PLP-SA-003",
+    "fullName": "Luis Garcia",
+    "username": "luis.garcia",
+    "email": "luis.garcia@plp.edu.ph",
+    "assignedRole": "System Administrator",
+    "department": "Information Technology Services",
+    "position": "System Support Administrator",
+    "accountStatus": "Active",
+    "lastLogin": "07 Oct 2026 \u00b7 11:44 AM",
+    "dateCreated": "03 Jun 2025"
+  },
+  {
+    "userId": "USR-SA-004",
+    "employeeId": "PLP-SA-004",
+    "fullName": "Patricia Flores",
+    "username": "patricia.flores",
+    "email": "patricia.flores@plp.edu.ph",
+    "assignedRole": "System Administrator",
+    "department": "Information Technology Services",
+    "position": "System Support Administrator",
+    "accountStatus": "Active",
+    "lastLogin": "06 Oct 2026 \u00b7 4:08 PM",
+    "dateCreated": "18 Jun 2025"
+  },
+  {
+    "userId": "USR-SA-005",
+    "employeeId": "PLP-SA-005",
+    "fullName": "Noel Bautista",
+    "username": "noel.bautista",
+    "email": "noel.bautista@plp.edu.ph",
+    "assignedRole": "System Administrator",
+    "department": "Information Technology Services",
+    "position": "System Support Administrator",
+    "accountStatus": "Inactive",
+    "lastLogin": "06 Oct 2026 \u00b7 2:22 PM",
+    "dateCreated": "01 Jul 2025"
+  }
+]
