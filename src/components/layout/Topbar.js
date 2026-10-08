@@ -3,7 +3,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import PortalIcon from "./PortalIcon";
+import AppIcon from "@/components/ui/AppIcon";
 
 export default function Topbar({
   pageTitle,
@@ -28,7 +28,7 @@ export default function Topbar({
         aria-expanded={menuOpen}
         aria-controls="portal-sidebar"
       >
-        <PortalIcon name="menu" />
+        <AppIcon name="menu" />
       </button>
 
       {showUniversityBrand ? (
@@ -42,8 +42,8 @@ export default function Topbar({
       ) : null}
 
       <div className="topbar-actions">
-        <div className="term-pill">
-          <PortalIcon name="calendar" />
+        <div className="term-pill" title={`Online Enrollment: ${term.shortLabel}, ${term.enrollmentStart} to ${term.enrollmentEnd}`}>
+          <AppIcon name="calendar" />
           <span>
             <strong>Online Enrollment</strong>
             <small>{term.shortLabel} • {term.enrollmentStart} to {term.enrollmentEnd}</small>
@@ -55,7 +55,7 @@ export default function Topbar({
           href={notificationHref}
           aria-label={`${unreadCount} unread ${utilityLabel}`}
         >
-          <PortalIcon name="bell" />
+          <AppIcon name="bell" />
           {unreadCount > 0 ? <span>{unreadCount}</span> : null}
         </Link>
 

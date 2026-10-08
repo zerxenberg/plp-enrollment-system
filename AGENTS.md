@@ -65,3 +65,14 @@ Do not claim a task is complete unless the available evidence supports it. Repor
 Do not delete or overwrite useful files without a clear reason. Do not reset, clean, checkout over, or broadly reformat work that may belong to the user or another collaborator.
 
 Do not change finalized business rules merely to simplify implementation. If a real conflict is found, identify the conflict and preserve the safer existing rule until the project decision is clarified.
+
+## 8. Global icon standard
+
+Apply this rule to every existing and future interface in the centralized login, Student, Registrar, Academic Coordinator, System Administrator, and shared UI areas.
+
+* Use `lucide-react` exclusively for functional UI icons. Use only verified official exports; do not invent icon names, draw custom SVG paths, or introduce alternate icon libraries or Unicode symbols as substitutes for functional icons. University seals and other brand artwork remain image assets.
+* Render icons through `src/components/ui/AppIcon.js`, the single shared `ICON_REGISTRY`. Add a semantically appropriate verified Lucide export and a stable function-based registry key there when introducing a new icon. Do not import `lucide-react` directly into feature or page components, create parallel icon wrappers, or silently substitute a generic icon for unknown keys.
+* Match icons to actions and meanings. Reuse the same key for the same function across portals; use distinct icons for unrelated functions when a better match exists. Avoid duplicate icons caused by conditional rendering, nested controls, or CSS artwork.
+* Preserve consistent stroke weight, scale, spacing, contrast, and alignment. Use the shared icon's defaults unless context requires a class-based size override; ensure the icon remains legible at mobile breakpoints, zoom, and in both themes.
+* Decorative icons must be hidden from screen readers. Icon-only interactive controls require a meaningful accessible name on the control. If an icon itself conveys information unavailable in surrounding text, supply `title` to `AppIcon`. Keep all icons usable with visible keyboard focus and reduced motion preferences.
+* After changing icons, verify registry keys and official imports, check for duplicate/broken icons and responsive overlaps, and run `npm run lint` and `npm run build`. The ESLint configuration rejects direct icon-library imports and hand-authored inline SVG elements outside the registry.

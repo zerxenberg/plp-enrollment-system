@@ -1,9 +1,5 @@
-import StudentLoginPortal from "@/components/auth/StudentLoginPortal";
-
-export const metadata = {
-  title: "Student Portal",
-};
+import { redirect } from "next/navigation";
 
 export default function StudentPortalPage() {
-  return <StudentLoginPortal />;
+  redirect("/");
 }

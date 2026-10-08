@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import PortalIcon from "./PortalIcon";
+import AppIcon from "@/components/ui/AppIcon";
 import NavigationItem from "./NavigationItem";
 import { clearDemoSession } from "@/lib/auth/demo-auth";
 
@@ -41,7 +41,7 @@ export default function Sidebar({ role, meta, user, open, onClose }) {
 
   function logout() {
     clearDemoSession();
-    router.replace(role === "student" ? "/student-portal" : "/");
+    router.replace("/");
   }
 
   return (
@@ -63,7 +63,7 @@ export default function Sidebar({ role, meta, user, open, onClose }) {
             <span className="profile-avatar" aria-hidden="true">{user.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span>
             <span><strong>{user.name}</strong><small>{user.subtitle}</small></span>
           </Link>
-          <button className="sidebar-link logout-link" type="button" onClick={logout}><PortalIcon name="logout" /><span>Logout</span></button>
+          <button className="sidebar-link logout-link" type="button" onClick={logout}><AppIcon name="logout" /><span>Logout</span></button>
         </div>
       </aside>
     </>

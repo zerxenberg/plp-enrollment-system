@@ -1,38 +1,22 @@
-"use client";
-
-import { useState } from "react";
-import { AdmissionIcon, ArrowRightIcon } from "./PortalIcons";
+import Link from "next/link";
+import AppIcon from "@/components/ui/AppIcon";
 import styles from "./auth-portal.module.css";
 
 export default function AdmissionEntryButton({ admissionUrl }) {
-  const [message, setMessage] = useState("");
-
-  if (admissionUrl) {
-    return (
-      <a className={styles.secondaryActionButton} href={admissionUrl}>
-        <AdmissionIcon className={styles.secondaryActionIcon} />
-        <span>Apply for Admission</span>
-        <ArrowRightIcon className={styles.actionArrow} />
-      </a>
-    );
-  }
+  const destination = /^https?:\/\//i.test(admissionUrl) ? admissionUrl : "/admission";
 
   return (
-    <div>
-      <button
-        className={styles.secondaryActionButton}
-        type="button"
-        onClick={() =>
-          setMessage("The external Admission System link is ready to be connected once its official URL is provided.")
-        }
-      >
-        <AdmissionIcon className={styles.secondaryActionIcon} />
-        <span>Apply for Admission</span>
-        <ArrowRightIcon className={styles.actionArrow} />
-      </button>
-      <p className={styles.admissionStatus} role="status" aria-live="polite">
-        {message}
-      </p>
-    </div>
+    <Link className={styles.studentPortalAction} href={destination}>
+      <span className={styles.studentPortalIconBox}>
+        <AppIcon name="admission" className={styles.studentPortalIcon} />
+      </span>
+      <span className={styles.studentPortalActionText}>
+        <strong>Apply for Admission</strong>
+        <small>For new applicants and transferees</small>
+      </span>
+      <span className={styles.admissionArrowCircle} aria-hidden="true">
+        <AppIcon name="chevronRight" className={styles.actionArrow} />
+      </span>
+    </Link>
   );
 }

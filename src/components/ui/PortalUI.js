@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import PortalIcon from "@/components/layout/PortalIcon";
+import AppIcon from "@/components/ui/AppIcon";
 import { getStatusLabel } from "@/constants/statuses";
 
 export function Card({ children, className = "", as: Tag = "section" }) {
@@ -37,7 +37,7 @@ export function SearchControl({ label = "Search", value, onChange, placeholder }
   return (
     <label className="control-field search-field">
       <span className="sr-only">{label}</span>
-      <PortalIcon name="search" className="control-icon" />
+      <AppIcon name="search" className="control-icon" />
       <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder || label} />
     </label>
   );
@@ -117,7 +117,7 @@ export function Modal({ open, title, children, onClose, footer }) {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section ref={dialogRef} className="portal-modal" role="dialog" aria-modal="true" aria-labelledby="portal-modal-title">
-        <header><h2 id="portal-modal-title">{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><PortalIcon name="close" /></button></header>
+        <header><h2 id="portal-modal-title">{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><AppIcon name="close" /></button></header>
         <div className="modal-body">{children}</div>
         {footer ? <footer className="modal-footer">{footer}</footer> : null}
       </section>

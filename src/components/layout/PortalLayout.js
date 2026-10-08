@@ -41,7 +41,7 @@ export default function PortalLayout({ role, children }) {
     const session = getDemoSession();
 
     if (!session) {
-      router.replace(role === "student" ? "/student-portal" : "/");
+      router.replace("/");
       return undefined;
     }
 

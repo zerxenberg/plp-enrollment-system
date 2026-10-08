@@ -2,7 +2,6 @@
 import accounts from "@/data/mock/auth-accounts.json";
 
 const SESSION_KEY = "plp-demo-session";
-const STAFF_ROLES = new Set(["registrar", "academic-coordinator", "system-administrator"]);
 
 function matchesKnownDemoAccount(session) {
   if (!session || typeof session !== "object") return false;
@@ -14,20 +13,14 @@ function matchesKnownDemoAccount(session) {
   );
 }
 
-export function authenticateDemoAccount({ mode, identity, password }) {
-  const normalizedIdentity = identity.trim().toLowerCase();
+export function authenticateDemoAccount({ identity, password }) {
+  const normalizedIdentity = String(identity || "").trim().toLowerCase();
 
   const account = accounts.find((candidate) => {
-    const matchesIdentity =
-      String(candidate.identifier || "").toLowerCase() === normalizedIdentity ||
-      String(candidate.alternateIdentifier || "").toLowerCase() === normalizedIdentity;
+    const matchesIdentity = [candidate.identifier, candidate.alternateIdentifier, candidate.staffId]
+      .some((value) => value && String(value).toLowerCase() === normalizedIdentity);
 
-    const isAllowedRole =
-      mode === "student"
-        ? candidate.role === "student"
-        : STAFF_ROLES.has(candidate.role);
-
-    return isAllowedRole && matchesIdentity && candidate.password === password;
+    return matchesIdentity && candidate.password === password;
   });
 
   if (!account) return null;
