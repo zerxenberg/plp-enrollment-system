@@ -1,24 +1,22 @@
 
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import AppIcon from "@/components/ui/AppIcon";
+import NotificationPopover from "./NotificationPopover";
 
 export default function Topbar({
-  pageTitle,
+  role,
   term,
-  user,
-  unreadCount,
+  notifications,
   notificationHref,
-  profileHref,
+  markNotification,
   utilityLabel = "notifications",
-  showUniversityBrand = true,
+  showTerm = true,
   onMenu,
   menuOpen,
 }) {
   return (
-    <header className={`portal-topbar ${showUniversityBrand ? "" : "is-compact"}`}>
+    <div className="topbar-actions" role="group" aria-label="Portal utilities">
       <button
         id="portal-menu-button"
         className="mobile-menu-button"
@@ -30,18 +28,7 @@ export default function Topbar({
       >
         <AppIcon name="menu" />
       </button>
-
-      {showUniversityBrand ? (
-        <div className="topbar-university">
-          <Image src="/assets/images/plp_logo.png" alt="" width={42} height={42} />
-          <div>
-            <strong>Pamantasan ng Lungsod ng Pasig</strong>
-            <span>{pageTitle}</span>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="topbar-actions">
+      {showTerm && term ? (
         <div className="term-pill" title={`Online Enrollment: ${term.shortLabel}, ${term.enrollmentStart} to ${term.enrollmentEnd}`}>
           <AppIcon name="calendar" />
           <span>
@@ -49,23 +36,14 @@ export default function Topbar({
             <small>{term.shortLabel} • {term.enrollmentStart} to {term.enrollmentEnd}</small>
           </span>
         </div>
-
-        <Link
-          className="notification-button"
-          href={notificationHref}
-          aria-label={`${unreadCount} unread ${utilityLabel}`}
-        >
-          <AppIcon name="bell" />
-          {unreadCount > 0 ? <span>{unreadCount}</span> : null}
-        </Link>
-
-        <Link className="topbar-profile" href={profileHref}>
-          <span className="profile-avatar small" aria-hidden="true">
-            {user.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}
-          </span>
-          <strong>{user.name}</strong>
-        </Link>
-      </div>
-    </header>
+      ) : null}
+      <NotificationPopover
+        role={role}
+        notifications={notifications}
+        notificationHref={notificationHref}
+        utilityLabel={utilityLabel}
+        markNotification={markNotification}
+      />
+    </div>
   );
 }

@@ -49,7 +49,7 @@ export default function RegistrarNotifications() {
             <Button type="button" variant="ghost" onClick={()=>{setSearch("");setReadFilter("ALL");setCategoryFilter("ALL");}}>Clear Filters</Button>
           </div>
           <div className="action-row" style={{marginBottom:12}}><Button type="button" variant="secondary" onClick={()=>markAllNotifications("registrar")}>Mark All as Read</Button></div>
-          <div className="list-stack">{visibleNotifications.map((item)=><article className="list-item" key={item.id}>
+          <div className="list-stack">{visibleNotifications.map((item)=><article className="list-item notification-entry" key={item.id} id={`notification-${item.id}`} tabIndex={-1}>
             <div className="list-item-header"><strong>{item.title}</strong><StatusBadge value={item.read?"READ":"UNREAD"} label={item.read?"Read":"Unread"} /></div>
             <p>{item.message}</p><p>{item.date} · {item.category}</p>
             <div className="action-row" style={{marginTop:9}}>{!item.read ? <Button type="button" variant="ghost" onClick={()=>markNotification("registrar",item.id)}>Mark as Read</Button> : null}<Link className="portal-button portal-button-secondary" href={item.relatedHref}>Open Related Record</Link></div>

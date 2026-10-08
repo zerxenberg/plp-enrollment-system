@@ -1,21 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useRef } from "react";
 import AppIcon from "@/components/ui/AppIcon";
 import { getStatusLabel } from "@/constants/statuses";
+import Topbar from "@/components/layout/Topbar";
+import { PortalHeaderContext } from "@/components/layout/PortalHeaderContext";
 
 export function Card({ children, className = "", as: Tag = "section" }) {
   return <Tag className={`portal-card ${className}`}>{children}</Tag>;
 }
 
 export function PageHeader({ title, description, actions }) {
+  const portalHeader = useContext(PortalHeaderContext);
   return (
     <header className="page-header">
-      <div>
+      <div className="page-header-copy">
         <h1>{title}</h1>
         {description ? <p>{description}</p> : null}
       </div>
-      {actions ? <div className="page-header-actions">{actions}</div> : null}
+      {actions || portalHeader ? (
+        <div className="page-header-utilities">
+          {actions ? <div className="page-header-actions">{actions}</div> : null}
+          {portalHeader ? <Topbar {...portalHeader} /> : null}
+        </div>
+      ) : null}
     </header>
   );
 }

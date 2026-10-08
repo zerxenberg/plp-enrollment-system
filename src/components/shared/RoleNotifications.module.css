@@ -1,0 +1,19 @@
+.entry {
+  scroll-margin-top: 20px;
+}
+
+.entry:target {
+  border-color: var(--portal-green-600, #159b5b);
+  box-shadow: 0 0 0 3px rgba(21, 155, 91, .13);
+}
+
+.detailNote {
+  display: inline-flex;
+  align-items: center;
+  color: var(--portal-muted, #66756d);
+  font-size: .72rem;
+}
+
+@media (forced-colors: active) {
+  .entry:target { outline: 2px solid Highlight; }
+}
