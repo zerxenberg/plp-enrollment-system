@@ -63,10 +63,6 @@ export default function LoginForm({
       return;
     }
 
-    if (session.role === "academic-coordinator") {
-      setStatus("The Academic Coordinator demo account was recognized. Its portal is still under development.");
-      return;
-    }
 
     if (!saveDemoSession(session)) {
       setStatus("This demo account could not be signed in. Please try again.");
