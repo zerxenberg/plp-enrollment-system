@@ -56,7 +56,7 @@ export const PORTAL_META = {
     portalName: "Academic Coordinator Portal",
     homeHref: "/academic-coordinator/dashboard",
     profileHref: "/academic-coordinator/profile",
-    notificationHref: "/academic-coordinator/reports-monitoring",
+    notificationHref: "/academic-coordinator/notifications",
     topbarUtilityLabel: "academic alerts",
     compactTopbar: true,
     navigation: ACADEMIC_COORDINATOR_NAVIGATION,

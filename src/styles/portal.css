@@ -83,7 +83,7 @@
 .topbar-university div { min-width: 0; display: flex; flex-direction: column; }
 .topbar-university strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #153d2d; font-size: 1.1rem; letter-spacing: .01em; }
 .topbar-university span { margin-top: 2px; color: var(--portal-muted); font-size: .72rem; font-weight: 650; }
-.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .term-pill { display: flex; align-items: center; gap: 9px; min-width: 245px; padding: 8px 12px; border: 1px solid rgba(16, 133, 77, .16); border-radius: 14px; color: var(--portal-green-900); background: rgba(221, 244, 231, .72); }
 .term-pill svg { width: 21px; height: 21px; flex: 0 0 auto; }
 .term-pill span { display: flex; flex-direction: column; }

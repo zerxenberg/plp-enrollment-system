@@ -15,6 +15,86 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const STUDENT_EDITABLE_STATUSES = new Set(["ELIGIBLE", "IN_PROGRESS", "REQUIRES_CORRECTION"]);
 const STUDENT_SUBMITTABLE_STATUSES = new Set(["IN_PROGRESS"]);
 
+const ACADEMIC_COORDINATOR_INITIAL_DATA = {
+  curricula: [
+    {
+      id: "CUR-BSIT-2024",
+      version: "BSIT Curriculum 2024",
+      program: "BSIT",
+      effectiveAcademicYear: "2024 to 2025",
+      status: "Active",
+      assignedSubjects: catalogSource.subjects.length,
+    },
+    {
+      id: "CUR-BSBA-2024",
+      version: "BSBA Curriculum 2024",
+      program: "BSBA",
+      effectiveAcademicYear: "2024 to 2025",
+      status: "Active",
+      assignedSubjects: 0,
+    },
+  ],
+  offerings: catalogSource.subjects.map((subject, index) => ({
+    id: `OFF-${subject.code}`,
+    academicTerm: "First Semester 2026 to 2027",
+    program: "BSIT",
+    curriculum: "BSIT Curriculum 2024",
+    subjectCode: subject.code,
+    subjectName: subject.name,
+    yearLevel: subject.yearLevel,
+    semester: subject.semester,
+    status: index < 6 ? "Active" : "Planned",
+    plannedSections: index < 4 ? 2 : 1,
+  })),
+  history: [
+    {
+      id: "ACH-001",
+      dateTime: "Oct 7, 2026 · 4:40 PM",
+      coordinator: "Elena Cruz",
+      module: "Sections & Schedules",
+      record: "CTC 301",
+      action: "Section capacity reviewed",
+      previousValue: "31 confirmed",
+      newValue: "31 confirmed",
+    },
+    {
+      id: "ACH-002",
+      dateTime: "Oct 6, 2026 · 2:15 PM",
+      coordinator: "Elena Cruz",
+      module: "Academic Setup",
+      record: "IT305",
+      action: "Prerequisite reviewed",
+      previousValue: "IT204",
+      newValue: "IT204",
+    },
+  ],
+};
+
+function timeToMinutes(value) {
+  if (!value || !String(value).includes(":")) return null;
+  const [hours, minutes] = String(value).split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+}
+
+function wouldCreatePrerequisiteCycle(subjects, targetCode, prerequisiteCode) {
+  const byCode = new Map(subjects.map((subject) => [subject.code, subject]));
+  const visited = new Set();
+
+  function canReach(code, target) {
+    if (code === target) return true;
+    if (visited.has(code)) return false;
+    visited.add(code);
+
+    const subject = byCode.get(code);
+    if (!subject) return false;
+
+    return (subject.prerequisites || []).some((next) => canReach(next, target));
+  }
+
+  return canReach(prerequisiteCode, targetCode);
+}
+
 function demoTimestamp() {
   return new Intl.DateTimeFormat("en-PH", {
     dateStyle: "medium",
@@ -63,7 +143,8 @@ export function DemoDataProvider({ children }) {
   const [notifications, setNotifications] = useState(() => clone(notificationSource));
   const [systemAdministrators] = useState(() => clone(systemAdministratorSource));
   const [academicCoordinators] = useState(() => clone(academicCoordinatorSource));
-  const catalog = catalogSource;
+  const [catalog, setCatalog] = useState(() => clone(catalogSource));
+  const [academicCoordinatorData, setAcademicCoordinatorData] = useState(() => clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
   const hasRole = (role) => getDemoSession()?.role === role;
 
   function addStudentSubject(code) {
@@ -395,12 +476,544 @@ export function DemoDataProvider({ children }) {
     return true;
   }
 
+
+  function currentAcademicCoordinatorName() {
+    const identifier = String(getDemoSession()?.identifier || "").toLowerCase();
+    const record = academicCoordinators.find((item) =>
+      [item.username, item.employeeId, item.email]
+        .map((value) => String(value || "").toLowerCase())
+        .includes(identifier),
+    );
+
+    return record?.fullName || academicCoordinators[0]?.fullName || "Academic Coordinator";
+  }
+
+  function addAcademicHistory(module, record, action, previousValue = "", newValue = "") {
+    setAcademicCoordinatorData((current) => ({
+      ...current,
+      history: [
+        {
+          id: `ACH-${Date.now()}`,
+          dateTime: demoTimestamp(),
+          coordinator: currentAcademicCoordinatorName(),
+          module,
+          record,
+          action,
+          previousValue,
+          newValue,
+        },
+        ...current.history,
+      ],
+    }));
+  }
+
+  function createAcademicProgram(values) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const code = String(values?.code || "").trim().toUpperCase();
+    const name = String(values?.name || "").trim();
+    const department = String(values?.department || "").trim();
+
+    if (!code || !name || !department) {
+      return { ok: false, message: "Program code, name, and department are required." };
+    }
+
+    if (catalog.programs.some((item) => item.code === code)) {
+      return { ok: false, message: "That program code already exists." };
+    }
+
+    const record = {
+      code,
+      name,
+      department,
+      status: values.status || "Active",
+      enrolled: 0,
+    };
+
+    setCatalog((current) => ({
+      ...current,
+      programs: [...current.programs, record],
+    }));
+    addAcademicHistory("Academic Setup", code, "Program created", "", record.status);
+    return { ok: true, record };
+  }
+
+  function updateAcademicProgram(code, changes) {
+    if (!hasRole("academic-coordinator")) return false;
+    const existing = catalog.programs.find((item) => item.code === code);
+    if (!existing) return false;
+
+    setCatalog((current) => ({
+      ...current,
+      programs: current.programs.map((item) =>
+        item.code === code ? { ...item, ...changes, code: item.code } : item
+      ),
+    }));
+    addAcademicHistory(
+      "Academic Setup",
+      code,
+      "Program updated",
+      `${existing.name} · ${existing.status}`,
+      `${changes.name || existing.name} · ${changes.status || existing.status}`,
+    );
+    return true;
+  }
+
+  function createCurriculumVersion(values) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const program = String(values?.program || "").trim();
+    const version = String(values?.version || "").trim();
+    const effectiveAcademicYear = String(values?.effectiveAcademicYear || "").trim();
+
+    if (!program || !version || !effectiveAcademicYear) {
+      return { ok: false, message: "Program, curriculum version, and effective academic year are required." };
+    }
+
+    if (academicCoordinatorData.curricula.some((item) => item.version.toLowerCase() === version.toLowerCase())) {
+      return { ok: false, message: "That curriculum version already exists." };
+    }
+
+    const record = {
+      id: `CUR-${Date.now()}`,
+      program,
+      version,
+      effectiveAcademicYear,
+      status: values.status || "Draft",
+      assignedSubjects: 0,
+    };
+
+    setAcademicCoordinatorData((current) => ({
+      ...current,
+      curricula: [record, ...current.curricula],
+    }));
+    addAcademicHistory("Academic Setup", version, "Curriculum version created", "", record.status);
+    return { ok: true, record };
+  }
+
+  function updateCurriculumVersion(id, changes) {
+    if (!hasRole("academic-coordinator")) return false;
+
+    const existing = academicCoordinatorData.curricula.find((item) => item.id === id);
+    if (!existing) return false;
+
+    setAcademicCoordinatorData((current) => ({
+      ...current,
+      curricula: current.curricula.map((item) =>
+        item.id === id ? { ...item, ...changes, id: item.id } : item
+      ),
+    }));
+    addAcademicHistory(
+      "Academic Setup",
+      existing.version,
+      "Curriculum updated",
+      existing.status,
+      changes.status || existing.status,
+    );
+    return true;
+  }
+
+  function duplicateCurriculumVersion(id) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const source = academicCoordinatorData.curricula.find((item) => item.id === id);
+    if (!source) return { ok: false, message: "Curriculum was not found." };
+
+    const record = {
+      ...source,
+      id: `CUR-${Date.now()}`,
+      version: `${source.version} Copy`,
+      status: "Draft",
+    };
+
+    setAcademicCoordinatorData((current) => ({
+      ...current,
+      curricula: [record, ...current.curricula],
+    }));
+    addAcademicHistory("Academic Setup", record.version, "Curriculum duplicated as new version", source.version, record.version);
+    return { ok: true, record };
+  }
+
+  function createAcademicSubject(values) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const code = String(values?.code || "").trim().toUpperCase();
+    const name = String(values?.name || "").trim();
+    const units = Number(values?.units || 0);
+
+    if (!code || !name || units <= 0) {
+      return { ok: false, message: "Subject code, name, and valid units are required." };
+    }
+
+    if (catalog.subjects.some((item) => item.code === code)) {
+      return { ok: false, message: "That subject code already exists." };
+    }
+
+    const record = {
+      code,
+      name,
+      units,
+      description: String(values?.description || "").trim(),
+      yearLevel: values?.yearLevel || "1st Year",
+      semester: values?.semester || "First Semester",
+      category: "Other Eligible",
+      eligibility: "ELIGIBLE",
+      prerequisites: [],
+      restrictionReason: "",
+      status: values?.status || "Active",
+      program: values?.program || "BSIT",
+      curriculum: values?.curriculum || "BSIT Curriculum 2024",
+    };
+
+    setCatalog((current) => ({
+      ...current,
+      subjects: [...current.subjects, record],
+    }));
+    addAcademicHistory("Academic Setup", code, "Subject created", "", record.name);
+    return { ok: true, record };
+  }
+
+  function updateAcademicSubject(code, changes) {
+    if (!hasRole("academic-coordinator")) return false;
+
+    const existing = catalog.subjects.find((item) => item.code === code);
+    if (!existing) return false;
+
+    setCatalog((current) => ({
+      ...current,
+      subjects: current.subjects.map((item) =>
+        item.code === code ? { ...item, ...changes, code: item.code } : item
+      ),
+    }));
+    addAcademicHistory("Academic Setup", code, "Subject updated", existing.name, changes.name || existing.name);
+    return true;
+  }
+
+  function savePrerequisiteRule({ targetCode, prerequisiteCode }) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const target = catalog.subjects.find((item) => item.code === targetCode);
+    const prerequisite = catalog.subjects.find((item) => item.code === prerequisiteCode);
+
+    if (!target || !prerequisite) {
+      return { ok: false, message: "Both subject references must exist." };
+    }
+
+    if (targetCode === prerequisiteCode) {
+      return { ok: false, message: "A subject cannot be its own prerequisite." };
+    }
+
+    if ((target.prerequisites || []).includes(prerequisiteCode)) {
+      return { ok: false, message: "That prerequisite relationship already exists." };
+    }
+
+    if (wouldCreatePrerequisiteCycle(catalog.subjects, targetCode, prerequisiteCode)) {
+      return { ok: false, message: "The rule would create a circular prerequisite relationship." };
+    }
+
+    setCatalog((current) => ({
+      ...current,
+      subjects: current.subjects.map((item) =>
+        item.code === targetCode
+          ? { ...item, prerequisites: [...(item.prerequisites || []), prerequisiteCode] }
+          : item
+      ),
+    }));
+    addAcademicHistory("Academic Setup", targetCode, "Prerequisite added", "", prerequisiteCode);
+    return { ok: true };
+  }
+
+  function removePrerequisiteRule(targetCode, prerequisiteCode) {
+    if (!hasRole("academic-coordinator")) return false;
+
+    setCatalog((current) => ({
+      ...current,
+      subjects: current.subjects.map((item) =>
+        item.code === targetCode
+          ? { ...item, prerequisites: (item.prerequisites || []).filter((code) => code !== prerequisiteCode) }
+          : item
+      ),
+    }));
+    addAcademicHistory("Academic Setup", targetCode, "Prerequisite deactivated", prerequisiteCode, "");
+    return true;
+  }
+
+  function createSubjectOffering(values) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const subject = catalog.subjects.find((item) => item.code === values?.subjectCode);
+    if (!subject) return { ok: false, message: "Select a valid subject." };
+
+    const record = {
+      id: `OFF-${Date.now()}`,
+      academicTerm: values.academicTerm || student.term.label,
+      program: values.program || "BSIT",
+      curriculum: values.curriculum || student.profile.curriculum || "Current Curriculum",
+      subjectCode: subject.code,
+      subjectName: subject.name,
+      yearLevel: subject.yearLevel,
+      semester: subject.semester,
+      status: values.status || "Planned",
+      plannedSections: Number(values.plannedSections || 1),
+    };
+
+    setAcademicCoordinatorData((current) => ({
+      ...current,
+      offerings: [record, ...current.offerings],
+    }));
+    addAcademicHistory("Sections & Schedules", subject.code, "Subject offering created", "", record.status);
+    return { ok: true, record };
+  }
+
+  function updateSubjectOffering(id, changes) {
+    if (!hasRole("academic-coordinator")) return false;
+
+    const existing = academicCoordinatorData.offerings.find((item) => item.id === id);
+    if (!existing) return false;
+
+    setAcademicCoordinatorData((current) => ({
+      ...current,
+      offerings: current.offerings.map((item) =>
+        item.id === id ? { ...item, ...changes, id: item.id } : item
+      ),
+    }));
+    addAcademicHistory(
+      "Sections & Schedules",
+      existing.subjectCode,
+      "Subject offering updated",
+      existing.status,
+      changes.status || existing.status,
+    );
+    return true;
+  }
+
+  function createAcademicSection(values) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const code = String(values?.code || "").trim().toUpperCase();
+    const subject = String(values?.subject || "").trim().toUpperCase();
+    const capacity = Number(values?.capacity || 0);
+
+    if (!code || !subject || capacity <= 0) {
+      return { ok: false, message: "Section code, subject, and valid capacity are required." };
+    }
+
+    if (registrar.sections.some((item) => item.code === code)) {
+      return { ok: false, message: "That section code already exists." };
+    }
+
+    const record = {
+      code,
+      subject,
+      program: values.program || "BSIT",
+      academicTerm: values.academicTerm || student.term.shortLabel,
+      capacity,
+      confirmed: 0,
+      status: "Available",
+      sectionStatus: values.sectionStatus || "Planned",
+      schedule: "Not scheduled",
+      room: "TBA",
+      day: "",
+      start: "",
+      end: "",
+    };
+
+    setRegistrar((current) => ({
+      ...current,
+      sections: [record, ...current.sections],
+    }));
+    addAcademicHistory("Sections & Schedules", code, "Section created", "", record.sectionStatus);
+    return { ok: true, record };
+  }
+
+  function updateAcademicSection(code, changes) {
+    if (!hasRole("academic-coordinator")) return false;
+
+    const existing = registrar.sections.find((item) => item.code === code);
+    if (!existing) return false;
+
+    setRegistrar((current) => ({
+      ...current,
+      sections: current.sections.map((item) =>
+        item.code === code ? { ...item, ...changes, code: item.code } : item
+      ),
+    }));
+    addAcademicHistory(
+      "Sections & Schedules",
+      code,
+      "Section updated",
+      existing.sectionStatus || existing.status,
+      changes.sectionStatus || existing.sectionStatus || existing.status,
+    );
+    return true;
+  }
+
+  function saveAcademicSchedule(values) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const section = registrar.sections.find((item) => item.code === values?.sectionCode);
+    if (!section) return { ok: false, message: "Select a valid section." };
+
+    const startMinutes = timeToMinutes(values.start);
+    const endMinutes = timeToMinutes(values.end);
+
+    if (startMinutes === null || endMinutes === null || startMinutes >= endMinutes) {
+      return { ok: false, message: "The class start time must be earlier than the end time." };
+    }
+
+    const conflict = registrar.sections.find((item) => {
+      if (item.code === section.code) return false;
+      if (!item.day || !item.start || !item.end) return false;
+      if (item.day !== values.day) return false;
+
+      const itemStart = timeToMinutes(item.start);
+      const itemEnd = timeToMinutes(item.end);
+      const overlaps = itemStart < endMinutes && startMinutes < itemEnd;
+      const sameRoom = String(item.room || "").toLowerCase() === String(values.room || "").toLowerCase();
+
+      return overlaps && sameRoom;
+    });
+
+    if (conflict) {
+      return { ok: false, message: `Room conflict with ${conflict.code} on ${values.day}.` };
+    }
+
+    const schedule = `${values.day} ${values.start} to ${values.end}`;
+
+    setRegistrar((current) => ({
+      ...current,
+      sections: current.sections.map((item) =>
+        item.code === section.code
+          ? {
+              ...item,
+              day: values.day,
+              start: values.start,
+              end: values.end,
+              room: values.room,
+              schedule,
+              sectionStatus: item.sectionStatus === "Planned" ? "Open" : item.sectionStatus,
+            }
+          : item
+      ),
+    }));
+
+    addAcademicHistory("Sections & Schedules", section.code, "Class schedule saved", section.schedule, schedule);
+    return { ok: true };
+  }
+
+  function decideAcademicReview(reference, { decision, note }) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+
+    const enrollment = registrar.enrollments.find((item) => item.reference === reference);
+    if (!enrollment || enrollment.status !== "NEEDS_ACADEMIC_REVIEW") {
+      return { ok: false, message: "This case is not waiting for an Academic Coordinator decision." };
+    }
+
+    const normalizedDecision = String(decision || "").toUpperCase();
+    const academicReason = String(note || "").trim();
+
+    if (!["APPROVED", "REJECTED", "RETURNED_FOR_CLARIFICATION"].includes(normalizedDecision)) {
+      return { ok: false, message: "Select a valid academic decision." };
+    }
+
+    if (!academicReason) {
+      return { ok: false, message: "An academic reason or decision note is required." };
+    }
+
+    const nextStatus =
+      normalizedDecision === "APPROVED"
+        ? "FOR_VALIDATION"
+        : normalizedDecision === "REJECTED"
+          ? "REQUIRES_CORRECTION"
+          : "NEEDS_ACADEMIC_REVIEW";
+
+    const coordinator = currentAcademicCoordinatorName();
+    const decisionDate = demoTimestamp();
+
+    setRegistrar((current) => ({
+      ...current,
+      enrollments: current.enrollments.map((item) =>
+        item.reference === reference
+          ? {
+              ...item,
+              status: nextStatus,
+              academicReviewDecision: normalizedDecision,
+              academicReviewReason: academicReason,
+              academicReviewCoordinator: coordinator,
+              academicReviewDate: decisionDate,
+            }
+          : item
+      ),
+      activity: [
+        {
+          id: `ACT-${Date.now()}`,
+          date: decisionDate,
+          registrar: coordinator,
+          student: enrollment.studentName,
+          reference,
+          action: `Academic exception ${normalizedDecision.toLowerCase().replaceAll("_", " ")}`,
+          previousStatus: enrollment.status,
+          newStatus: nextStatus,
+          reason: academicReason,
+        },
+        ...current.activity,
+      ],
+    }));
+
+    setNotifications((current) => ({
+      ...current,
+      registrar: [
+        {
+          id: `RN-AC-${Date.now()}`,
+          title: "Academic Review Decision Recorded",
+          message: `${reference} received an Academic Coordinator decision: ${normalizedDecision.replaceAll("_", " ")}.`,
+          date: decisionDate,
+          category: "Academic Review",
+          read: false,
+          relatedHref: `/registrar/enrollment?reference=${encodeURIComponent(reference)}`,
+        },
+        ...(current.registrar || []),
+      ],
+      student:
+        enrollment.studentNumber === student.profile.studentNumber
+          ? [
+              {
+                id: `SN-AC-${Date.now()}`,
+                title: "Academic Review Updated",
+                message:
+                  normalizedDecision === "APPROVED"
+                    ? "Your academic exception was approved and your enrollment returned to Registrar validation."
+                    : normalizedDecision === "REJECTED"
+                      ? "Your academic exception was not approved. Review the correction instructions for your enrollment."
+                      : "Your academic review requires clarification before a final decision can be made.",
+                date: decisionDate,
+                category: "Academic",
+                read: false,
+                relatedHref: "/student/enrollment",
+              },
+              ...(current.student || []),
+            ]
+          : current.student,
+    }));
+
+    addAcademicHistory(
+      "Academic Review",
+      reference,
+      "Academic exception decided",
+      "NEEDS_ACADEMIC_REVIEW",
+      `${normalizedDecision} → ${nextStatus}`,
+    );
+
+    return { ok: true, nextStatus };
+  }
+
   const value = {
     student,
     catalog,
     registrar,
     systemAdministrators,
     academicCoordinators,
+    academicCoordinatorData,
     notifications,
     addStudentSubject,
     removeStudentSubject,
@@ -414,6 +1027,21 @@ export function DemoDataProvider({ children }) {
     confirmRegistrarEnrollment,
     applyAuthorizedCorrection,
     correctRegistrarStudent,
+    createAcademicProgram,
+    updateAcademicProgram,
+    createCurriculumVersion,
+    updateCurriculumVersion,
+    duplicateCurriculumVersion,
+    createAcademicSubject,
+    updateAcademicSubject,
+    savePrerequisiteRule,
+    removePrerequisiteRule,
+    createSubjectOffering,
+    updateSubjectOffering,
+    createAcademicSection,
+    updateAcademicSection,
+    saveAcademicSchedule,
+    decideAcademicReview,
   };
 
   return <DemoDataContext.Provider value={value}>{children}</DemoDataContext.Provider>;
