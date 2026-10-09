@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useEffect, useRef } from "react";
+import { useContext, useEffect, useId, useRef } from "react";
 import AppIcon from "@/components/ui/AppIcon";
 import { getStatusLabel } from "@/constants/statuses";
 import Topbar from "@/components/layout/Topbar";
@@ -39,6 +39,69 @@ export function StatusBadge({ value, label }) {
 
 export function Button({ children, variant = "primary", className = "", type = "button", ...props }) {
   return <button type={type} className={`portal-button portal-button-${variant} ${className}`} {...props}>{children}</button>;
+}
+
+// Shared content tabs for authenticated portals. Workflow steps and filter groups
+// retain their own semantics because they are not tab panels.
+export function InternalTabs({ items, selected, onSelect, label, children, className = "", panelCard = false }) {
+  const id = useId();
+  const tabRefs = useRef([]);
+  const previousSelected = useRef(selected);
+  const selectedIndex = items.findIndex((item) => item.value === selected);
+  const panelId = `${id}-panel`;
+
+  useEffect(() => {
+    // When an action inside a panel opens another tab, its focused button may
+    // unmount. Return focus to the newly selected tab in that case.
+    if (previousSelected.current !== selected && document.activeElement === document.body) {
+      tabRefs.current[selectedIndex]?.focus();
+    }
+    previousSelected.current = selected;
+  }, [selected, selectedIndex]);
+
+  function handleTabKeyDown(event, index) {
+    if (!items.length) return;
+    let nextIndex;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % items.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + items.length) % items.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = items.length - 1;
+    else return;
+
+    event.preventDefault();
+    onSelect(items[nextIndex].value);
+    tabRefs.current[nextIndex]?.focus();
+  }
+
+  return (
+    <>
+      <div className={`tabs ${className}`.trim()} role="tablist" aria-label={label}>
+        {items.map((item, index) => {
+          const isSelected = selected === item.value;
+          return (
+            <button
+              key={item.value}
+              ref={(node) => { tabRefs.current[index] = node; }}
+              id={`${id}-tab-${index}`}
+              className={`tab-button ${isSelected ? "is-active" : ""}`}
+              type="button"
+              role="tab"
+              aria-selected={isSelected}
+              aria-controls={panelId}
+              tabIndex={isSelected || (selectedIndex < 0 && index === 0) ? 0 : -1}
+              onKeyDown={(event) => handleTabKeyDown(event, index)}
+              onClick={() => onSelect(item.value)}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className={`tab-panel${panelCard ? " portal-card section-card" : ""}`} id={panelId} role="tabpanel" aria-labelledby={`${id}-tab-${Math.max(0, selectedIndex)}`} tabIndex={0}>
+        {children}
+      </div>
+    </>
+  );
 }
 
 export function SearchControl({ label = "Search", value, onChange, placeholder }) {

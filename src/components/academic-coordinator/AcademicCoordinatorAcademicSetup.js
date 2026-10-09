@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Button,
@@ -40,8 +40,10 @@ export default function AcademicCoordinatorAcademicSetup() {
     removePrerequisiteRule,
   } = useDemoData();
 
-  const initialView = VIEWS.some((item) => item.value === params.get("view")) ? params.get("view") : "programs";
+  const requestedView = params.get("view");
+  const initialView = VIEWS.some((item) => item.value === requestedView) ? requestedView : "programs";
   const [view, setView] = useState(initialView);
+  const [previousRequestedView, setPreviousRequestedView] = useState(requestedView);
   const [search, setSearch] = useState("");
   const [programFilter, setProgramFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -54,10 +56,12 @@ export default function AcademicCoordinatorAcademicSetup() {
   const [subjectForm, setSubjectForm] = useState({ code: "", name: "", units: 3, yearLevel: "1st Year", semester: "First Semester", program: "BSIT", curriculum: "BSIT Curriculum 2024", status: "Active", description: "" });
   const [prerequisiteForm, setPrerequisiteForm] = useState({ targetCode: "", prerequisiteCode: "" });
 
-  useEffect(() => {
-    const next = params.get("view");
-    if (VIEWS.some((item) => item.value === next)) setView(next);
-  }, [params]);
+  // A changed deep link selects its requested view without updating state in an effect.
+  // Local tab clicks remain independent of the current URL until the URL changes.
+  if (previousRequestedView !== requestedView) {
+    setPreviousRequestedView(requestedView);
+    if (VIEWS.some((item) => item.value === requestedView)) setView(requestedView);
+  }
 
   const programOptions = [{ value: "ALL", label: "All Programs" }, ...catalog.programs.map((item) => ({ value: item.code, label: item.code }))];
 
@@ -144,8 +148,7 @@ export default function AcademicCoordinatorAcademicSetup() {
         description="Maintain programs, curriculum versions, subjects, prerequisite rules, and review the current academic term reference."
       />
 
-      <Panel title="Academic Configuration" subtitle="These structures form the academic foundation used by enrollment validation.">
-        <Tabs items={VIEWS} selected={view} onSelect={(next) => { setView(next); setSearch(""); setSelected(null); setFeedback(""); }} />
+      <Tabs items={VIEWS} selected={view} onSelect={(next) => { setView(next); setSearch(""); setSelected(null); setFeedback(""); }} label="Academic setup sections" title="Academic Configuration" subtitle="These structures form the academic foundation used by enrollment validation.">
 
         {feedback ? <Feedback message={feedback} warning={feedback.toLowerCase().includes("could not") || feedback.toLowerCase().includes("required") || feedback.toLowerCase().includes("already")} /> : null}
 
@@ -254,7 +257,7 @@ export default function AcademicCoordinatorAcademicSetup() {
             </div>
           </>
         ) : null}
-      </Panel>
+      </Tabs>
 
       {selected && ["programs", "curriculum", "subjects", "prerequisites"].includes(view) ? (
         <div style={{ marginTop: 16 }}>

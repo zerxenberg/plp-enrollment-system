@@ -19,7 +19,7 @@ export default function AcademicCoordinatorNotifications() {
   const [readFilter, setReadFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
 
-  const items = notifications["academic-coordinator"] || [];
+  const items = useMemo(() => notifications["academic-coordinator"] || [], [notifications]);
   const categories = useMemo(() => [...new Set(items.map((item) => item.category))], [items]);
 
   const visible = items.filter((item) =>

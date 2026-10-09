@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, Card, DataTable, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 
 const TABS = ["Audit Logs", "Security Activity", "Administrator Activity", "System Errors", "System Health"];
 
@@ -39,13 +39,7 @@ export default function SystemAdministratorAuditMonitoring() {
         description="Read only technical activity, security events, administrator actions, system errors, and health monitoring."
       />
 
-      <div className="tabs" role="tablist" aria-label="Audit and monitoring sections">
-        {TABS.map((tab) => (
-          <button key={tab} type="button" className={`tab-button ${activeTab === tab ? "is-active" : ""}`} onClick={() => setActiveTab(tab)}>
-            {tab}
-          </button>
-        ))}
-      </div>
+      <InternalTabs items={TABS.map((value) => ({ value, label: value }))} selected={activeTab} onSelect={setActiveTab} label="Audit and monitoring sections">
 
       {message ? <div className="notice" style={{ marginBottom: 14 }}>{message}</div> : null}
 
@@ -157,6 +151,7 @@ export default function SystemAdministratorAuditMonitoring() {
           </div>
         </Card>
       ) : null}
+      </InternalTabs>
     </>
   );
 }

@@ -133,8 +133,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
         description="Manage subject offerings, section planning, class schedules, room assignments, capacity, and academic demand."
       />
 
-      <Panel title="Academic Section Planning" subtitle="Schedule feasibility, capacity, and subject offerings are maintained together.">
-        <Tabs items={VIEWS} selected={view} onSelect={(next) => { setView(next); setSearch(""); setSelected(null); setFeedback(""); }} />
+      <Tabs items={VIEWS} selected={view} onSelect={(next) => { setView(next); setSearch(""); setSelected(null); setFeedback(""); }} label="Section and schedule planning sections" title="Academic Section Planning" subtitle="Schedule feasibility, capacity, and subject offerings are maintained together.">
 
         {feedback ? <Feedback message={feedback} warning={!feedback.toLowerCase().includes("saved") && !feedback.toLowerCase().includes("created") && !feedback.toLowerCase().includes("updated")} /> : null}
 
@@ -244,7 +243,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             </div>
           </>
         ) : null}
-      </Panel>
+      </Tabs>
 
       {selected ? (
         <div style={{ marginTop: 16 }}>

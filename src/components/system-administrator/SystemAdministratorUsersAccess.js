@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, Card, DataTable, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, Card, DataTable, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 
 const TABS = ["Users", "Roles", "Permissions", "Access Activity"];
@@ -72,13 +72,7 @@ export default function SystemAdministratorUsersAccess() {
         actions={<Button onClick={() => setCreateOpen(true)}>Create User</Button>}
       />
 
-      <div className="tabs" role="tablist" aria-label="Users and access sections">
-        {TABS.map((tab) => (
-          <button key={tab} type="button" className={`tab-button ${activeTab === tab ? "is-active" : ""}`} onClick={() => setActiveTab(tab)}>
-            {tab}
-          </button>
-        ))}
-      </div>
+      <InternalTabs items={TABS.map((value) => ({ value, label: value }))} selected={activeTab} onSelect={setActiveTab} label="Users and access sections">
 
       {actionMessage ? <div className="notice" style={{ marginBottom: 14 }}>{actionMessage}</div> : null}
 
@@ -174,6 +168,7 @@ export default function SystemAdministratorUsersAccess() {
           </div>
         </Card>
       ) : null}
+      </InternalTabs>
 
       <Modal
         open={createOpen}

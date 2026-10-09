@@ -202,9 +202,9 @@ export default function StudentEnrollment() {
       <>
         <StageHeader title="Subject Registration" description="Add only subjects permitted by your curriculum, completion results, prerequisites, and current term offering." />
         {locked ? <div className="notice warning">Subject editing is locked while the enrollment is {student.enrollment.status.replaceAll("_", " ")}.</div> : null}
-        <div className="tabs">
+        <div className="tabs" role="group" aria-label="Subject registration categories">
           {categories.map((category) => (
-            <button key={category} className={`tab-button ${subjectTab === category ? "is-active" : ""}`} type="button" onClick={() => setSubjectTab(category)}>
+            <button key={category} className={`tab-button ${subjectTab === category ? "is-active" : ""}`} aria-pressed={subjectTab === category} type="button" onClick={() => setSubjectTab(category)}>
               {category}
             </button>
           ))}
@@ -487,20 +487,20 @@ export default function StudentEnrollment() {
         title="Enrollment"
         description="Complete academic eligibility, subject registration, section selection, validation, submission, status tracking, and history in one guided workflow."
       />
+      <div className="tabs step-tabs" role="group" aria-label="Enrollment stages">
+        {STAGES.map((stage, index) => (
+          <button
+            key={stage}
+            className={`tab-button ${activeStage === index + 1 ? "is-active" : ""}`}
+            type="button"
+            aria-current={activeStage === index + 1 ? "step" : undefined}
+            onClick={() => goToStage(index + 1)}
+          >
+            {index + 1}. {stage}
+          </button>
+        ))}
+      </div>
       <Card className="section-card">
-        <div className="tabs step-tabs" aria-label="Enrollment stages">
-          {STAGES.map((stage, index) => (
-            <button
-              key={stage}
-              className={`tab-button ${activeStage === index + 1 ? "is-active" : ""}`}
-              type="button"
-              aria-current={activeStage === index + 1 ? "step" : undefined}
-              onClick={() => goToStage(index + 1)}
-            >
-              {index + 1}. {stage}
-            </button>
-          ))}
-        </div>
         {renderStage()}
       </Card>
     </>

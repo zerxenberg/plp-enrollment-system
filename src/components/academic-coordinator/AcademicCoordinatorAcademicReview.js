@@ -71,15 +71,17 @@ export default function AcademicCoordinatorAcademicReview() {
         description="Review defined academic exceptions that automated rules cannot decide without Academic Coordinator judgment."
       />
 
-      <Panel title="Academic Review Queue" subtitle="Only the academic context required for the decision is displayed.">
-        <Tabs
+      <Tabs
           selected={view}
           onSelect={(next) => { setView(next); setSelectedReference(null); setFeedback(""); }}
+          label="Academic review queue sections"
+          title="Academic Review Queue"
+          subtitle="Only the academic context required for the decision is displayed."
           items={[
             { value: "pending", label: `Pending Reviews (${registrar.enrollments.filter((item) => item.status === "NEEDS_ACADEMIC_REVIEW").length})` },
             { value: "resolved", label: `Resolved Reviews (${registrar.enrollments.filter((item) => item.academicReviewDecision).length})` },
           ]}
-        />
+        >
 
         <div className="toolbar">
           <SearchControl value={search} onChange={setSearch} label="Search academic review" placeholder="Search case, student, program, or subject" />
@@ -125,7 +127,7 @@ export default function AcademicCoordinatorAcademicReview() {
             ]}
           />
         )}
-      </Panel>
+      </Tabs>
 
       {current ? (
         <div style={{ marginTop: 16 }}>

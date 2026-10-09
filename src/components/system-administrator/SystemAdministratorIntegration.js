@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, Card, DataTable, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 
 const TABS = ["Integration Overview", "API Status", "API Requests", "Synchronization", "Failed Requests", "Imported Records", "Integration Settings"];
 
@@ -39,13 +39,7 @@ export default function SystemAdministratorIntegration() {
         actions={<Button variant="secondary" onClick={() => setMessage("Integration status refreshed.")}>Refresh Status</Button>}
       />
 
-      <div className="tabs" role="tablist" aria-label="System integration sections">
-        {TABS.map((tab) => (
-          <button key={tab} type="button" className={`tab-button ${activeTab === tab ? "is-active" : ""}`} onClick={() => setActiveTab(tab)}>
-            {tab}
-          </button>
-        ))}
-      </div>
+      <InternalTabs items={TABS.map((value) => ({ value, label: value }))} selected={activeTab} onSelect={setActiveTab} label="System integration sections">
 
       {message ? <div className="notice" style={{ marginBottom: 14 }}>{message}</div> : null}
 
@@ -203,6 +197,7 @@ export default function SystemAdministratorIntegration() {
           </div>
         </Card>
       ) : null}
+      </InternalTabs>
     </>
   );
 }

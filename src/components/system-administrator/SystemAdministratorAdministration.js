@@ -2,7 +2,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, Card, DataTable, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 
 const TABS = ["System Settings", "Security Settings", "Database Maintenance", "Backup & Recovery"];
 
@@ -23,13 +23,7 @@ export default function SystemAdministratorAdministration() {
         description="Technical application settings, security controls, database maintenance, backup, and recovery."
       />
 
-      <div className="tabs" role="tablist" aria-label="System administration sections">
-        {TABS.map((tab) => (
-          <button key={tab} type="button" className={`tab-button ${activeTab === tab ? "is-active" : ""}`} onClick={() => setActiveTab(tab)}>
-            {tab}
-          </button>
-        ))}
-      </div>
+      <InternalTabs items={TABS.map((value) => ({ value, label: value }))} selected={activeTab} onSelect={setActiveTab} label="System administration sections">
 
       {message ? <div className="notice" style={{ marginBottom: 14 }}>{message}</div> : null}
 
@@ -118,6 +112,7 @@ export default function SystemAdministratorAdministration() {
           </div>
         </Card>
       ) : null}
+      </InternalTabs>
     </>
   );
 }

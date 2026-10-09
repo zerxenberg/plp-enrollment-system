@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, Card, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 
 const TABS = ["Student Information", "Contact Information", "Admission Record", "Account and Security", "Preferences"];
 
@@ -140,16 +140,15 @@ export default function StudentProfile() {
         title="Student Profile"
         description="View institutional student information, update allowed contact fields, review Admission history, and see account settings."
       />
-      <Card className="section-card">
-        <div className="tabs">
-          {TABS.map((tab) => (
-            <button key={tab} className={`tab-button ${activeTab === tab ? "is-active" : ""}`} type="button" onClick={() => setActiveTab(tab)}>
-              {tab}
-            </button>
-          ))}
-        </div>
+      <InternalTabs
+        items={TABS.map((tab) => ({ value: tab, label: tab }))}
+        selected={activeTab}
+        onSelect={setActiveTab}
+        label="Student profile sections"
+        panelCard
+      >
         {renderTab()}
-      </Card>
+      </InternalTabs>
     </>
   );
 }

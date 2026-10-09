@@ -94,8 +94,8 @@ export default function RegistrarEnrollment() {
   return (
     <>
       <PageHeader title="Enrollment" description="Review official enrollment transactions, run demo validation, return corrections and confirm validated records." />
+      <Tabs items={QUEUES.map((item) => ({...item,label:`${item.label} (${registrar.enrollments.filter((row) => item.value === "ALL" || (item.value === "PENDING" ? row.status === "SUBMITTED" : row.status === item.value)).length})`}))} selected={queue} onSelect={setQueue} label="Filter enrollment queue by status" filter />
       <Panel title="Enrollment Queue" subtitle="Pending is a queue view for Submitted only. Every stored enrollment retains its canonical status.">
-        <Tabs items={QUEUES.map((item) => ({...item,label:`${item.label} (${registrar.enrollments.filter((row) => item.value === "ALL" || (item.value === "PENDING" ? row.status === "SUBMITTED" : row.status === item.value)).length})`}))} selected={queue} onSelect={setQueue} />
         <div className="toolbar">
           <SearchControl label="Search enrollment" value={search} onChange={setSearch} placeholder="Search reference, student name or student number" />
           <FilterControl label="Program" value={program} onChange={setProgram} options={options("program")} />
@@ -112,7 +112,8 @@ export default function RegistrarEnrollment() {
         ]} />
       </Panel>
 
-      {enrollment ? <div style={{marginTop:16}}><Panel title={`Enrollment Review · ${enrollment.reference}`} subtitle="Current record, registered subjects, validation results and Registrar actions." actions={<Button type="button" variant="ghost" onClick={() => {setReference(null);setFeedback("");}}>Close Review</Button>}>
+      {enrollment ? <div style={{marginTop:16}}>
+        <Tabs selected={detailTab} onSelect={setDetailTab} label="Enrollment review sections" title={`Enrollment Review · ${enrollment.reference}`} subtitle="Current record, registered subjects, validation results and Registrar actions." actions={<Button type="button" variant="ghost" onClick={() => {setReference(null);setFeedback("");}}>Close Review</Button>} items={[{value:"subjects",label:"Registered Subjects"},{value:"validation",label:"Validation Summary"},{value:"history",label:"Transaction History"}]}>
         <div className="info-grid" style={{marginBottom:16}}>
           <Info label="Student Number" value={enrollment.studentNumber} />
           <Info label="Student" value={enrollment.studentName} />
@@ -123,7 +124,6 @@ export default function RegistrarEnrollment() {
           <div className="info-item"><span>Current Enrollment Status</span><strong><StatusBadge value={enrollment.status} /></strong></div>
           <Info label="Submitted" value={enrollment.submittedDate} />
         </div>
-        <Tabs selected={detailTab} onSelect={setDetailTab} items={[{value:"subjects",label:"Registered Subjects"},{value:"validation",label:"Validation Summary"},{value:"history",label:"Transaction History"}]} />
         {detailTab === "subjects" ? <DataTable rowKey="code" rows={enrollment.subjects} columns={[{key:"code",label:"Subject Code"},{key:"name",label:"Subject Name"},{key:"units",label:"Units"},{key:"section",label:"Section"},{key:"schedule",label:"Schedule"},{key:"room",label:"Room"}]} /> : null}
         {detailTab === "validation" ? <>
           <div className="notice" style={{marginBottom:12}}>Demo validation uses the existing record validation preset. It does not independently verify live academic or section data.</div>
@@ -143,7 +143,8 @@ export default function RegistrarEnrollment() {
         {enrollment.status === "NEEDS_ACADEMIC_REVIEW" ? <p className="notice warning" style={{marginTop:12}}>An Academic Coordinator decision is required before Registrar validation can continue.</p> : null}
         {enrollment.status === "CONFIRMED" ? <p className="notice" style={{marginTop:12}}>This confirmed transaction is protected from ordinary edits and deletion. Only traceable, authorized corrections are permitted.</p> : null}
         <Feedback message={feedback} />
-      </Panel></div> : reference ? <p className="notice warning" role="status">Enrollment reference {reference} was not found. Select another transaction from the queue.</p> : null}
+        </Tabs>
+      </div> : reference ? <p className="notice warning" role="status">Enrollment reference {reference} was not found. Select another transaction from the queue.</p> : null}
 
       <div style={{marginTop:16}}><Panel title="Enrollment History" subtitle="Official confirmed and past transaction records stay available for review and audit.">
         <DataTable rowKey="reference" rows={registrar.enrollments.filter((item) => ["CONFIRMED","CANCELLED"].includes(item.status))} emptyMessage="No confirmed enrollment records yet." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><button type="button" className="table-action" onClick={() => openReview(row.reference,"history")}>View Details</button>}]} />

@@ -19,6 +19,9 @@
   --portal-card-motion: 240ms cubic-bezier(.2, .75, .25, 1);
   --portal-card-hover-edge: rgba(32, 134, 79, .38);
   --portal-card-hover-shadow: 0 16px 36px rgba(24, 74, 49, .15), inset 0 1px 0 rgba(255, 255, 255, .9);
+  --portal-tab-gap: 9px;
+  --portal-tab-content-gap: 24px;
+  --portal-tab-edge: rgba(83, 145, 110, .3);
 }
 
 .portal-app {
@@ -171,12 +174,86 @@
 .table-action { border: 0; border-radius: 5px; padding: 3px 5px; color: var(--portal-green-700); background: transparent; font: inherit; font-size: .66rem; font-weight: 750; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; transition: background var(--portal-motion), color var(--portal-motion); }
 .table-action:disabled { opacity: .48; cursor: not-allowed; }
 
-.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 5px; margin-bottom: 14px; scrollbar-width: thin; }
-.tab-button { flex: 0 0 auto; min-height: 36px; padding: 0 11px; border: 1px solid var(--portal-line); border-radius: 9px; color: #52635a; background: #fff; font: inherit; font-size: .68rem; font-weight: 700; cursor: pointer; transition: background var(--portal-motion), border-color var(--portal-motion), color var(--portal-motion), box-shadow var(--portal-motion); }
-.tab-button.is-active { color: #fff; border-color: var(--portal-green-700); background: var(--portal-green-700); box-shadow: 0 4px 12px rgba(12, 116, 66, .17); }
-.tab-button:disabled { opacity: .48; cursor: not-allowed; }
-.step-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; padding: 5px; margin-top: -5px; margin-inline: -5px; }
-.step-tabs .tab-button { white-space: normal; min-height: 46px; line-height: 1.25; transition: transform var(--portal-card-motion), background var(--portal-card-motion), border-color var(--portal-card-motion), color var(--portal-card-motion), box-shadow var(--portal-card-motion); }
+/* Official PLP internal navigation: a distinct surface with persistent active indicators. */
+.tabs {
+  display: flex;
+  gap: var(--portal-tab-gap);
+  min-width: 0;
+  overflow-x: auto;
+  padding: 11px;
+  margin-bottom: var(--portal-tab-content-gap);
+  border: 1px solid var(--portal-tab-edge);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(231, 246, 237, .87), rgba(255, 255, 255, .9));
+  box-shadow: 0 10px 24px rgba(20, 92, 55, .095), inset 0 1px 0 rgba(255, 255, 255, .94);
+  scrollbar-width: thin;
+  scrollbar-color: #98b8a6 transparent;
+  scroll-padding-inline: 11px;
+}
+.tabs .tab-button {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 145px;
+  min-height: 52px;
+  padding: 11px 15px 14px;
+  border: 1px solid #ceded4;
+  border-radius: 10px;
+  color: #365447;
+  background: rgba(255, 255, 255, .92);
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--portal-motion), border-color var(--portal-motion), color var(--portal-motion), box-shadow var(--portal-motion), transform var(--portal-motion);
+}
+.tabs .tab-button::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  border-radius: 0 0 9px 9px;
+  background: var(--portal-green-700);
+  opacity: 0;
+  transform: scaleX(.55);
+  transition: opacity var(--portal-motion), transform var(--portal-motion);
+}
+.tabs .tab-button.is-active {
+  color: var(--portal-green-900);
+  border-color: rgba(16, 130, 75, .52);
+  background: linear-gradient(180deg, #e1f5e9, #f5fcf7);
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(15, 113, 66, .12), inset 0 1px 0 rgba(255, 255, 255, .9);
+}
+.tabs .tab-button.is-active::after { opacity: 1; transform: scaleX(1); }
+.tabs .tab-button:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+.tabs .tab-button:focus-visible { outline: 3px solid var(--portal-green-800); outline-offset: 2px; border-color: var(--portal-green-800); }
+.tab-panel { min-width: 0; }
+.tab-panel:focus-visible { outline: 3px solid rgba(14, 124, 70, .62); outline-offset: 3px; border-radius: 6px; }
+.step-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.step-tabs .tab-button { min-width: 0; min-height: 62px; white-space: normal; }
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs {
+  border-color: rgba(139, 216, 172, .3);
+  background: linear-gradient(135deg, rgba(17, 67, 44, .94), rgba(16, 49, 36, .92));
+  box-shadow: 0 7px 18px rgba(0, 0, 0, .2);
+}
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button {
+  color: #d1e5d9;
+  border-color: rgba(125, 188, 150, .4);
+  background: rgba(32, 74, 52, .88);
+}
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button.is-active {
+  color: #edfff3;
+  border-color: #7ddbac;
+  background: linear-gradient(180deg, #196b44, #164d34);
+}
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button.is-active::after { background: #a4f1c5; }
 
 .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
 .info-item { min-height: 72px; padding: 11px; border: 1px solid #e1e9e4; border-radius: 11px; background: #fbfdfc; transition: border-color var(--portal-card-motion), box-shadow var(--portal-card-motion); }
@@ -244,8 +321,9 @@
   /* Only whole-card actions, including checkbox labels, lift and show an actionable glow. */
   a.list-item:hover, button.list-item:hover, label.list-item:hover, a.portal-card:hover, button.portal-card:hover { transform: translateY(-2px); border-color: var(--portal-card-hover-edge); box-shadow: 0 10px 22px rgba(24, 74, 49, .15), var(--portal-accent-glow); }
   a.list-item:hover, button.list-item:hover, label.list-item:hover { background: #f3fbf6; }
-  .step-tabs .tab-button:hover:not(.is-active):not(:disabled) { transform: translateY(-2px); color: var(--portal-green-900); border-color: rgba(21, 138, 80, .5); background: #edf8f1; box-shadow: 0 7px 16px rgba(24, 74, 49, .14), 0 0 0 2px rgba(21, 155, 91, .09); }
-  .step-tabs .tab-button.is-active:hover:not(:disabled) { box-shadow: 0 5px 15px rgba(12, 116, 66, .25); }
+  .tabs .tab-button:hover:not(.is-active):not(:disabled) { transform: translateY(-1px); color: var(--portal-green-900); border-color: rgba(21, 138, 80, .55); background: #eaf7ef; box-shadow: 0 6px 13px rgba(24, 74, 49, .12); }
+  .tabs .tab-button.is-active:hover:not(:disabled) { box-shadow: 0 6px 15px rgba(12, 116, 66, .2); }
+  :is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button:hover:not(.is-active):not(:disabled) { color: #f3fff7; border-color: #7bd7a6; background: #286d49; }
   .sidebar-link:hover:not(.is-active):not(:disabled) { color: var(--portal-green-900); background: rgba(19, 132, 78, .13); border-color: rgba(19, 132, 78, .24); box-shadow: inset 3px 0 0 rgba(21, 155, 91, .5); }
   .sidebar-link.is-active:hover { filter: brightness(1.055); }
   .sidebar-profile:hover { border-color: rgba(19, 132, 78, .38); background: rgba(239, 250, 244, .94); box-shadow: 0 5px 16px rgba(16, 87, 51, .09); }
@@ -255,13 +333,12 @@
   .portal-button-secondary:hover:not(:disabled) { border-color: rgba(13, 113, 65, .48); background: #e8f7ee; box-shadow: 0 6px 15px rgba(11, 117, 65, .12); }
   .portal-button-ghost:hover:not(:disabled) { border-color: rgba(88, 141, 110, .38); background: #f2f8f4; box-shadow: 0 5px 13px rgba(24, 74, 49, .09); }
   .portal-button-danger:hover:not(:disabled) { border-color: rgba(181, 57, 69, .5); background: #ffebee; box-shadow: 0 6px 14px rgba(181, 57, 69, .11); }
-  .tab-button:hover:not(.is-active):not(:disabled) { color: var(--portal-green-900); border-color: rgba(19, 132, 78, .38); background: #edf8f1; box-shadow: 0 4px 10px rgba(16, 87, 51, .08); }
   .table-action:hover:not(:disabled) { color: var(--portal-green-900); background: rgba(19, 132, 78, .09); }
   .section-link:hover { color: var(--portal-green-900); text-decoration: underline; }
   .control-field input:hover:not(:disabled), .control-field select:hover:not(:disabled), .field input:hover:not(:disabled), .field select:hover:not(:disabled), .field textarea:hover:not(:disabled) { border-color: rgba(19, 132, 78, .46); }
 }
 
-a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus-within, a.portal-card:focus-visible, button.portal-card:focus-visible, .step-tabs .tab-button:focus-visible { border-color: var(--portal-card-hover-edge); box-shadow: 0 0 0 3px rgba(21, 155, 91, .13); }
+a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus-within, a.portal-card:focus-visible, button.portal-card:focus-visible { border-color: var(--portal-card-hover-edge); box-shadow: 0 0 0 3px rgba(21, 155, 91, .13); }
 .step-tabs .tab-button:active:not(:disabled) { transform: translateY(0); }
 
 @media (forced-colors: active) {
@@ -270,7 +347,11 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
   .term-pill small, :is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .term-pill small { color: CanvasText; }
   .portal-app a:focus-visible, .portal-app button:focus-visible, .portal-app input:focus-visible, .portal-app select:focus-visible, .portal-app textarea:focus-visible { outline-color: Highlight; }
   .portal-card, .portal-modal, .portal-sidebar { border-color: CanvasText; }
-  .step-tabs .tab-button:focus-visible, a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus-within, .notification-entry:target { outline-color: Highlight; border-color: Highlight; }
+  .tabs { background: Canvas; border-color: CanvasText; box-shadow: none; }
+  .tabs .tab-button, :is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button { color: ButtonText; border-color: ButtonText; background: ButtonFace; box-shadow: none; }
+  .tabs .tab-button.is-active, :is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button.is-active { color: Highlight; border: 2px solid Highlight; background: Canvas; box-shadow: none; }
+  .tabs .tab-button.is-active::after, :is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .tabs .tab-button.is-active::after { background: Highlight; }
+  .tabs .tab-button:focus-visible, .tab-panel:focus-visible, a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus-within, .notification-entry:target { outline-color: Highlight; border-color: Highlight; }
 }
 
 @media (max-width: 1180px) {
@@ -315,7 +396,7 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
   .field.full { grid-column: auto; }
   .detail-row { grid-template-columns: 1fr; gap: 3px; }
   .step-tabs { display: flex; overflow-x: auto; }
-  .step-tabs .tab-button { min-width: 150px; }
+  .step-tabs .tab-button { flex: 0 0 190px; min-width: 190px; }
   .portal-modal { border-radius: 14px; }
 }
 
@@ -336,5 +417,5 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
 @media (prefers-reduced-motion: reduce) {
   .portal-app *, .portal-app *::before, .portal-app *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
   .portal-app .portal-button:hover, .portal-app .portal-button:active, .portal-app .notification-button:hover, .portal-app .mobile-menu-button:hover, .portal-app .icon-button:hover { transform: none; }
-  .portal-app a.list-item:hover, .portal-app button.list-item:hover, .portal-app label.list-item:hover, .portal-app a.portal-card:hover, .portal-app button.portal-card:hover, .portal-app .step-tabs .tab-button:hover:not(.is-active):not(:disabled) { transform: none; }
+  .portal-app a.list-item:hover, .portal-app button.list-item:hover, .portal-app label.list-item:hover, .portal-app a.portal-card:hover, .portal-app button.portal-card:hover, .portal-app .tabs .tab-button:hover:not(.is-active):not(:disabled) { transform: none; }
 }

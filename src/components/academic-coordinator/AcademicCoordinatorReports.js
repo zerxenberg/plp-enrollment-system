@@ -145,8 +145,7 @@ export default function AcademicCoordinatorReports() {
         description="Academic reports and monitoring for curriculum, subjects, sections, schedules, exceptions, demand, and capacity."
       />
 
-      <Panel title="Academic Reporting" subtitle="This module does not duplicate Registrar official enrollment reporting or System Administrator technical audit logs.">
-        <Tabs selected={view} onSelect={(next) => { setView(next); setMessage(""); }} items={VIEWS} />
+      <Tabs selected={view} onSelect={(next) => { setView(next); setMessage(""); }} items={VIEWS} label="Academic reporting sections" title="Academic Reporting" subtitle="This module does not duplicate Registrar official enrollment reporting or System Administrator technical audit logs.">
 
         {view === "reports" ? (
           <>
@@ -244,7 +243,7 @@ export default function AcademicCoordinatorReports() {
         ) : null}
 
         <Feedback message={message} />
-      </Panel>
+      </Tabs>
     </>
   );
 }

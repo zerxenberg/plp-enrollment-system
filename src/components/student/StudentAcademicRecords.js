@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Card, DataTable, FilterControl, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { DataTable, FilterControl, InternalTabs, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
 
 const TABS = ["Academic Overview", "Subject History", "Curriculum Progress", "Deficiencies", "Prerequisite Progress"];
 
@@ -172,16 +172,15 @@ export default function StudentAcademicRecords() {
         title="Academic Records"
         description="Read only academic information used to explain enrollment eligibility, deficiencies, prerequisite progress, and curriculum progress."
       />
-      <Card className="section-card">
-        <div className="tabs">
-          {TABS.map((tab) => (
-            <button key={tab} className={`tab-button ${activeTab === tab ? "is-active" : ""}`} type="button" onClick={() => setActiveTab(tab)}>
-              {tab}
-            </button>
-          ))}
-        </div>
+      <InternalTabs
+        items={TABS.map((tab) => ({ value: tab, label: tab }))}
+        selected={activeTab}
+        onSelect={setActiveTab}
+        label="Academic records sections"
+        panelCard
+      >
         {renderTab()}
-      </Card>
+      </InternalTabs>
     </>
   );
 }

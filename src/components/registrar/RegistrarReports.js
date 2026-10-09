@@ -48,8 +48,7 @@ export default function RegistrarReports() {
   return (
     <>
       <PageHeader title="Reports & Monitoring" description="Generate enrollment summaries, examine workload and review Registrar transaction history." />
-      <Panel title="Registrar Reporting" subtitle="Operational enrollment data and student record quality only.">
-        <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} />
+      <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} label="Registrar reporting sections" title="Registrar Reporting" subtitle="Operational enrollment data and student record quality only.">
         {showEnrollmentFilters ? <div className="toolbar">
           <FilterControl label="Academic Term" value={term} onChange={(next)=>{setTerm(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.term))} />
           <FilterControl label="Program" value={program} onChange={(next)=>{setProgram(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.program))} />
@@ -73,7 +72,7 @@ export default function RegistrarReports() {
         {view==="quality" ? <DataTable rowKey="id" rows={registrar.dataQuality} columns={[{key:"issue",label:"Data Quality Issue"},{key:"record",label:"Related Record"},{key:"severity",label:"Severity",render:(row)=><StatusBadge label={row.severity} value={row.severity==="High"?"REQUIRES_CORRECTION":"REQUIRES_REVIEW"} />}]} /> : null}
         {view==="history" ? <DataTable rowKey="id" rows={registrar.activity} columns={[{key:"date",label:"Timestamp"},{key:"registrar",label:"Registrar"},{key:"student",label:"Student"},{key:"reference",label:"Record"},{key:"action",label:"Action"},{key:"previousStatus",label:"Previous State"},{key:"newStatus",label:"Resulting State"},{key:"reason",label:"Reason"}]} /> : null}
         <Feedback message={message} />
-      </Panel>
+      </Tabs>
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, Card, DataTable, FilterControl, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
@@ -32,20 +32,19 @@ export default function StudentClassSchedule() {
         </div>
       ) : null}
 
-      <Card className="section-card">
+      <InternalTabs
+        items={["Weekly Schedule", "List View"].map((item) => ({ value: item, label: item }))}
+        selected={view}
+        onSelect={setView}
+        label="Class schedule views"
+        panelCard
+      >
         <div className="section-header">
           <div>
             <h2>{schedule.term}</h2>
             <p>Confirmed schedule record</p>
           </div>
           <StatusBadge value="CONFIRMED" />
-        </div>
-        <div className="tabs">
-          {["Weekly Schedule", "List View"].map((item) => (
-            <button key={item} className={`tab-button ${view === item ? "is-active" : ""}`} type="button" onClick={() => setView(item)}>
-              {item}
-            </button>
-          ))}
         </div>
         <div className="toolbar">
           <FilterControl
@@ -101,7 +100,7 @@ export default function StudentClassSchedule() {
             ]}
           />
         )}
-      </Card>
+      </InternalTabs>
     </>
   );
 }
