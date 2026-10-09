@@ -19,6 +19,7 @@
     "role": "system-administrator",
     "name": "Adrian Reyes",
     "identifier": "sysadmin.demo",
+    "staffId": "PLP-SA-001",
     "alternateIdentifier": "adrian.reyes@plp.edu.ph",
     "password": "SysAdmin@123",
     "redirect": "/system-administrator/dashboard"
@@ -27,6 +28,7 @@
     "role": "academic-coordinator",
     "name": "Elena Cruz",
     "identifier": "academic.coordinator.demo",
+    "staffId": "PLP-AC-001",
     "alternateIdentifier": "elena.cruz@plp.edu.ph",
     "password": "Coordinator@123",
     "redirect": "/academic-coordinator/dashboard"

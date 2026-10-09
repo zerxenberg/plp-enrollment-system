@@ -494,6 +494,7 @@ export default function StudentEnrollment() {
               key={stage}
               className={`tab-button ${activeStage === index + 1 ? "is-active" : ""}`}
               type="button"
+              aria-current={activeStage === index + 1 ? "step" : undefined}
               onClick={() => goToStage(index + 1)}
             >
               {index + 1}. {stage}

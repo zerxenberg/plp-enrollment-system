@@ -1,9 +1,9 @@
-import StaffLoginPortal from "@/components/auth/StaffLoginPortal";
+import LoginPortal from "@/components/auth/LoginPortal";
 
 export const metadata = {
-  title: "Staff Login",
+  title: "Login Portal",
 };
 
 export default function Home() {
-  return <StaffLoginPortal />;
+  return <LoginPortal />;
 }

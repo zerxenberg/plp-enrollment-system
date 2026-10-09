@@ -40,7 +40,6 @@ export const PORTAL_META = {
     profileHref: "/student/student-profile",
     notificationHref: "/student/notifications",
     topbarUtilityLabel: "notifications",
-    compactTopbar: false,
     navigation: STUDENT_NAVIGATION,
   },
   registrar: {
@@ -49,7 +48,6 @@ export const PORTAL_META = {
     profileHref: "/registrar/profile",
     notificationHref: "/registrar/notifications",
     topbarUtilityLabel: "notifications",
-    compactTopbar: false,
     navigation: REGISTRAR_NAVIGATION,
   },
   "academic-coordinator": {
@@ -58,16 +56,14 @@ export const PORTAL_META = {
     profileHref: "/academic-coordinator/profile",
     notificationHref: "/academic-coordinator/notifications",
     topbarUtilityLabel: "academic alerts",
-    compactTopbar: true,
     navigation: ACADEMIC_COORDINATOR_NAVIGATION,
   },
   "system-administrator": {
     portalName: "System Administrator Portal",
     homeHref: "/system-administrator/dashboard",
     profileHref: "/system-administrator/profile",
-    notificationHref: "/system-administrator/audit-monitoring",
+    notificationHref: "/system-administrator/notifications",
     topbarUtilityLabel: "technical alerts",
-    compactTopbar: true,
     navigation: SYSTEM_ADMINISTRATOR_NAVIGATION,
   },
 };

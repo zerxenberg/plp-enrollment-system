@@ -1,0 +1,73 @@
+import {
+  ArrowRight,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  ChartNoAxesColumn,
+  ChevronRight,
+  ClipboardList,
+  Eye,
+  EyeOff,
+  FileCheck2,
+  FileText,
+  GraduationCap,
+  House,
+  LockKeyhole,
+  LogOut,
+  Menu,
+  RefreshCw,
+  Search,
+  Settings,
+  ShieldCheck,
+  UserRound,
+  UsersRound,
+  X,
+} from "lucide-react";
+
+// The sole source of application icons. Names represent functions, not artwork.
+export const ICON_REGISTRY = Object.freeze({
+  home: House,
+  book: BookOpen,
+  records: FileText,
+  calendar: CalendarDays,
+  bell: Bell,
+  user: UserRound,
+  users: UsersRound,
+  clipboard: ClipboardList,
+  academic: GraduationCap,
+  chart: ChartNoAxesColumn,
+  logout: LogOut,
+  menu: Menu,
+  search: Search,
+  close: X,
+  sync: RefreshCw,
+  settings: Settings,
+  shield: ShieldCheck,
+  lock: LockKeyhole,
+  eye: Eye,
+  eyeOff: EyeOff,
+  chevronRight: ChevronRight,
+  arrowRight: ArrowRight,
+  admission: FileCheck2,
+});
+
+export default function AppIcon({ name, className = "", title, size = 20, strokeWidth = 2, ...props }) {
+  const IconComponent = ICON_REGISTRY[name];
+
+  if (!IconComponent) {
+    throw new Error(`Unknown application icon: ${String(name)}. Add a verified Lucide icon to ICON_REGISTRY.`);
+  }
+
+  return (
+    <IconComponent
+      className={className}
+      size={size}
+      strokeWidth={strokeWidth}
+      role={title ? "img" : undefined}
+      aria-label={title}
+      aria-hidden={title ? undefined : true}
+      focusable="false"
+      {...props}
+    />
+  );
+}

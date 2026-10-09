@@ -2,9 +2,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
-import Topbar from "./Topbar";
+import { PortalHeaderContext } from "./PortalHeaderContext";
 import { PORTAL_META } from "@/config/portal-navigation";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { getDemoSession } from "@/lib/auth/demo-auth";
@@ -20,7 +20,6 @@ function matchesStaffRecord(record, identifier) {
 }
 
 export default function PortalLayout({ role, children }) {
-  const pathname = usePathname();
   const router = useRouter();
   const {
     student,
@@ -28,6 +27,7 @@ export default function PortalLayout({ role, children }) {
     systemAdministrators,
     academicCoordinators,
     notifications,
+    markNotification,
   } = useDemoData();
 
   const [ready, setReady] = useState(false);
@@ -41,7 +41,7 @@ export default function PortalLayout({ role, children }) {
     const session = getDemoSession();
 
     if (!session) {
-      router.replace(role === "student" ? "/student-portal" : "/");
+      router.replace("/");
       return undefined;
     }
 
@@ -61,14 +61,6 @@ export default function PortalLayout({ role, children }) {
       cancelled = true;
     };
   }, [role, router]);
-
-  const pageTitle = useMemo(() => {
-    if (!meta) return "Portal";
-    const match = meta.navigation.find(
-      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
-    );
-    return match?.label || "Profile";
-  }, [meta, pathname]);
 
   const user = useMemo(() => {
     const session = getDemoSession();
@@ -121,8 +113,6 @@ export default function PortalLayout({ role, children }) {
 
   const term = student.term;
   const roleNotifications = notifications[role] || [];
-  const unreadCount = roleNotifications.filter((item) => !item.read).length;
-
   if (!ready) {
     return <LoadingState label="Checking demo session..." />;
   }
@@ -138,21 +128,21 @@ export default function PortalLayout({ role, children }) {
       />
 
       <div className="portal-main-shell">
-        <Topbar
-          pageTitle={pageTitle}
-          term={term}
-          user={user}
-          unreadCount={unreadCount}
-          notificationHref={meta.notificationHref}
-          profileHref={meta.profileHref}
-          utilityLabel={meta.topbarUtilityLabel}
-          showUniversityBrand={!meta.compactTopbar}
-          menuOpen={sidebarOpen}
-          onMenu={toggleSidebar}
-        />
-        <main className="portal-content" id="main-content">
-          {children}
-        </main>
+        <PortalHeaderContext.Provider value={{
+          role,
+          term,
+          notifications: roleNotifications,
+          markNotification,
+          notificationHref: meta.notificationHref,
+          utilityLabel: meta.topbarUtilityLabel,
+          showTerm: role !== "system-administrator",
+          menuOpen: sidebarOpen,
+          onMenu: toggleSidebar,
+        }}>
+          <main className="portal-content" id="main-content">
+            {children}
+          </main>
+        </PortalHeaderContext.Provider>
       </div>
     </div>
   );

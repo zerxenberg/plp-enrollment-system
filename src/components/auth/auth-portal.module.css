@@ -3,7 +3,8 @@
   isolation: isolate;
   height: 100dvh;
   min-height: 100svh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   color: #173c2b;
@@ -12,7 +13,7 @@
 
 .portalPage::before {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: -6;
   background-image: url("/assets/images/plp_campus_login_background.png");
@@ -34,8 +35,7 @@
 }
 
 .siteHeader {
-  width: min(100%, 1540px);
-  margin: 0 auto;
+  width: 100%;
   padding: clamp(9px, 1.8vh, 14px) 30px 4px;
   display: flex;
   align-items: center;
@@ -46,13 +46,14 @@
 .universityBrand {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 12px;
   min-width: 0;
+  max-width: 100%;
 }
 
 .headerLogo {
-  width: clamp(52px, 7.8vh, 60px);
-  height: clamp(52px, 7.8vh, 60px);
+  width: 3.75rem;
+  height: 3.75rem;
   object-fit: contain;
   flex: 0 0 auto;
   filter: drop-shadow(0 3px 8px rgba(10, 75, 42, 0.15));
@@ -61,24 +62,27 @@
 .brandText {
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
   min-width: 0;
 }
 
 .universityName {
   color: #0e5d36;
-  font-size: clamp(1.25rem, 2.05vh, 1.7rem);
+  font-size: 1.25rem;
   font-weight: 760;
-  line-height: 1.08;
+  line-height: 1.16;
   letter-spacing: -0.035em;
   white-space: nowrap;
   text-shadow: 0 1px 10px rgba(255, 255, 255, 0.45);
 }
 
 .universitySubtitle {
-  margin-top: 5px;
+  margin-top: 0.25rem;
   color: #44546a;
-  font-size: clamp(0.68rem, 1.05vh, 0.76rem);
+  font-size: 0.68rem;
   font-weight: 720;
+  line-height: 1.2;
   letter-spacing: 0.26em;
   text-transform: uppercase;
 }
@@ -86,7 +90,7 @@
 .portalMain {
   position: relative;
   z-index: 3;
-  flex: 1;
+  flex: 1 0 auto;
   min-height: 0;
   width: 100%;
   display: flex;
@@ -96,15 +100,90 @@
 }
 
 .loginCard {
-  width: min(100%, 438px);
-  border: 1px solid rgba(255, 255, 255, 0.78);
+  width: min(100%, 450px);
+  border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: 24px;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(245, 250, 247, 0.9));
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(242, 250, 246, 0.9));
   box-shadow:
-    0 18px 42px rgba(19, 69, 47, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(22px) saturate(112%);
-  -webkit-backdrop-filter: blur(22px) saturate(112%);
+    0 20px 48px rgba(19, 69, 47, 0.22),
+    0 2px 12px rgba(19, 69, 47, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px) saturate(112%);
+  -webkit-backdrop-filter: blur(16px) saturate(112%);
+}
+
+.unifiedCard {
+  padding: clamp(20px, 3.2vh, 34px) clamp(20px, 2.2vw, 30px) clamp(22px, 3.2vh, 32px);
+}
+
+.unifiedCard .studentPortalAction {
+  gap: clamp(9px, 1vw, 13px);
+  padding-inline: clamp(10px, 1vw, 14px);
+}
+
+.unifiedCard .studentPortalIconBox {
+  width: clamp(54px, 7vh, 66px);
+  height: clamp(54px, 7vh, 66px);
+}
+
+.unifiedCard .admissionArrowCircle {
+  width: clamp(36px, 4.5vh, 43px);
+  height: clamp(36px, 4.5vh, 43px);
+}
+
+.unifiedCard .cardLogo {
+  width: clamp(62px, 9vh, 84px);
+  height: clamp(62px, 9vh, 84px);
+  margin-bottom: clamp(12px, 1.8vh, 18px);
+}
+
+.unifiedCard .systemTitle {
+  font-size: clamp(1.32rem, 3vh, 1.72rem);
+  line-height: 1.2;
+}
+
+.loginSubtitle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(15px, 2.2vw, 32px);
+  margin: clamp(7px, 1.2vh, 10px) 0 clamp(18px, 3.6vh, 34px);
+  color: #126545;
+  text-transform: uppercase;
+}
+
+.loginSubtitle strong {
+  font-size: clamp(0.7rem, 1.25vh, 0.83rem);
+  font-weight: 780;
+  letter-spacing: 0.34em;
+  white-space: nowrap;
+}
+
+.loginSubtitle span {
+  width: clamp(35px, 4vw, 58px);
+  height: 2px;
+  border-radius: 999px;
+  background: #157d4f;
+}
+
+.unifiedCard .fieldLabel {
+  font-size: clamp(0.83rem, 1.7vh, 0.96rem);
+}
+
+.unifiedCard .inputShell {
+  min-height: clamp(44px, 5.8vh, 55px);
+  border-radius: 13px;
+}
+
+.unifiedCard .inputShell input {
+  height: clamp(42px, 5.5vh, 53px);
+  font-size: clamp(0.76rem, 1.5vh, 0.88rem);
+}
+
+.unifiedCard .primaryButton {
+  min-height: clamp(45px, 6.2vh, 59px);
+  border-radius: 14px;
+  font-size: clamp(0.97rem, 2.1vh, 1.13rem);
 }
 
 .staffCard {
@@ -212,14 +291,12 @@
 }
 
 .loginForm {
-  --validation-space: clamp(20px, 2.75vh, 21px);
   display: flex;
   flex-direction: column;
 }
 
 .fieldGroup {
-  position: relative;
-  margin-bottom: var(--validation-space);
+  margin-bottom: clamp(9px, 1.2vh, 13px);
 }
 
 .fieldLabel {
@@ -240,17 +317,22 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.82);
   box-shadow: inset 0 1px 3px rgba(22, 55, 40, 0.04);
-  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+  transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
 }
 
 .inputShell:focus-within {
   border-color: #238b56;
   background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 0 0 3px rgba(35, 139, 86, 0.14);
+  box-shadow: 0 0 0 3px rgba(35, 139, 86, 0.22), 0 4px 12px rgba(16, 87, 51, 0.08);
 }
 
 .inputShellError {
   border-color: #b34747;
+}
+
+.inputShellError:focus-within {
+  border-color: #b34747;
+  box-shadow: 0 0 0 3px rgba(179, 71, 71, 0.2);
 }
 
 .inputShell input {
@@ -289,12 +371,7 @@
   color: #5e6b78;
   background: transparent;
   cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.passwordToggle:hover {
-  color: #12633b;
-  background: rgba(21, 117, 67, 0.08);
+  transition: background 200ms ease, color 200ms ease;
 }
 
 .passwordToggle:focus-visible,
@@ -303,19 +380,16 @@
 .studentPortalAction:focus-visible,
 .secondaryActionButton:focus-visible,
 .backToStaff:focus-visible {
-  outline: 3px solid rgba(24, 137, 78, 0.38);
+  outline: 3px solid rgba(18, 120, 69, 0.66);
   outline-offset: 3px;
 }
 
 .fieldError {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(var(--validation-space) * -1 + 4px);
-  margin: 0;
+  min-height: clamp(16px, 1.9vh, 19px);
+  margin: 3px 0 0;
   color: #9d3131;
-  font-size: 0.65rem;
-  line-height: 1.15;
+  font-size: 0.68rem;
+  line-height: 1.3;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -339,6 +413,7 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+  transition: color 200ms ease, text-decoration-color 200ms ease;
 }
 
 .primaryButton {
@@ -356,12 +431,7 @@
   font-size: 0.9rem;
   font-weight: 690;
   cursor: pointer;
-  transition: transform 130ms ease, box-shadow 130ms ease, filter 130ms ease;
-}
-
-.primaryButton:hover {
-  filter: brightness(1.04);
-  box-shadow: 0 10px 20px rgba(11, 104, 57, 0.22);
+  transition: transform 200ms ease, box-shadow 200ms ease, filter 200ms ease;
 }
 
 .primaryButton:active {
@@ -390,10 +460,10 @@
 }
 
 .formStatus {
-  margin-top: 7px;
+  min-height: 20px;
+  margin-top: 2px;
 }
 
-.formStatus:empty,
 .admissionStatus:empty {
   display: none;
 }
@@ -414,7 +484,7 @@
 }
 
 .sectionDivider {
-  margin: clamp(8px, 1.7vh, 13px) 0 clamp(7px, 1.57vh, 12px);
+  margin: clamp(2px, 0.7vh, 7px) 0 clamp(10px, 1.6vh, 15px);
 }
 
 .orDivider {
@@ -428,8 +498,9 @@
 }
 
 .sectionDivider strong {
-  font-size: 0.66rem;
+  font-size: clamp(0.64rem, 1.3vh, 0.74rem);
   letter-spacing: 0.18em;
+  white-space: nowrap;
 }
 
 .orDivider strong {
@@ -447,50 +518,35 @@
   color: #18482f;
   background: rgba(249, 255, 251, 0.78);
   cursor: pointer;
-  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+  transition: transform 200ms ease, border-color 200ms ease, background 200ms ease, box-shadow 200ms ease;
 }
 
 .studentPortalAction {
-  min-height: clamp(52px, 7.6vh, 58px);
-  gap: 10px;
-  padding: 7px 11px;
-  border: 2px solid rgba(16, 123, 65, 0.62);
-  background: linear-gradient(135deg, rgba(227, 248, 235, 0.96), rgba(247, 253, 249, 0.94));
+  min-height: clamp(73px, 11vh, 105px);
+  gap: clamp(10px, 1.2vw, 18px);
+  padding: 12px clamp(10px, 1.4vw, 20px);
+  border: 1px solid rgba(16, 123, 65, 0.2);
+  border-radius: 16px;
+  background: linear-gradient(115deg, rgba(247, 255, 249, 0.87), rgba(226, 248, 234, 0.8));
   box-shadow:
-    0 8px 20px rgba(13, 111, 57, 0.13),
+    0 9px 21px rgba(13, 111, 57, 0.13),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
 }
 
-.studentPortalAction:hover {
-  transform: translateY(-1px);
-  border-color: rgba(9, 111, 55, 0.85);
-  background: linear-gradient(135deg, rgba(218, 245, 228, 0.98), rgba(246, 253, 249, 0.98));
-  box-shadow:
-    0 10px 24px rgba(10, 102, 50, 0.18),
-    0 0 0 3px rgba(35, 145, 82, 0.07);
-}
-
-.secondaryActionButton:hover {
-  transform: translateY(-1px);
-  border-color: rgba(25, 123, 69, 0.52);
-  background: rgba(251, 255, 252, 0.9);
-  box-shadow: 0 7px 16px rgba(16, 87, 51, 0.08);
-}
-
 .studentPortalIconBox {
-  width: 48px;
-  height: clamp(38px, 5.5vh, 42px);
+  width: clamp(54px, 8vh, 76px);
+  height: clamp(54px, 8vh, 76px);
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: 14px;
   color: #08713e;
   background: rgba(39, 160, 88, 0.18);
 }
 
 .studentPortalIcon {
-  width: 31px;
-  height: 31px;
+  width: clamp(28px, 4.2vh, 39px);
+  height: clamp(28px, 4.2vh, 39px);
 }
 
 .studentPortalActionText {
@@ -502,14 +558,27 @@
 }
 
 .studentPortalActionText strong {
-  color: #16482f;
-  font-size: 0.9rem;
+  color: #0a6643;
+  font-size: clamp(0.93rem, 2vh, 1.22rem);
 }
 
 .studentPortalActionText small {
   color: #5a6878;
-  font-size: 0.64rem;
+  font-size: clamp(0.69rem, 1.4vh, 0.82rem);
   line-height: 1.35;
+}
+
+.admissionArrowCircle {
+  width: clamp(36px, 5.1vh, 48px);
+  height: clamp(36px, 5.1vh, 48px);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(25, 143, 77, 0.13);
+  border-radius: 50%;
+  background: #d4fae4;
+  box-shadow: 0 4px 12px rgba(10, 106, 54, 0.13);
+  transition: background 180ms ease, transform 180ms ease;
 }
 
 .actionArrow {
@@ -553,6 +622,7 @@
   font-weight: 590;
   text-decoration: underline;
   text-underline-offset: 3px;
+  transition: color 200ms ease, background 200ms ease;
 }
 
 .backIcon {
@@ -584,9 +654,96 @@
   background: #1d9157;
 }
 
+.admissionInformation {
+  padding: 30px;
+  text-align: center;
+}
+
+.admissionInformation h1 {
+  margin-bottom: 16px;
+  color: #0d5634;
+  font-size: 1.5rem;
+}
+
+.admissionInformation p {
+  margin-bottom: 14px;
+  color: #475d52;
+  line-height: 1.5;
+}
+
+.admissionInformation .primaryButton {
+  margin-top: 24px;
+}
+
+.primaryButton:active:not(:disabled),
+.studentPortalAction:active,
+.secondaryActionButton:active {
+  transform: translateY(1px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inputShell:not(.inputShellError):not(:focus-within):hover {
+    border-color: rgba(32, 128, 75, 0.48);
+  }
+
+  .passwordToggle:hover {
+    color: #12633b;
+    background: rgba(21, 117, 67, 0.12);
+  }
+
+  .forgotPassword:hover,
+  .backToStaff:hover {
+    color: #0a7743;
+  }
+
+  .primaryButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+    filter: brightness(1.055);
+    box-shadow: 0 11px 24px rgba(11, 104, 57, 0.28), 0 0 0 3px rgba(35, 145, 82, 0.1);
+  }
+
+  .studentPortalAction:hover {
+    transform: translateY(-1px);
+    border-color: rgba(9, 111, 55, 0.69);
+    background: linear-gradient(135deg, rgba(225, 248, 234, 0.98), rgba(248, 255, 251, 0.98));
+    box-shadow: 0 13px 28px rgba(10, 102, 50, 0.19), 0 0 0 3px rgba(35, 145, 82, 0.1);
+  }
+
+  .studentPortalAction:hover .admissionArrowCircle {
+    background: #b8f4d0;
+    transform: translateX(2px);
+  }
+
+  .secondaryActionButton:hover {
+    transform: translateY(-1px);
+    border-color: rgba(25, 123, 69, 0.52);
+    background: rgba(242, 253, 247, 0.94);
+    box-shadow: 0 8px 19px rgba(16, 87, 51, 0.12);
+  }
+}
+
+@media (forced-colors: active) {
+  .loginCard,
+  .inputShell,
+  .studentPortalAction,
+  .secondaryActionButton {
+    border-color: CanvasText;
+  }
+
+  .passwordToggle:focus-visible,
+  .forgotPassword:focus-visible,
+  .primaryButton:focus-visible,
+  .studentPortalAction:focus-visible,
+  .secondaryActionButton:focus-visible,
+  .backToStaff:focus-visible {
+    outline-color: Highlight;
+  }
+}
+
 @media (max-height: 680px) and (min-width: 981px) {
   .portalMain {
-    transform: translateY(-10px);
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   .siteFooter {
@@ -612,15 +769,6 @@
     padding: 20px 24px 4px;
   }
 
-  .universityName {
-    font-size: 1.45rem;
-  }
-
-  .universitySubtitle {
-    font-size: 0.75rem;
-    letter-spacing: 0.25em;
-  }
-
   .portalMain {
     align-items: flex-start;
     padding-top: 28px;
@@ -638,7 +786,7 @@
   }
 
   .siteHeader {
-    justify-content: center;
+    justify-content: flex-start;
     padding: 18px 18px 0;
   }
 
@@ -687,6 +835,10 @@
     font-size: 1.32rem;
   }
 
+  .unifiedCard .inputShell input {
+    font-size: 1rem;
+  }
+
   .studentPortalTitle {
     font-size: 1.7rem;
   }
@@ -710,7 +862,7 @@
   }
 
   .studentPortalActionText small {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
   }
 
   .siteFooter {
@@ -751,5 +903,15 @@
   .portalPage *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .primaryButton:hover,
+  .primaryButton:active,
+  .studentPortalAction:hover,
+  .studentPortalAction:active,
+  .secondaryActionButton:hover,
+  .secondaryActionButton:active,
+  .studentPortalAction:hover .admissionArrowCircle {
+    transform: none;
   }
 }

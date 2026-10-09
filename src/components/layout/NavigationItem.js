@@ -1,5 +1,5 @@
 import Link from "next/link";
-import PortalIcon from "./PortalIcon";
+import AppIcon from "@/components/ui/AppIcon";
 
 export default function NavigationItem({ item, active, onNavigate }) {
   return (
@@ -9,7 +9,7 @@ export default function NavigationItem({ item, active, onNavigate }) {
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
     >
-      <PortalIcon name={item.icon} />
+      <AppIcon name={item.icon} />
       <span>{item.label}</span>
     </Link>
   );

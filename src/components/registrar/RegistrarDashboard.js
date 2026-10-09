@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import AppIcon from "@/components/ui/AppIcon";
 import { Panel, Metric, LinkButton } from "./RegistrarShared";
 
 export default function RegistrarDashboard() {
@@ -41,7 +42,7 @@ export default function RegistrarDashboard() {
         </Panel>
         <Panel title="Quick Actions" subtitle="Go directly to the owning workflow." className="span-5">
           <div className="list-stack">
-            {[["Find Student", "/registrar/students"], ["Review Pending Enrollment", "/registrar/enrollment"], ["View Requires Correction", "/registrar/enrollment"], ["Generate Enrollment Report", "/registrar/reports-monitoring"]].map(([label, href]) => <Link key={href + label} href={href} className="list-item section-link">{label} →</Link>)}
+            {[["Find Student", "/registrar/students"], ["Review Pending Enrollment", "/registrar/enrollment"], ["View Requires Correction", "/registrar/enrollment"], ["Generate Enrollment Report", "/registrar/reports-monitoring"]].map(([label, href]) => <Link key={href + label} href={href} className="list-item section-link">{label} <AppIcon name="arrowRight" className="inline-action-icon" /></Link>)}
           </div>
         </Panel>
         <Panel title="Recent Enrollment Activity" subtitle="Registrar operations and changes to student records." className="span-8" actions={<LinkButton href="/registrar/reports-monitoring">View History</LinkButton>}>

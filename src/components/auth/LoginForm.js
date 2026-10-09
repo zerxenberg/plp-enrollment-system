@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { EyeIcon, LockIcon, UserIcon } from "./PortalIcons";
+import AppIcon from "@/components/ui/AppIcon";
 import { authenticateDemoAccount, saveDemoSession } from "@/lib/auth/demo-auth";
 import styles from "./auth-portal.module.css";
 
@@ -10,9 +10,10 @@ export default function LoginForm({
   identityLabel,
   identityPlaceholder,
   submitLabel,
-  mode,
 }) {
   const router = useRouter();
+  const identityRef = useRef(null);
+  const passwordRef = useRef(null);
   const [showPassword, setShowPassword] = useState(false);
   const [identity, setIdentity] = useState("");
   const [password, setPassword] = useState("");
@@ -36,7 +37,7 @@ export default function LoginForm({
     const nextErrors = {};
 
     if (!normalizedIdentity) {
-      nextErrors.identity = `Enter your ${mode === "staff" ? "username or Staff ID" : "Student ID or registered email"}.`;
+      nextErrors.identity = "Enter your University ID number or registered email.";
     }
 
     if (!password) {
@@ -47,21 +48,30 @@ export default function LoginForm({
 
     if (Object.keys(nextErrors).length > 0) {
       setStatus("");
+      if (nextErrors.identity) {
+        identityRef.current?.focus();
+      } else {
+        passwordRef.current?.focus();
+      }
       return;
     }
 
-    const session = authenticateDemoAccount({ mode, identity: normalizedIdentity, password });
+    const session = authenticateDemoAccount({ identity: normalizedIdentity, password });
 
     if (!session) {
-      setStatus(
-        mode === "student"
-          ? "The Student ID, registered email, or password does not match the temporary Student demo account."
-          : "The username, staff email, Staff ID, or password does not match an authorized staff demo account.",
-      );
+      setStatus("The ID number, registered email, or password is incorrect for this demo.");
       return;
     }
 
-    saveDemoSession(session);
+    if (session.role === "academic-coordinator") {
+      setStatus("The Academic Coordinator demo account was recognized. Its portal is still under development.");
+      return;
+    }
+
+    if (!saveDemoSession(session)) {
+      setStatus("This demo account could not be signed in. Please try again.");
+      return;
+    }
     const portalLabels = {
       student: "Student",
       registrar: "Registrar",
@@ -81,21 +91,22 @@ export default function LoginForm({
   return (
     <form className={styles.loginForm} onSubmit={handleSubmit} autoComplete="off" noValidate>
       <div className={styles.fieldGroup}>
-        <label className={styles.fieldLabel} htmlFor={`${mode}-identity`}>
+        <label className={styles.fieldLabel} htmlFor="login-identity">
           {identityLabel}
         </label>
         <div className={`${styles.inputShell} ${errors.identity ? styles.inputShellError : ""}`}>
-          <UserIcon className={styles.inputIcon} />
+          <AppIcon name="user" className={styles.inputIcon} />
           <input
-            id={`${mode}-identity`}
-            name={`${mode}-identity`}
+            ref={identityRef}
+            id="login-identity"
+            name="login-identity"
             type="text"
             autoComplete="off"
             required
             value={identity}
             placeholder={identityPlaceholder}
             aria-invalid={Boolean(errors.identity)}
-            aria-describedby={errors.identity ? `${mode}-identity-error` : undefined}
+            aria-describedby={errors.identity ? "login-identity-error" : undefined}
             onChange={(event) => {
               setIdentity(event.target.value);
               clearFieldError("identity");
@@ -104,7 +115,7 @@ export default function LoginForm({
         </div>
         <p
           className={`${styles.fieldError} ${errors.identity ? styles.fieldErrorVisible : ""}`}
-          id={`${mode}-identity-error`}
+          id="login-identity-error"
           aria-live="polite"
         >
           {errors.identity || ""}
@@ -112,21 +123,22 @@ export default function LoginForm({
       </div>
 
       <div className={styles.fieldGroup}>
-        <label className={styles.fieldLabel} htmlFor={`${mode}-password`}>
+        <label className={styles.fieldLabel} htmlFor="login-password">
           Password
         </label>
         <div className={`${styles.inputShell} ${errors.password ? styles.inputShellError : ""}`}>
-          <LockIcon className={styles.inputIcon} />
+          <AppIcon name="lock" className={styles.inputIcon} />
           <input
-            id={`${mode}-password`}
-            name={`${mode}-password`}
+            ref={passwordRef}
+            id="login-password"
+            name="login-password"
             type={showPassword ? "text" : "password"}
             autoComplete="off"
             required
             value={password}
             placeholder="Enter your password"
             aria-invalid={Boolean(errors.password)}
-            aria-describedby={errors.password ? `${mode}-password-error` : undefined}
+            aria-describedby={errors.password ? "login-password-error" : undefined}
             onChange={(event) => {
               setPassword(event.target.value);
               clearFieldError("password");
@@ -139,12 +151,12 @@ export default function LoginForm({
             aria-pressed={showPassword}
             onClick={() => setShowPassword((current) => !current)}
           >
-            <EyeIcon className={styles.eyeIcon} hidden={showPassword} />
+            <AppIcon name={showPassword ? "eyeOff" : "eye"} className={styles.eyeIcon} />
           </button>
         </div>
         <p
           className={`${styles.fieldError} ${errors.password ? styles.fieldErrorVisible : ""}`}
-          id={`${mode}-password-error`}
+          id="login-password-error"
           aria-live="polite"
         >
           {errors.password || ""}
@@ -156,7 +168,7 @@ export default function LoginForm({
       </button>
 
       <button className={styles.primaryButton} type="submit">
-        <LockIcon className={styles.buttonIcon} />
+        <AppIcon name="lock" className={styles.buttonIcon} />
         <span>{submitLabel}</span>
       </button>
 

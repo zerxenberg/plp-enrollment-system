@@ -65,3 +65,38 @@ Do not claim a task is complete unless the available evidence supports it. Repor
 Do not delete or overwrite useful files without a clear reason. Do not reset, clean, checkout over, or broadly reformat work that may belong to the user or another collaborator.
 
 Do not change finalized business rules merely to simplify implementation. If a real conflict is found, identify the conflict and preserve the safer existing rule until the project decision is clarified.
+
+## 8. Global icon standard
+
+Apply this rule to every existing and future interface in the centralized login, Student, Registrar, Academic Coordinator, System Administrator, and shared UI areas.
+
+* Use `lucide-react` exclusively for functional UI icons. Use only verified official exports; do not invent icon names, draw custom SVG paths, or introduce alternate icon libraries or Unicode symbols as substitutes for functional icons. University seals and other brand artwork remain image assets.
+* Render icons through `src/components/ui/AppIcon.js`, the single shared `ICON_REGISTRY`. Add a semantically appropriate verified Lucide export and a stable function-based registry key there when introducing a new icon. Do not import `lucide-react` directly into feature or page components, create parallel icon wrappers, or silently substitute a generic icon for unknown keys.
+* Match icons to actions and meanings. Reuse the same key for the same function across portals; use distinct icons for unrelated functions when a better match exists. Avoid duplicate icons caused by conditional rendering, nested controls, or CSS artwork.
+* Preserve consistent stroke weight, scale, spacing, contrast, and alignment. Use the shared icon's defaults unless context requires a class-based size override; ensure the icon remains legible at mobile breakpoints, zoom, and in both themes.
+* Decorative icons must be hidden from screen readers. Icon-only interactive controls require a meaningful accessible name on the control. If an icon itself conveys information unavailable in surrounding text, supply `title` to `AppIcon`. Keep all icons usable with visible keyboard focus and reduced motion preferences.
+* After changing icons, verify registry keys and official imports, check for duplicate/broken icons and responsive overlaps, and run `npm run lint` and `npm run build`. The ESLint configuration rejects direct icon-library imports and hand-authored inline SVG elements outside the registry.
+
+## 9. Global visual design standard
+
+For all present and future Login, Student, Registrar, Academic Coordinator, System Administrator, and shared UI work, follow the installed `/glassmorphism-modern-gui-design` skill alongside `/frontend-design` and `/accessibility-review` when applicable.
+
+* Preserve PLP branding, typography, content, page structure, dimensions, responsive breakpoints, and functional behavior. Prefer scoped CSS changes to JSX or business logic changes for visual refinements.
+* Reuse the glass, shadow, interaction, and motion tokens in the active `src/styles/portal.css` and the established login styles in `src/components/auth/auth-portal.module.css`. Check existing rules before adding new ones. Do not style the unused `src/app/styles/portal.css` as if it were active.
+* Keep glass edges, translucency, hover highlights, shadows, and green accent glows balanced. Emphasize actions according to their purpose; do not give static academic cards, records, or disabled controls clickable affordances.
+* Maintain keyboard focus visibility, readable contrast, non-hover interaction feedback, touch and reduced-motion support, and responsive stability. Respect existing theme behavior if a theme switcher is introduced later.
+* Verify visual changes in representative login and role portal flows, inspect desktop and mobile layouts, and run relevant lint/build checks. Do not claim untested visual or browser coverage.
+* Treat UI cards according to semantics. Shared `portal-card`, `metric-card`, `info-item`, `list-item`, and `summary-strip` surfaces use restrained border and shadow feedback without movement when informational. Only whole-card links, buttons, and actionable checkbox labels may use the shared 2px hover lift and subtle green glow. Preserve default cursors on passive cards, and style true interactive cards with keyboard focus feedback.
+* Use `--portal-card-motion`, `--portal-card-hover-edge`, and `--portal-card-hover-shadow` from the active portal stylesheet for future card treatments. Enrollment workflow steps reuse `.step-tabs .tab-button`, retain a persistent active state and `aria-current="step"`, and show restrained hover elevation for other enabled steps; never indicate progression or disabled states that the workflow has not defined.
+
+## 10. Permanent authenticated portal header standard
+
+Apply this layout to all existing and future Student, Registrar, Academic Coordinator, and System Administrator interface pages, including child views and new modules.
+
+* Keep the PLP seal, portal name, account identity, profile access, and logout in the left sidebar. Never duplicate the university seal/name or a profile avatar/name box above the main content.
+* Every authenticated page renders its own descriptive title and optional subtitle through the shared `PageHeader` in `src/components/ui/PortalUI.js`. Shared right-side utility controls come from `PortalHeaderContext` and `Topbar`, within the same compact page header row. Do not add a separate horizontal branding bar or reserve header height above the content.
+* Preserve the existing role-specific `PageHeader` actions and the Enrollment term utility only where relevant. The System Administrator portal does not show the Enrollment term pill. Responsive headers may wrap without overlap; keep page content close to the top and use the active `src/styles/portal.css` spacing tokens and rules.
+* The shared Online Enrollment schedule indicator (`.term-pill` in `src/styles/portal.css`) uses a clearly visible green border, slightly contrasting translucent glass gradient, restrained shadow and glow, and a subtle calendar icon surface. Preserve its text, dates, passive information semantics, and responsive icon-only treatment. Reuse this rule for every future instance; do not add page-specific copies, pointer cursors, or movement suggesting the indicator is clickable. Honor explicit dark themes and forced-colors fallbacks.
+* The notification bell opens a role-specific, keyboard-accessible preview anchored to the shared header. It shows actual state from the available notification provider, supports Escape and outside-click dismissal, and links to the role's dedicated Notifications page without adding unrelated sidebar items.
+* Authorized notification details and read state must remain scoped to the current authenticated identity and role. The existing demo provider holds in-memory mock notification records; do not describe this as persistent Supabase-backed delivery until a real authorized backend has been integrated.
+* Do not change portal business workflows, permissions, sidebar module order, or icons to implement header presentation. Reuse the shared header and notification components on new pages; verify desktop, tablet, mobile, keyboard, and reduced-motion behavior.

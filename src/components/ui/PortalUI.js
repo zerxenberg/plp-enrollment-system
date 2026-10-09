@@ -1,21 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import PortalIcon from "@/components/layout/PortalIcon";
+import { useContext, useEffect, useRef } from "react";
+import AppIcon from "@/components/ui/AppIcon";
 import { getStatusLabel } from "@/constants/statuses";
+import Topbar from "@/components/layout/Topbar";
+import { PortalHeaderContext } from "@/components/layout/PortalHeaderContext";
 
 export function Card({ children, className = "", as: Tag = "section" }) {
   return <Tag className={`portal-card ${className}`}>{children}</Tag>;
 }
 
 export function PageHeader({ title, description, actions }) {
+  const portalHeader = useContext(PortalHeaderContext);
   return (
     <header className="page-header">
-      <div>
+      <div className="page-header-copy">
         <h1>{title}</h1>
         {description ? <p>{description}</p> : null}
       </div>
-      {actions ? <div className="page-header-actions">{actions}</div> : null}
+      {actions || portalHeader ? (
+        <div className="page-header-utilities">
+          {actions ? <div className="page-header-actions">{actions}</div> : null}
+          {portalHeader ? <Topbar {...portalHeader} /> : null}
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -37,7 +45,7 @@ export function SearchControl({ label = "Search", value, onChange, placeholder }
   return (
     <label className="control-field search-field">
       <span className="sr-only">{label}</span>
-      <PortalIcon name="search" className="control-icon" />
+      <AppIcon name="search" className="control-icon" />
       <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder || label} />
     </label>
   );
@@ -117,7 +125,7 @@ export function Modal({ open, title, children, onClose, footer }) {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section ref={dialogRef} className="portal-modal" role="dialog" aria-modal="true" aria-labelledby="portal-modal-title">
-        <header><h2 id="portal-modal-title">{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><PortalIcon name="close" /></button></header>
+        <header><h2 id="portal-modal-title">{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><AppIcon name="close" /></button></header>
         <div className="modal-body">{children}</div>
         {footer ? <footer className="modal-footer">{footer}</footer> : null}
       </section>

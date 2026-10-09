@@ -54,7 +54,7 @@ export default function StudentNotifications() {
 
         <div className="list-stack">
           {rows.map((item) => (
-            <article className="list-item" key={item.id}>
+            <article className="list-item notification-entry" key={item.id} id={`notification-${item.id}`} tabIndex={-1}>
               <div className="list-item-header">
                 <div>
                   <strong>{item.title}</strong>

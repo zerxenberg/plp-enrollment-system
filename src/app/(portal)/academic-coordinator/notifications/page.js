@@ -1,7 +1,7 @@
-import AcademicCoordinatorNotifications from "@/components/academic-coordinator/AcademicCoordinatorNotifications";
+import RoleNotifications from "@/components/shared/RoleNotifications";
 
-export const metadata = { title: "Academic Alerts" };
+export const metadata = { title: "Academic Coordinator Notifications" };
 
 export default function AcademicCoordinatorNotificationsPage() {
-  return <AcademicCoordinatorNotifications />;
+  return <RoleNotifications role="academic-coordinator" />;
 }
