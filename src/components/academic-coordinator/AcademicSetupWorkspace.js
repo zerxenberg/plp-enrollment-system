@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
 import { Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
@@ -23,6 +23,25 @@ const programMajors = (program) => program?.majors || program?.specializations?.
 const semesterKey = (yearLevel, semester) => `${yearLevel}|${semester}`;
 const semesterSections = YEARS.flatMap((yearLevel) => SEMESTERS.map((semester) => ({ yearLevel, semester, key: semesterKey(yearLevel, semester) })));
 const semesterIndex = (yearLevel, semester) => YEARS.indexOf(yearLevel) * SEMESTERS.length + SEMESTERS.indexOf(semester);
+// Render only the term groups carried by this curriculum, including configured
+// empty semesters. Other programs can have a different number of terms.
+const curriculumYearGroups = (curriculum) => {
+  const byYear = new Map();
+  for (const { yearLevel, semester } of [...(curriculum.semesters || []), ...(curriculum.assignments || [])]) {
+    if (!yearLevel || !semester) continue;
+    if (!byYear.has(yearLevel)) byYear.set(yearLevel, new Set());
+    byYear.get(yearLevel).add(semester);
+  }
+  const order = (items, reference) => [...items].sort((a, b) => {
+    const aIndex = reference.indexOf(a);
+    const bIndex = reference.indexOf(b);
+    return (aIndex < 0 ? reference.length : aIndex) - (bIndex < 0 ? reference.length : bIndex) || a.localeCompare(b);
+  });
+  return order(byYear.keys(), YEARS).map((yearLevel) => ({
+    yearLevel,
+    semesters: order(byYear.get(yearLevel), SEMESTERS),
+  }));
+};
 const CURRICULUM_STATUSES = ["Draft", "Active", "Inactive", "Archived"];
 const CONFIRMABLE_CURRICULUM_ACTIONS = {
   activate: { from: ["Draft", "Inactive"], to: "Active", label: "Activate" },
@@ -111,7 +130,8 @@ export default function AcademicSetupWorkspace() {
     (status === "ALL" || item.status === status) &&
     `${item.id} ${item.version} ${item.program} ${programs.find((entry) => entry.code === item.program)?.name || ""} ${item.department} ${departments.find((entry) => entry.id === item.department)?.name || ""} ${item.major || ""}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => String(a[curriculumSort] || "").localeCompare(String(b[curriculumSort] || "")) || a.id.localeCompare(b.id));
-  const visibleSemesterCount = visibleCurricula.filter((item) => !collapsedCurricula[item.id]).length * semesterSections.length;
+  const visibleSemesterCount = visibleCurricula.reduce((count, item) =>
+    count + (collapsedCurricula[item.id] ? 0 : curriculumYearGroups(item).reduce((total, group) => total + group.semesters.length, 0)), 0);
   const activeForConfirmation = versionConfirmation?.action === "activate" ? curricula.find((item) =>
     item.id !== versionConfirmation.curriculum.id && item.status === "Active" &&
     item.program === versionConfirmation.curriculum.program &&
@@ -348,7 +368,7 @@ export default function AcademicSetupWorkspace() {
                 { key: "majors", label: "Majors", render: (row) => programMajors(row).join(", ") || "None" },
                 { key: "curricula", label: "Curriculum Versions", render: (row) => curricula.filter((item) => item.program === row.code).length },
                 { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
-                { key: "actions", label: "Actions", render: (row) => <div className="cell-actions"><button className="table-action" onClick={() => { changeDepartment(row.department); setProgram(row.code); setView("curriculum"); }}>View Curricula</button><button className="table-action" onClick={() => openProgram(row)}>Edit</button></div> },
+                { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view" onClick={() => { changeDepartment(row.department); setProgram(row.code); setView("curriculum"); }}>View Curricula</TableActionButton><TableActionButton tone="edit" onClick={() => openProgram(row)}>Edit</TableActionButton></TableActions> },
               ]} />
             </>
           )}
@@ -365,7 +385,7 @@ export default function AcademicSetupWorkspace() {
                 { key: "prerequisites", label: "Prerequisites", render: (row) => row.prerequisites?.join(", ") || "None" },
                 { key: "fee", label: "Estimated Subject Fee", render: (row) => formatDemoPeso(Number(row.units) * Number(row.feePerUnit ?? 100)) },
                 { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status || "Active"} /> },
-                { key: "actions", label: "Actions", render: (row) => <button className="table-action" onClick={() => openSubject(row)}>Edit / Prerequisites</button> },
+                { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="edit" onClick={() => openSubject(row)}>Edit / Prerequisites</TableActionButton></TableActions> },
               ]} />
               {subjectPageCount > 1 && <div className="academic-pagination"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><span>{Math.min(page, subjectPageCount)} / {subjectPageCount}</span><Button variant="ghost" disabled={page >= subjectPageCount} onClick={() => setPage((current) => current + 1)}>Next</Button></div>}
             </>
@@ -390,12 +410,14 @@ export default function AcademicSetupWorkspace() {
                     {visibleCurricula.length === 0 && <tbody><tr><td className="academic-curriculum-empty" colSpan={11}>No curriculum versions match the selected filters.</td></tr></tbody>}
                     {visibleCurricula.map((curriculum) => {
                       const expanded = !collapsedCurricula[curriculum.id];
-                      const yearGroupIds = YEARS.map((_, index) => `academic-year-${curriculum.id}-${index}`);
+                      const yearGroups = curriculumYearGroups(curriculum);
+                      const yearGroupIds = yearGroups.map((_, index) => `academic-year-${curriculum.id}-${index}`);
+                      const detailsId = `academic-year-${curriculum.id}-empty`;
                       return <Fragment key={curriculum.id}>
                         <tbody className="academic-curriculum-heading-group" data-curriculum-id={curriculum.id}>
                           <tr className="academic-version-header-row">
                             <th scope="row" className="academic-version-cell">
-                              <button type="button" className="academic-version-toggle" aria-expanded={expanded} aria-controls={yearGroupIds.join(" ")} onClick={() => setCollapsedCurricula((current) => ({ ...current, [curriculum.id]: !current[curriculum.id] }))}>
+                              <button type="button" className="academic-version-toggle" aria-expanded={expanded} aria-controls={yearGroupIds.length ? yearGroupIds.join(" ") : detailsId} onClick={() => setCollapsedCurricula((current) => ({ ...current, [curriculum.id]: !current[curriculum.id] }))}>
                                 <span className={`academic-version-chevron ${expanded ? "is-expanded" : ""}`}><AppIcon name="chevronRight" size={15} /></span>
                                 <span className="academic-curriculum-version">{curriculum.version}</span>
                               </button>
@@ -404,34 +426,36 @@ export default function AcademicSetupWorkspace() {
                             <td>{curriculum.program}</td>
                             <td title={curriculum.major || "None"}>{curriculum.major || "None"}</td>
                             <td>{curriculum.effectiveAcademicYear}</td>
-                            <td colSpan={4} className="academic-curriculum-meta-space" aria-hidden="true" />
+                            <td colSpan={4} className="academic-curriculum-parent-space"><span className="sr-only">Year and semester details follow below.</span></td>
                             <td><span className={`status-badge academic-curriculum-status academic-curriculum-status-${String(curriculum.status).toLowerCase()}`}>{curriculum.status}</span></td>
-                            <td className="academic-actions-cell"><div className="academic-row-actions academic-version-actions">
-                              <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => openCurriculum(curriculum, true)}>View Curriculum</button>
-                              {curriculum.status === "Draft" && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => openCurriculum(curriculum)}>Edit Draft</button>}
-                              {curriculum.status !== "Archived" && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => manageVersion("duplicate", curriculum)}>Duplicate</button>}
-                              {curriculum.status !== "Archived" && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => manageVersion("validate", curriculum)}>Validate</button>}
-                              {["Draft", "Inactive"].includes(curriculum.status) && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => confirmVersionAction("activate", curriculum)}>Activate</button>}
-                              {curriculum.status === "Active" && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => confirmVersionAction("deactivate", curriculum)}>Deactivate</button>}
-                              {curriculum.status === "Inactive" && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => confirmVersionAction("archive", curriculum)}>Archive</button>}
-                              {curriculum.status === "Archived" && <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => confirmVersionAction("restore", curriculum)}>Restore</button>}
-                              <button className="table-action academic-glass-action" type="button" disabled={versionBusy} onClick={() => setCurriculumHistory(curriculum)}>History</button>
-                            </div></td>
+                            <td className="academic-actions-cell"><TableActions className="academic-row-actions academic-version-actions">
+                              <TableActionButton tone="view" disabled={versionBusy} onClick={() => openCurriculum(curriculum, true)}>View Curriculum</TableActionButton>
+                              {curriculum.status === "Draft" && <TableActionButton tone="edit" disabled={versionBusy} onClick={() => openCurriculum(curriculum)}>Edit Draft</TableActionButton>}
+                              {curriculum.status !== "Archived" && <TableActionButton tone="create" icon="duplicate" disabled={versionBusy} onClick={() => manageVersion("duplicate", curriculum)}>Duplicate</TableActionButton>}
+                              {curriculum.status !== "Archived" && <TableActionButton tone="review" icon="check" disabled={versionBusy} onClick={() => manageVersion("validate", curriculum)}>Validate</TableActionButton>}
+                              {["Draft", "Inactive"].includes(curriculum.status) && <TableActionButton tone="approve" disabled={versionBusy} onClick={() => confirmVersionAction("activate", curriculum)}>Activate</TableActionButton>}
+                              {curriculum.status === "Active" && <TableActionButton tone="danger" icon="eyeOff" disabled={versionBusy} onClick={() => confirmVersionAction("deactivate", curriculum)}>Deactivate</TableActionButton>}
+                              {curriculum.status === "Inactive" && <TableActionButton tone="danger" icon="archive" disabled={versionBusy} onClick={() => confirmVersionAction("archive", curriculum)}>Archive</TableActionButton>}
+                              {curriculum.status === "Archived" && <TableActionButton tone="approve" icon="restore" disabled={versionBusy} onClick={() => confirmVersionAction("restore", curriculum)}>Restore</TableActionButton>}
+                              <TableActionButton tone="history" disabled={versionBusy} onClick={() => setCurriculumHistory(curriculum)}>History</TableActionButton>
+                            </TableActions></td>
                           </tr>
                         </tbody>
-                        {YEARS.map((yearLevel, yearIndex) => <tbody key={`${curriculum.id}-${yearLevel}`} id={yearGroupIds[yearIndex]} className="academic-curriculum-year-group" data-curriculum-id={curriculum.id} hidden={!expanded}>
-                          {SEMESTERS.map((term, termIndex) => {
+                        {yearGroups.length === 0 && <tbody id={detailsId} className="academic-curriculum-year-group" hidden={!expanded}><tr><td colSpan={11} className="academic-curriculum-empty">No semester assignments have been configured for this curriculum.</td></tr></tbody>}
+                        {yearGroups.map(({ yearLevel, semesters }, yearIndex) => <tbody key={`${curriculum.id}-${yearLevel}`} id={yearGroupIds[yearIndex]} className="academic-curriculum-year-group" data-curriculum-id={curriculum.id} hidden={!expanded}>
+                          {semesters.map((term, termIndex) => {
                             const section = { yearLevel, semester: term };
                             const metrics = summarizeCurriculum(curriculum.assignments || [], subjects, yearLevel, term).selected;
                             return <tr className="academic-semester-row" key={`${curriculum.id}-${yearLevel}-${term}`}>
-                              {termIndex === 0 && <><td className="academic-curriculum-meta-space" colSpan={5} rowSpan={2} aria-hidden="true" /><th className="academic-year-cell" scope="rowgroup" rowSpan={2}>{yearLevel}</th></>}
+                              <td className="academic-curriculum-detail-spacer" colSpan={5}><span className="sr-only">{curriculum.version} semester details</span></td>
+                              {termIndex === 0 && <th className="academic-year-cell" scope="rowgroup" rowSpan={semesters.length}>{yearLevel}</th>}
                               <th scope="row" className="academic-semester-cell">{term}</th>
                               <td className="academic-number-cell">{metrics.subjects}</td>
                               <td className="academic-number-cell">{metrics.units}</td>
-                              <td className="academic-semester-status" aria-hidden="true" />
-                              <td className="academic-actions-cell"><div className="academic-row-actions">
-                                <button className="table-action academic-glass-action" type="button" onClick={() => setSemesterDetails({ curriculum, section })}>View Subjects</button>
-                              </div></td>
+                              <td className="academic-semester-status"><span className="sr-only">Status shown on parent curriculum row.</span></td>
+                              <td className="academic-actions-cell"><TableActions className="academic-row-actions">
+                                <TableActionButton tone="view" onClick={() => setSemesterDetails({ curriculum, section })}>View Subjects</TableActionButton>
+                              </TableActions></td>
                             </tr>;
                           })}
                         </tbody>)}
@@ -545,7 +569,7 @@ export default function AcademicSetupWorkspace() {
                       ...(dialog === "curriculum" ? [{ key: "actions", label: "Actions", render: (item) => <div className="academic-assignment-actions"><label>Move to <select aria-label={`Move ${item.subjectCode} to semester`} value={semesterKey(item.yearLevel, item.semester)} onChange={(event) => {
                         const destination = semesterSections.find((option) => option.key === event.target.value);
                         if (destination) { updateAssignment(item.subjectCode, { yearLevel: destination.yearLevel, semester: destination.semester }); setActiveSemester(destination.key); }
-                      }}>{semesterSections.map((option) => <option key={option.key} value={option.key}>{option.yearLevel} · {option.semester}</option>)}</select></label><button type="button" className="table-action" onClick={() => removeAssignment(item.subjectCode)}>Remove</button></div> }] : []),
+                      }}>{semesterSections.map((option) => <option key={option.key} value={option.key}>{option.yearLevel} · {option.semester}</option>)}</select></label><TableActions><TableActionButton tone="danger" onClick={() => removeAssignment(item.subjectCode)}>Remove</TableActionButton></TableActions></div> }] : []),
                     ]} />
                   </div>
                 </section>;

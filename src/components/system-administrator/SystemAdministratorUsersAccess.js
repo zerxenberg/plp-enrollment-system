@@ -2,7 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Button, Card, DataTable, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, Card, DataTable, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 
 const TABS = ["Users", "Roles", "Permissions", "Access Activity"];
@@ -61,7 +61,7 @@ export default function SystemAdministratorUsersAccess() {
     { key: "accountStatus", label: "Account Status", render: (row) => <StatusBadge value={row.accountStatus === "Active" ? "ACTIVE" : "INACTIVE"} label={row.accountStatus} /> },
     { key: "lastLogin", label: "Last Login" },
     { key: "dateCreated", label: "Date Created" },
-    { key: "actions", label: "Actions", render: (row) => <button className="table-action" type="button" onClick={() => setActionMessage(`Viewing ${row.fullName}.`)}>View User</button> },
+    { key: "actions", label: "Actions", render: (row) => <TableActionButton tone="view" onClick={() => setActionMessage(`Viewing ${row.fullName}.`)}>View User</TableActionButton> },
   ];
 
   return (
@@ -155,8 +155,8 @@ export default function SystemAdministratorUsersAccess() {
               { key: "user", label: "User" },
               { key: "role", label: "Role" },
               { key: "lastLogin", label: "Last Login" },
-              { key: "accountStatus", label: "Account Status" },
-              { key: "recentLoginResult", label: "Recent Login Result" },
+              { key: "accountStatus", label: "Account Status", render: (row) => <StatusBadge value={row.accountStatus} label={row.accountStatus} /> },
+              { key: "recentLoginResult", label: "Recent Login Result", render: (row) => <StatusBadge value={row.recentLoginResult === "Successful" ? "COMPLETED" : "FAILED"} label={row.recentLoginResult} /> },
               { key: "recentAccountChange", label: "Recent Account Change" },
             ]}
             rows={ACCESS_ACTIVITY}

@@ -56,7 +56,7 @@ export default function SystemAdministratorAuditMonitoring() {
               { key: "module", label: "Module" },
               { key: "action", label: "Action" },
               { key: "relatedRecord", label: "Related Record" },
-              { key: "result", label: "Result" },
+              { key: "result", label: "Result", render: (row) => <StatusBadge value={row.result === "Successful" ? "COMPLETED" : "FAILED"} label={row.result} /> },
               { key: "ipAddress", label: "IP Address" },
             ]}
           />
@@ -122,7 +122,7 @@ export default function SystemAdministratorAuditMonitoring() {
               { key: "module", label: "Module" },
               { key: "message", label: "Message" },
               { key: "timestamp", label: "Timestamp" },
-              { key: "status", label: "Status" },
+              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
             ]}
           />
           <div className="action-row" style={{ marginTop: 12 }}>

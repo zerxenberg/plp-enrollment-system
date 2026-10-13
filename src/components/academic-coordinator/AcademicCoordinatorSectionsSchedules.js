@@ -11,6 +11,8 @@ import {
   PageHeader,
   SearchControl,
   StatusBadge,
+  TableActionButton,
+  TableActions,
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Details, Feedback, Info, Metric, Panel, Tabs } from "@/components/registrar/RegistrarShared";
@@ -161,7 +163,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 { key: "semester", label: "Semester" },
                 { key: "status", label: "Offering Status", render: (row) => <StatusBadge value={row.status.toUpperCase()} label={row.status} /> },
                 { key: "plannedSections", label: "Planned Sections" },
-                { key: "actions", label: "Actions", render: (row) => <div className="cell-actions"><button className="table-action" type="button" onClick={() => setSelected(row)}>View Offering</button><button className="table-action" type="button" onClick={() => { setSelected(row); setOfferingForm({ ...row }); setDialog("offering"); }}>Edit Offering</button><button className="table-action" type="button" onClick={() => { setView("sections"); setSearch(row.subjectCode); }}>Plan Sections</button></div> },
+                { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view" onClick={() => setSelected(row)}>View Offering</TableActionButton><TableActionButton tone="edit" onClick={() => { setSelected(row); setOfferingForm({ ...row }); setDialog("offering"); }}>Edit Offering</TableActionButton><TableActionButton tone="schedule" icon="calendar" onClick={() => { setView("sections"); setSearch(row.subjectCode); }}>Plan Sections</TableActionButton></TableActions> },
               ]}
             />
           </>
@@ -184,7 +186,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 { key: "confirmed", label: "Current Enrollment" },
                 { key: "remaining", label: "Remaining Slots", render: (row) => Math.max(0, row.capacity - row.confirmed) },
                 { key: "sectionStatus", label: "Section Status", render: (row) => { const value = row.sectionStatus || (row.confirmed >= row.capacity ? "Full" : "Open"); return <StatusBadge value={value.toUpperCase()} label={value} />; } },
-                { key: "actions", label: "Actions", render: (row) => <div className="cell-actions"><button className="table-action" type="button" onClick={() => setSelected(row)}>View Section</button><button className="table-action" type="button" onClick={() => { setSelected(row); setSectionForm({ code: row.code, subject: row.subject, program: row.program || "BSIT", academicTerm: row.academicTerm || student.term.shortLabel, capacity: row.capacity, sectionStatus: row.sectionStatus || "Open" }); setDialog("section"); }}>Edit Section</button><button className="table-action" type="button" onClick={() => { setScheduleForm({ sectionCode: row.code, day: row.day || "Monday", start: row.start || "08:00", end: row.end || "10:00", room: row.room === "TBA" ? "" : row.room }); setDialog("schedule"); }}>Open Schedule</button></div> },
+                { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view" onClick={() => setSelected(row)}>View Section</TableActionButton><TableActionButton tone="edit" onClick={() => { setSelected(row); setSectionForm({ code: row.code, subject: row.subject, program: row.program || "BSIT", academicTerm: row.academicTerm || student.term.shortLabel, capacity: row.capacity, sectionStatus: row.sectionStatus || "Open" }); setDialog("section"); }}>Edit Section</TableActionButton><TableActionButton tone="schedule" onClick={() => { setScheduleForm({ sectionCode: row.code, day: row.day || "Monday", start: row.start || "08:00", end: row.end || "10:00", room: row.room === "TBA" ? "" : row.room }); setDialog("schedule"); }}>Open Schedule</TableActionButton></TableActions> },
               ]}
             />
           </>
@@ -207,7 +209,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 { key: "room", label: "Room" },
                 { key: "academicTerm", label: "Academic Term", render: (row) => row.academicTerm || student.term.shortLabel },
                 { key: "conflict", label: "Conflict Status", render: (row) => <StatusBadge value="PASSED" label={row.day && row.start && row.end ? "No Known Conflict" : "Not Checked"} /> },
-                { key: "actions", label: "Actions", render: (row) => <div className="cell-actions"><button className="table-action" type="button" onClick={() => setSelected(row)}>View Schedule</button><button className="table-action" type="button" onClick={() => { setScheduleForm({ sectionCode: row.code, day: row.day || "Monday", start: row.start || "08:00", end: row.end || "10:00", room: row.room === "TBA" ? "" : row.room }); setDialog("schedule"); }}>Edit Schedule</button></div> },
+                { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view" onClick={() => setSelected(row)}>View Schedule</TableActionButton><TableActionButton tone="edit" onClick={() => { setScheduleForm({ sectionCode: row.code, day: row.day || "Monday", start: row.start || "08:00", end: row.end || "10:00", room: row.room === "TBA" ? "" : row.room }); setDialog("schedule"); }}>Edit Schedule</TableActionButton></TableActions> },
               ]}
             />
           </>
@@ -234,7 +236,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 { key: "confirmedEnrollment", label: "Confirmed Enrollment Count" },
                 { key: "remainingSlots", label: "Remaining Slots" },
                 { key: "capacityStatus", label: "Capacity Status", render: (row) => <StatusBadge value={row.capacityStatus === "Full" ? "FULL" : row.capacityStatus === "Near Capacity" || row.capacityStatus === "High Demand" ? "REQUIRES_REVIEW" : "OPEN"} label={row.capacityStatus} /> },
-                { key: "actions", label: "Actions", render: (row) => <button className="table-action" type="button" onClick={() => { setView("sections"); setSearch(row.subject); }}>View Sections</button> },
+                { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view" onClick={() => { setView("sections"); setSearch(row.subject); }}>View Sections</TableActionButton></TableActions> },
               ]}
             />
             <div className="action-row" style={{ marginTop: 12 }}>

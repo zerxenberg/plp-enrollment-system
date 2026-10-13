@@ -29,11 +29,16 @@ export function PageHeader({ title, description, actions }) {
 }
 
 export function StatusBadge({ value, label }) {
-  const normalized = String(value || "unknown").toLowerCase();
-  const isDanger = normalized.includes("not_eligible") || normalized.includes("correct") || normalized.includes("fail") || normalized.includes("restrict") || normalized === "full";
-  const isPositive = normalized.includes("confirm") || normalized === "validated" || normalized.includes("pass") || normalized === "eligible" || normalized === "active" || normalized === "open" || normalized === "available" || normalized === "completed" || normalized === "credited";
-  const isWarning = normalized === "for_validation" || normalized.includes("review") || normalized.includes("submitted") || normalized.includes("progress") || normalized.includes("near") || normalized === "incomplete";
-  const tone = isDanger ? "danger" : isPositive ? "positive" : isWarning ? "warning" : "neutral";
+  const normalized = String(value || "unknown").trim().toLowerCase().replaceAll(/\s+/g, "_");
+  let tone = "neutral";
+  if (/correct|warning/.test(normalized)) tone = "correction";
+  else if (/review/.test(normalized)) tone = "review";
+  else if (/not_eligible|fail|reject|restrict|error|^full$|^blocked$/.test(normalized)) tone = "danger";
+  else if (/^inactive$|cancel|archive|^disabled$/.test(normalized)) tone = "muted";
+  else if (/^in_progress$|process|synchroniz|^syncing$/.test(normalized)) tone = "progress";
+  else if (/pending|waiting|^submitted$|^for_validation$|near|incomplete|^uploaded$/.test(normalized)) tone = "warning";
+  else if (/confirm|complet|publish|^graduated$|^credited$/.test(normalized)) tone = "info";
+  else if (/^active$|^open$|^available$|^approved$|^passed$|^eligible$|^eligible_normal$|^validated$|^connected$|^regular$/.test(normalized)) tone = "positive";
   return <span className={`status-badge status-${tone}`}>{label || getStatusLabel(value)}</span>;
 }
 
@@ -125,16 +130,42 @@ export function FilterControl({ label, value, onChange, options }) {
   );
 }
 
+const TABLE_ACTION_DEFAULT_ICONS = Object.freeze({
+  view: "eye",
+  edit: "edit",
+  schedule: "calendar",
+  create: "add",
+  approve: "approve",
+  review: "review",
+  history: "history",
+  danger: "delete",
+});
+
+// Supports native buttons and existing navigation Links without changing handlers or routes.
+export function TableActionButton({ children, tone = "view", icon, as: Element = "button", type = "button", className = "", ...props }) {
+  const iconName = icon || TABLE_ACTION_DEFAULT_ICONS[tone] || "eye";
+  return (
+    <Element className={`table-action table-action-${tone} ${className}`.trim()} {...(Element === "button" ? { type } : {})} {...props}>
+      <AppIcon name={iconName} size={15} strokeWidth={2} />
+      <span>{children}</span>
+    </Element>
+  );
+}
+
+export function TableActions({ children, className = "" }) {
+  return <div className={`cell-actions ${className}`.trim()}>{children}</div>;
+}
+
 export function DataTable({ columns, rows, rowKey, emptyMessage = "No records found." }) {
   if (!rows.length) return <EmptyState title={emptyMessage} />;
   return (
-    <div className="table-scroll" tabIndex="0" aria-label="Scrollable table region">
+    <div className="table-scroll" role="region" tabIndex={0} aria-label="Scrollable table region">
       <table className="data-table">
         <thead><tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
         <tbody>
           {rows.map((row, index) => (
             <tr key={typeof rowKey === "function" ? rowKey(row) : row[rowKey] || index}>
-              {columns.map((column) => <td key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>)}
+              {columns.map((column) => <td className={column.key === "actions" || (column.key === "action" && column.render) ? "table-actions-cell" : undefined} key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>)}
             </tr>
           ))}
         </tbody>

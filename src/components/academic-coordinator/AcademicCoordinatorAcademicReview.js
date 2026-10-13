@@ -9,6 +9,8 @@ import {
   PageHeader,
   SearchControl,
   StatusBadge,
+  TableActionButton,
+  TableActions,
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Details, Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
@@ -109,7 +111,7 @@ export default function AcademicCoordinatorAcademicReview() {
               { key: "failedAcademicRule", label: "Failed Academic Rule" },
               { key: "dateSubmitted", label: "Date Submitted" },
               { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
-              { key: "actions", label: "Actions", render: (row) => <div className="cell-actions"><button className="table-action" type="button" onClick={() => setSelectedReference(row.reference)}>Review Case</button><button className="table-action" type="button" onClick={() => setSelectedReference(row.reference)}>View Academic Context</button></div> },
+              { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="review" onClick={() => setSelectedReference(row.reference)}>Review Case</TableActionButton><TableActionButton tone="view" onClick={() => setSelectedReference(row.reference)}>View Academic Context</TableActionButton></TableActions> },
             ]}
           />
         ) : (
@@ -126,7 +128,7 @@ export default function AcademicCoordinatorAcademicReview() {
               { key: "academicReviewReason", label: "Academic Reason" },
               { key: "academicReviewCoordinator", label: "Coordinator" },
               { key: "academicReviewDate", label: "Decision Date" },
-              { key: "actions", label: "Actions", render: (row) => <button className="table-action" type="button" onClick={() => setSelectedReference(row.reference)}>View Details</button> },
+              { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view" onClick={() => setSelectedReference(row.reference)}>View Details</TableActionButton></TableActions> },
             ]}
           />
         )}

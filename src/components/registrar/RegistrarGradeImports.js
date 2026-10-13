@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { downloadGradeTemplate, GRADE_IMPORT_HEADERS, GRADE_IMPORT_SCOPE, parseGradeFile } from "@/features/grade-import/grade-import-service";
-import { Button, DataTable, FilterControl, InternalTabs, Modal, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, InternalTabs, Modal, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 import { Feedback, Info, Metric, Panel } from "./RegistrarShared";
 import RegistrarGradeUploadPicker from "./RegistrarGradeUploadPicker";
 
@@ -150,10 +150,10 @@ function ImportRowTable({ batch, onAmend, published = false, displayedRows }) {
           ? <div className="list-stack">{rowIssues(row).map((issue, index) =>
             <span key={`${issue.code || "issue"}:${index}`} title={issue.message}><StatusBadge value={isBlocking(issue) ? "FAILED" : "REQUIRES_REVIEW"} label={issue.code ? `${labelFor(issue.severity)}: ${labelFor(issue.code)}` : labelFor(issue.severity)} /> <span>{issue.message}</span></span>)}</div>
           : batch?.validatedAt ? <StatusBadge value="VALIDATED" label="No issues" /> : <StatusBadge value="UPLOADED" label="Pending validation" /> },
-        { key: "actions", label: "Actions", render: (row) => <div className="cell-actions">
-          <button type="button" className="table-action" onClick={() => setDetailRow(row)}>View Row Details</button>
-          {published && onAmend ? <button type="button" className="table-action" onClick={() => onAmend(row)}>Amend Demo Result</button> : null}
-        </div> },
+        { key: "actions", label: "Actions", render: (row) => <TableActions>
+          <TableActionButton icon="eye" tone="view" type="button" onClick={() => setDetailRow(row)}>View Row Details</TableActionButton>
+          {published && onAmend ? <TableActionButton icon="edit" tone="edit" type="button" onClick={() => onAmend(row)}>Amend Demo Result</TableActionButton> : null}
+        </TableActions> },
       ]}
     />
     <Modal open={Boolean(detailRow)} title="Grade Row Details" onClose={() => setDetailRow(null)}
@@ -400,7 +400,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
                 { key: "count", label: "Grade Rows", render: (batch) => batch.rows?.length || 0 },
                 { key: "status", label: "Status", render: (batch) => <StatusBadge value={batch.status} /> },
                 { key: "date", label: "Date", render: (batch) => displayDate(batch.createdAt) },
-                { key: "action", label: "Action", render: (batch) => <button type="button" className="table-action" onClick={() => selectBatch(batch)}>{isEditable(batch) ? "Review Import" : "View Batch"}</button> },
+                { key: "action", label: "Action", render: (batch) => <TableActions><TableActionButton icon={isEditable(batch) ? "review" : "eye"} tone={isEditable(batch) ? "review" : "view"} type="button" onClick={() => selectBatch(batch)}>{isEditable(batch) ? "Review Import" : "View Batch"}</TableActionButton></TableActions> },
               ]} />
           </Panel>
         </div>
@@ -473,7 +473,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
             { key: "count", label: "Rows", render: (batch) => batch.rows?.length || 0 },
             { key: "status", label: "Status", render: (batch) => <StatusBadge value={batch.status} /> },
             { key: "created", label: "Uploaded", render: (batch) => displayDate(batch.createdAt) },
-            { key: "action", label: "Action", render: (batch) => <button type="button" className="table-action" onClick={() => selectBatch(batch)}>Validate / Review</button> },
+            { key: "action", label: "Action", render: (batch) => <TableActions><TableActionButton icon="review" tone="review" type="button" onClick={() => selectBatch(batch)}>Validate / Review</TableActionButton></TableActions> },
           ]} />
       </> : null}
 
@@ -581,7 +581,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
           { key: "status", label: "Status", render: (batch) => <StatusBadge value={batch.status} /> },
           { key: "date", label: "Uploaded / Published", render: (batch) => <>{displayDate(batch.createdAt)}<div>{batch.publishedAt ? displayDate(batch.publishedAt) : ""}</div></> },
           { key: "reference", label: "Publication Ref.", render: (batch) => batch.publicationReference || "Not published" },
-          { key: "action", label: "Action", render: (batch) => <button className="table-action" type="button" onClick={() => { setSelectedBatchId(batch.id); setShowHistoryDetails(true); }}>View Rows</button> },
+          { key: "action", label: "Action", render: (batch) => <TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => { setSelectedBatchId(batch.id); setShowHistoryDetails(true); }}>View Rows</TableActionButton></TableActions> },
         ]} />
       {showHistoryDetails && selected && historyBatches.some((batch) => batch.id === selected.id) ? <div style={{ marginTop: 17 }}>
         <div className="section-header"><div><h2>Batch {batchReference(selected)}</h2><p>{selected.filename} · {labelFor(selected.status)} · {selected.publicationReference || "No publication reference"}</p></div>

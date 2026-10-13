@@ -118,7 +118,7 @@ export default function SystemAdministratorIntegration() {
               { key: "reference", label: "Synchronization Reference" },
               { key: "applicantReference", label: "Applicant Reference" },
               { key: "direction", label: "Direction" },
-              { key: "currentStatus", label: "Current Status" },
+              { key: "currentStatus", label: "Current Status", render: (row) => <StatusBadge value={row.currentStatus === "Successful" ? "COMPLETED" : "FAILED"} label={row.currentStatus} /> },
               { key: "lastAttempt", label: "Last Attempt" },
               { key: "result", label: "Result" },
             ]}
@@ -168,9 +168,9 @@ export default function SystemAdministratorIntegration() {
               { key: "applicantReference", label: "Applicant Reference" },
               { key: "receivedDate", label: "Received Date" },
               { key: "approvedProgram", label: "Approved Program" },
-              { key: "admissionStatus", label: "Admission Status" },
+              { key: "admissionStatus", label: "Admission Status", render: (row) => <StatusBadge value={row.admissionStatus} /> },
               { key: "apiRequestReference", label: "API Request Reference" },
-              { key: "synchronizationStatus", label: "Synchronization Status" },
+              { key: "synchronizationStatus", label: "Synchronization Status", render: (row) => <StatusBadge value={row.synchronizationStatus === "Successful" || row.synchronizationStatus === "Updated Existing Record" ? "COMPLETED" : row.synchronizationStatus} label={row.synchronizationStatus} /> },
             ]}
           />
           <div className="action-row" style={{ marginTop: 12 }}>

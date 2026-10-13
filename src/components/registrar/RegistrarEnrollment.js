@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 import { Panel, Tabs, Info, Details, Feedback } from "./RegistrarShared";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
@@ -112,7 +112,7 @@ export default function RegistrarEnrollment() {
           {key:"program",label:"Program"},{key:"term",label:"Academic Term"},{key:"units",label:"Units"},
           {key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},
           {key:"submittedDate",label:"Submitted"},
-          {key:"actions",label:"Actions",render:(row)=><div className="cell-actions"><button className="table-action" type="button" onClick={() => openReview(row.reference)}>Review</button><Link className="table-action" href="/registrar/students">Students</Link><button className="table-action" type="button" onClick={() => openReview(row.reference,"history")}>History</button></div>}
+          {key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="review" tone="review" type="button" onClick={() => openReview(row.reference)}>Review</TableActionButton><TableActionButton as={Link} icon="users" tone="view" href="/registrar/students">Students</TableActionButton><TableActionButton icon="history" tone="history" type="button" onClick={() => openReview(row.reference,"history")}>History</TableActionButton></TableActions>}
         ]} />
       </Panel>
 
@@ -152,7 +152,7 @@ export default function RegistrarEnrollment() {
 
       <div style={{marginTop:16}}><Panel title="Enrollment History" subtitle="Official confirmed and past transaction records stay available for review and audit.">
         <AcademicFilterBar records={historicalTransactions} programs={catalog.programs} departments={catalog.departments} value={historyAcademicFilters} onChange={changeHistoryAcademicFilter} matchingCount={historyRows.length} label="Enrollment history academic filters" />
-        <DataTable rowKey="reference" rows={historyRows} emptyMessage="No historical enrollment records match the selected academic filters." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><button type="button" className="table-action" onClick={() => openReview(row.reference,"history")}>View Details</button>}]} />
+        <DataTable rowKey="reference" rows={historyRows} emptyMessage="No historical enrollment records match the selected academic filters." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openReview(row.reference,"history")}>View Details</TableActionButton></TableActions>}]} />
       </Panel></div>
 
       <Modal open={dialog === "return" && Boolean(enrollment)} title="Return for Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-return-form">Return for Correction</Button></>}>

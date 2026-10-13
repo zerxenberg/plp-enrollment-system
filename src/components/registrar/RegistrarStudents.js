@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
 import { Panel, Tabs, Info, Feedback, Details } from "./RegistrarShared";
 import RegistrarGradeImports from "./RegistrarGradeImports";
@@ -73,7 +73,7 @@ export default function RegistrarStudents() {
         <DataTable rowKey="studentNumber" rows={filtered} emptyMessage="No student records match the selected filters." columns={[
           {key:"studentNumber",label:"Student Number"},{key:"fullName",label:"Full Name"},{key:"admissionReference",label:"Admission Reference"},{key:"program",label:"Program"},{key:"academicTerm",label:"Academic Term"},{key:"studentStatus",label:"Student Status",render:(row)=><StatusBadge value={row.studentStatus} />},
           {key:"enrollmentStatus",label:"Enrollment",render:(row)=><StatusBadge value={registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber)?.status || row.enrollmentStatus} />},
-          {key:"actions",label:"Actions",render:(row)=><div className="cell-actions"><button className="table-action" type="button" onClick={() => openStudent(row.studentNumber)}>View Student</button>{registrar.enrollments.some((entry) => entry.studentNumber === row.studentNumber) ? <Link className="table-action" href={`/registrar/enrollment?reference=${encodeURIComponent(registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber).reference)}`}>Open Enrollment</Link> : null}<button className="table-action" type="button" onClick={() => {openStudent(row.studentNumber);setView("history");}}>View History</button></div>}
+          {key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openStudent(row.studentNumber)}>View Student</TableActionButton>{registrar.enrollments.some((entry) => entry.studentNumber === row.studentNumber) ? <TableActionButton as={Link} icon="calendar" tone="schedule" href={`/registrar/enrollment?reference=${encodeURIComponent(registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber).reference)}`}>Open Enrollment</TableActionButton> : null}<TableActionButton icon="history" tone="history" type="button" onClick={() => {openStudent(row.studentNumber);setView("history");}}>View History</TableActionButton></TableActions>}
         ]} />
       </Panel>
 

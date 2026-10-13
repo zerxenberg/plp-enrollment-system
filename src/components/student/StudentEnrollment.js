@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { findScheduleConflicts, validateStudentEnrollment } from "@/lib/validation/enrollment-validation";
-import { Button, Card, DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, Card, DataTable, PageHeader, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 
 const STAGES = [
   "Enrollment Overview",
@@ -232,16 +232,16 @@ export default function StudentEnrollment() {
                 const selected = student.enrollment.selectedSubjectCodes.includes(row.code);
                 const restricted = row.eligibility === "RESTRICTED";
                 return (
-                  <div className="cell-actions">
+                  <TableActions>
                     {selected ? (
-                      <button className="table-action" type="button" disabled={locked} onClick={() => removeStudentSubject(row.code)}>Remove</button>
+                      <TableActionButton icon="delete" tone="danger" type="button" disabled={locked} onClick={() => removeStudentSubject(row.code)}>Remove</TableActionButton>
                     ) : (
-                      <button className="table-action" type="button" disabled={locked || restricted} onClick={() => addStudentSubject(row.code)}>Add Subject</button>
+                      <TableActionButton icon="add" tone="create" type="button" disabled={locked || restricted} onClick={() => addStudentSubject(row.code)}>Add Subject</TableActionButton>
                     )}
-                    <button className="table-action" type="button" onClick={() => setSubjectDetailCode(row.code)}>View Subject</button>
-                    {row.prerequisites.length ? <button className="table-action" type="button" onClick={() => setSubjectDetailCode(row.code)}>View Prerequisites</button> : null}
-                    {restricted ? <button className="table-action" type="button" onClick={() => setSubjectDetailCode(row.code)}>View Restriction Reason</button> : null}
-                  </div>
+                    <TableActionButton icon="eye" tone="view" type="button" onClick={() => setSubjectDetailCode(row.code)}>View Subject</TableActionButton>
+                    {row.prerequisites.length ? <TableActionButton icon="book" tone="view" type="button" onClick={() => setSubjectDetailCode(row.code)}>View Prerequisites</TableActionButton> : null}
+                    {restricted ? <TableActionButton icon="review" tone="review" type="button" onClick={() => setSubjectDetailCode(row.code)}>View Restriction Reason</TableActionButton> : null}
+                  </TableActions>
                 );
               },
             },
