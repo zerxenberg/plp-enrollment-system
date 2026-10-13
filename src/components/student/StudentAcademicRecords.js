@@ -40,6 +40,7 @@ export default function StudentAcademicRecords() {
             <div className="info-item"><span>Failed</span><strong>{student.academicResults.filter((item) => item.status === "FAILED").length}</strong></div>
             <div className="info-item"><span>Incomplete</span><strong>{student.academicResults.filter((item) => item.status === "INCOMPLETE").length}</strong></div>
           </div>
+          <div className="notice" style={{ marginTop: 14 }}>Grades imported through the Registrar demo appear in Subject History only after publication. Unpublished or missing grades are never inferred.</div>
           <div className="notice" style={{ marginTop: 14 }}>
             Academic Records is read only enrollment support. It does not provide grade encoding, grade computation, or transcript generation.
           </div>
@@ -75,14 +76,16 @@ export default function StudentAcademicRecords() {
             />
           </div>
           <DataTable
-            rowKey="code"
+            rowKey={(row) => row.resultId || `${row.code}:${row.term}`}
             rows={history}
             columns={[
               { key: "code", label: "Subject Code" },
               { key: "name", label: "Subject Name" },
               { key: "units", label: "Units" },
               { key: "term", label: "Academic Term" },
+              { key: "grade", label: "Grade", render: (row) => row.publicationReference ? <strong>{row.grade || "Not recorded"}</strong> : "Awaiting publication" },
               { key: "status", label: "Completion Status", render: (row) => <StatusBadge value={row.status} /> },
+              { key: "source", label: "Result Source", render: (row) => row.publicationReference ? <span title={row.amendedAt ? `Corrected on ${new Date(row.amendedAt).toLocaleString()}` : row.publicationReference}>{row.amendedAt ? "Demo published · Corrected" : "Demo published"}</span> : "Historical demo completion" },
             ]}
           />
         </>

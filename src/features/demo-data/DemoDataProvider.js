@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import studentSource from "@/data/mock/student.json";
 import catalogSource from "@/data/mock/catalog.json";
 import registrarSource from "@/data/mock/registrar.json";
@@ -9,6 +9,11 @@ import systemAdministratorSource from "@/data/mock/system-administrators.json";
 import academicCoordinatorSource from "@/data/mock/academic-coordinators.json";
 import { validateStudentEnrollment } from "@/lib/validation/enrollment-validation";
 import { getDemoSession } from "@/lib/auth/demo-auth";
+import {
+  GRADE_IMPORT_EMPTY, GRADE_IMPORT_STORAGE_KEY, readGradeStore, saveGradeStore,
+  createGradeBatch, validateGradeBatch, replaceGradeBatch, verifyGradeBatch,
+  publishGradeBatch, cancelGradeBatch, amendGradeResult, getStudentAcademicRecords,
+} from "@/features/grade-import/grade-import-service";
 
 const DemoDataContext = createContext(null);
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -145,12 +150,157 @@ export function DemoDataProvider({ children }) {
   const [academicCoordinators] = useState(() => clone(academicCoordinatorSource));
   const [catalog, setCatalog] = useState(() => clone(catalogSource));
   const [academicCoordinatorData, setAcademicCoordinatorData] = useState(() => clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
+  const [gradeImports, setGradeImports] = useState(() => clone(GRADE_IMPORT_EMPTY));
+  const gradeStoreRef = useRef(gradeImports);
+  const [sessionRevision, setSessionRevision] = useState(0);
   const hasRole = (role) => getDemoSession()?.role === role;
 
+  useEffect(() => {
+    const onGradeChange = () => {
+      gradeStoreRef.current = readGradeStore();
+      setGradeImports(gradeStoreRef.current);
+    };
+    const onStorage = (event) => {
+      if (event.key === GRADE_IMPORT_STORAGE_KEY) onGradeChange();
+      if (event.key === "plp-demo-session") setSessionRevision((current) => current + 1);
+    };
+    const onSessionChange = () => setSessionRevision((current) => current + 1);
+    queueMicrotask(onGradeChange);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("plp-grade-imports-changed", onGradeChange);
+    window.addEventListener("plp-demo-session-changed", onSessionChange);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("plp-grade-imports-changed", onGradeChange);
+      window.removeEventListener("plp-demo-session-changed", onSessionChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return undefined;
+    // Isolated developer utility, intentionally absent from Registrar GUI.
+    // At the browser console call: window.plpGradeDemoReset()
+    window.plpGradeDemoReset = () => {
+      const next = clone(GRADE_IMPORT_EMPTY);
+      try {
+        saveGradeStore(next);
+        return "Only generated grade import batches, published demo results and their notifications were reset.";
+      } catch {
+        return "Could not reset demo grade data; check browser storage availability.";
+      }
+    };
+    return () => { delete window.plpGradeDemoReset; };
+  }, []);
+
+  // Every grade action operates on a complete snapshot; one localStorage write
+  // commits batches, publications and notifications together for the demo.
+  function commitGradeAction(operation) {
+    if (!hasRole("registrar")) return { ok: false, message: "Only the demo Registrar can perform grade import actions." };
+    const latest = readGradeStore();
+    gradeStoreRef.current = latest;
+    const result = operation(latest);
+    if (result.next) {
+      gradeStoreRef.current = result.next;
+      setGradeImports(result.next);
+      try {
+        saveGradeStore(result.next);
+      } catch {
+        gradeStoreRef.current = latest;
+        setGradeImports(latest);
+        return { ok: false, message: "Demo browser storage is unavailable or full; no publication was saved." };
+      }
+    }
+    return result;
+  }
+
+  function createMockGradeImport(payload) {
+    return commitGradeAction((current) => createGradeBatch(current, payload));
+  }
+  function validateMockGradeImport(batchId) {
+    return commitGradeAction((current) => validateGradeBatch(current, batchId, registrar.students));
+  }
+  function replaceMockGradeFile(batchId, payload) {
+    return commitGradeAction((current) => replaceGradeBatch(current, batchId, payload));
+  }
+  function verifyMockGradeSource(batchId, payload) {
+    return commitGradeAction((current) => verifyGradeBatch(current, batchId, payload));
+  }
+  function publishMockGrades(batchId) {
+    return commitGradeAction((current) => publishGradeBatch(current, batchId, registrar.students));
+  }
+  function cancelMockGradeImport(batchId, reason) {
+    return commitGradeAction((current) => cancelGradeBatch(current, batchId, reason));
+  }
+  function amendMockPublishedResult(payload) {
+    return commitGradeAction((current) => amendGradeResult(current, payload));
+  }
+  function resetMockGradeImports() {
+    if (process.env.NODE_ENV === "production") return { ok: false, message: "Reset is only available in development." };
+    return commitGradeAction(() => ({ ok: true, message: "Only demo grade imports and their generated academic records were reset.", next: clone(GRADE_IMPORT_EMPTY) }));
+  }
+
+  // Demo identity comes from the selected mock login. No server-side
+  // authorization or access isolation is claimed by these client-side views.
+  const session = sessionRevision >= 0 ? getDemoSession() : null;
+  const activeStudentNumber = session?.role === "student" ? session.identifier : student.profile.studentNumber;
+  const primaryStudent = activeStudentNumber === student.profile.studentNumber;
+  const matchedRecord = registrar.students.find((record) => record.studentNumber === activeStudentNumber);
+  const previousResults = primaryStudent ? student.academicResults : [
+    { code: "IT201", name: "Computer Programming 2", units: 3, term: "1st Sem 2025", status: "COMPLETED" },
+  ];
+  const importedResults = getStudentAcademicRecords(gradeImports, activeStudentNumber);
+  const importedCodes = new Set(importedResults.map((result) => result.code));
+  const visibleResults = [
+    ...previousResults.filter((result) => !importedCodes.has(result.code)),
+    ...importedResults.map((result) => ({ ...result, units: catalog.subjects.find((item) => item.code === result.code)?.units || 3 })),
+  ];
+  const hasDeficiencies = visibleResults.some((result) => ["FAILED", "INCOMPLETE"].includes(result.status));
+  const studentView = {
+    ...student,
+    profile: {
+      ...student.profile,
+      ...(primaryStudent ? {} : {
+        studentNumber: activeStudentNumber, fullName: matchedRecord?.fullName || session?.name || "Demo Student",
+        email: matchedRecord?.email || "", programCode: matchedRecord?.program || "BSIT",
+        studentType: "Continuing Student", studentStatus: "ACTIVE",
+      }),
+      academicClassification: hasDeficiencies ? "IRREGULAR" : "REGULAR",
+      progressionStatus: hasDeficiencies ? "ELIGIBLE_WITH_DEFICIENCIES" : "ELIGIBLE_NORMAL",
+    },
+    academicResults: visibleResults,
+    enrollment: primaryStudent ? student.enrollment : {
+      ...student.enrollment, reference: `ENR-DEMO-${activeStudentNumber}`, selectedSubjectCodes: [],
+      selectedSections: {}, status: "ELIGIBLE", eligibilityStatus: "ELIGIBLE",
+    },
+  };
+  const completedCodes = new Set(visibleResults.filter((result) => ["COMPLETED", "CREDITED"].includes(result.status)).map((result) => result.code));
+  const latestByCode = new Map(visibleResults.map((result) => [result.code, result]));
+  const catalogView = {
+    ...catalog,
+    subjects: catalog.subjects.map((subject) => {
+      const result = latestByCode.get(subject.code);
+      const unmet = (subject.prerequisites || []).filter((code) => !completedCodes.has(code));
+      if (unmet.length) return { ...subject, eligibility: "RESTRICTED", restrictionReason: `Complete prerequisite(s) ${unmet.join(", ")} first.` };
+      if (result?.status === "COMPLETED" || result?.status === "CREDITED")
+        return { ...subject, eligibility: "RESTRICTED", restrictionReason: "Already completed or credited; ordinary repeat registration is unavailable." };
+      if (result?.status === "INCOMPLETE")
+        return { ...subject, eligibility: "RESTRICTED", restrictionReason: "Incomplete result requires academic resolution before enrollment." };
+      if (result?.status === "FAILED") return { ...subject, eligibility: "RETAKE", restrictionReason: "" };
+      return { ...subject, eligibility: "ELIGIBLE", restrictionReason: "" };
+    }),
+  };
+  const visibleNotifications = {
+    ...notifications,
+    student: [
+      ...gradeImports.notifications.filter((entry) => entry.studentNumber === activeStudentNumber),
+      ...(primaryStudent ? notifications.student : []),
+    ],
+  };
+
   function addStudentSubject(code) {
-    if (!hasRole("student")) return false;
-    const subject = catalog.subjects.find((item) => item.code === code);
-    if (!subject || subject.eligibility === "RESTRICTED" || !STUDENT_EDITABLE_STATUSES.has(student.enrollment.status)) return false;
+    if (!hasRole("student") || !primaryStudent) return false;
+    const subject = catalogView.subjects.find((item) => item.code === code);
+    if (!subject || !["ELIGIBLE", "RETAKE"].includes(subject.eligibility) || !STUDENT_EDITABLE_STATUSES.has(student.enrollment.status)) return false;
     setStudent((current) => {
       if (!STUDENT_EDITABLE_STATUSES.has(current.enrollment.status)) return current;
       if (current.enrollment.selectedSubjectCodes.includes(code)) return current;
@@ -167,7 +317,7 @@ export function DemoDataProvider({ children }) {
   }
 
   function removeStudentSubject(code) {
-    if (!hasRole("student")) return false;
+    if (!hasRole("student") || !primaryStudent) return false;
     if (!STUDENT_EDITABLE_STATUSES.has(student.enrollment.status)) return false;
     setStudent((current) => {
       if (!STUDENT_EDITABLE_STATUSES.has(current.enrollment.status)) return current;
@@ -187,7 +337,7 @@ export function DemoDataProvider({ children }) {
   }
 
   function selectStudentSection(subjectCode, sectionId) {
-    if (!hasRole("student")) return false;
+    if (!hasRole("student") || !primaryStudent || !["ELIGIBLE", "RETAKE"].includes(catalogView.subjects.find((item) => item.code === subjectCode)?.eligibility)) return false;
     if (!STUDENT_EDITABLE_STATUSES.has(student.enrollment.status)) return false;
     setStudent((current) => {
       if (!STUDENT_EDITABLE_STATUSES.has(current.enrollment.status)) return current;
@@ -204,11 +354,11 @@ export function DemoDataProvider({ children }) {
   }
 
   function submitStudentEnrollment() {
-    if (!hasRole("student")) return { ok: false, checks: [], reason: "role" };
+    if (!hasRole("student") || !primaryStudent) return { ok: false, checks: [], reason: "role" };
     if (!STUDENT_SUBMITTABLE_STATUSES.has(student.enrollment.status)) {
       return { ok: false, checks: [], reason: "status" };
     }
-    const checks = validateStudentEnrollment(student, catalog);
+    const checks = validateStudentEnrollment(studentView, catalogView);
     if (checks.some((check) => check.result !== "PASSED")) return { ok: false, checks };
     const submittedDate = demoTimestamp();
     const registrarEnrollment = buildRegistrarEnrollment(student, catalog, submittedDate);
@@ -260,13 +410,19 @@ export function DemoDataProvider({ children }) {
   }
 
   function updateStudentContact(values) {
-    if (!hasRole("student")) return false;
+    if (!hasRole("student") || !primaryStudent) return false;
     setStudent((current) => ({ ...current, profile: { ...current.profile, ...values } }));
     return true;
   }
 
   function markNotification(role, id, read = true) {
     if (!hasRole(role)) return false;
+    if (role === "student" && gradeImports.notifications.some((entry) => entry.id === id && entry.studentNumber === activeStudentNumber)) {
+      const updated = { ...readGradeStore(), notifications: readGradeStore().notifications.map((entry) =>
+        entry.id === id && entry.studentNumber === activeStudentNumber ? { ...entry, read } : entry) };
+      saveGradeStore(updated);
+      return true;
+    }
     setNotifications((current) => ({
       ...current,
       [role]: (current[role] || []).map((item) => (item.id === id ? { ...item, read } : item)),
@@ -276,6 +432,13 @@ export function DemoDataProvider({ children }) {
 
   function markAllNotifications(role) {
     if (!hasRole(role)) return false;
+    if (role === "student") {
+      const latest = readGradeStore();
+      if (latest.notifications.some((item) => item.studentNumber === activeStudentNumber && !item.read)) {
+        saveGradeStore({ ...latest, notifications: latest.notifications.map((entry) =>
+          entry.studentNumber === activeStudentNumber ? { ...entry, read: true } : entry) });
+      }
+    }
     setNotifications((current) => ({
       ...current,
       [role]: (current[role] || []).map((item) => ({ ...item, read: true })),
@@ -1008,13 +1171,22 @@ export function DemoDataProvider({ children }) {
   }
 
   const value = {
-    student,
-    catalog,
+    student: studentView,
+    catalog: catalogView,
     registrar,
     systemAdministrators,
     academicCoordinators,
     academicCoordinatorData,
-    notifications,
+    notifications: visibleNotifications,
+    gradeImports,
+    createMockGradeImport,
+    validateMockGradeImport,
+    replaceMockGradeFile,
+    verifyMockGradeSource,
+    publishMockGrades,
+    cancelMockGradeImport,
+    amendMockPublishedResult,
+    resetMockGradeImports,
     addStudentSubject,
     removeStudentSubject,
     selectStudentSection,

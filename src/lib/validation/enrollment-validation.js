@@ -40,6 +40,7 @@ export function validateStudentEnrollment(student, catalog) {
   const prerequisitesPassed = selectedSubjects.every((subject) =>
     subject.prerequisites.every((code) => completedCodes.has(code)),
   );
+  const allowedSubjects = selectedSubjects.every((subject) => ["ELIGIBLE", "RETAKE"].includes(subject.eligibility));
   const uniqueCodes = new Set(student.enrollment.selectedSubjectCodes);
   const sectionsAvailable = selectedSubjects.every((subject) => {
     const sectionId = selectedSections[subject.code];
@@ -54,6 +55,7 @@ export function validateStudentEnrollment(student, catalog) {
     { key: "curriculum", label: "Curriculum Match", result: student.profile.curriculum ? "PASSED" : "FAILED", detail: student.profile.curriculum },
     { key: "duplicate", label: "Duplicate Subject Check", result: uniqueCodes.size === student.enrollment.selectedSubjectCodes.length ? "PASSED" : "FAILED", detail: "Each subject may be selected once." },
     { key: "prerequisite", label: "Prerequisite Check", result: prerequisitesPassed ? "PASSED" : "FAILED", detail: prerequisitesPassed ? "All selected prerequisites are completed or credited." : "At least one selected subject has an unmet prerequisite." },
+    { key: "subject-eligibility", label: "Subject Eligibility", result: allowedSubjects ? "PASSED" : "FAILED", detail: allowedSubjects ? "All selected subjects are eligible or valid retakes." : "Remove completed, incomplete, or otherwise restricted subjects before submitting." },
     { key: "units", label: "Unit Validation", result: totalUnits > 0 && totalUnits <= demoMaximumUnits ? "PASSED" : "FAILED", detail: `${totalUnits} selected units. This demo curriculum load allows up to ${demoMaximumUnits} units.` },
     { key: "offering", label: "Subject Offering", result: selectedSubjects.length === student.enrollment.selectedSubjectCodes.length ? "PASSED" : "FAILED", detail: "All selected subjects are offered in the demo catalog." },
     { key: "sections", label: "Section Slot Check", result: sectionsAvailable ? "PASSED" : "FAILED", detail: sectionsAvailable ? "Every selected subject has an open section with an available slot." : "Choose an open section with remaining capacity for every subject." },

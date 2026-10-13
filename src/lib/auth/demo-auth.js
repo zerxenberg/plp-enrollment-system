@@ -36,6 +36,7 @@ export function authenticateDemoAccount({ identity, password }) {
 export function saveDemoSession(session) {
   if (!matchesKnownDemoAccount(session)) return false;
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  window.dispatchEvent(new Event("plp-demo-session-changed"));
   return true;
 }
 
@@ -62,5 +63,6 @@ export function getDemoSession() {
 export function clearDemoSession() {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(SESSION_KEY);
+    window.dispatchEvent(new Event("plp-demo-session-changed"));
   }
 }

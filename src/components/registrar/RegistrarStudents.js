@@ -3,13 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
 import { Panel, Tabs, Info, Feedback, Details } from "./RegistrarShared";
+import RegistrarGradeImports from "./RegistrarGradeImports";
 
 const ALL = { value: "ALL", label: "All" };
 
 export default function RegistrarStudents() {
+  const [section, setSection] = useState("list");
   const { registrar, correctRegistrarStudent } = useDemoData();
   const [search, setSearch] = useState("");
   const [program, setProgram] = useState("ALL");
@@ -49,7 +51,14 @@ export default function RegistrarStudents() {
 
   return (
     <>
-      <PageHeader title="Students" description="Search official student records, inspect enrollment history and make authorized contact corrections." />
+      <PageHeader title="Students" description="Review student records and manage the official grade import workflow." />
+      <InternalTabs
+        items={[{ value: "list", label: "Student List" }, { value: "import", label: "Official Grades Import" }, { value: "history", label: "Grade Import History" }]}
+        selected={section}
+        onSelect={setSection}
+        label="Registrar Students sections"
+      >
+      {section === "list" ? <>
       <Panel title="Student List" subtitle={`${filtered.length} matching student records. Records originate from the Admission handoff.`}>
         <div className="toolbar">
           <SearchControl label="Search students" value={search} onChange={setSearch} placeholder="Search student name, number or admission reference" />
@@ -86,6 +95,8 @@ export default function RegistrarStudents() {
         </form>
         <p className="notice" style={{marginTop:12}}>The original value, corrected value, Registrar identity and date are retained in record history.</p>
       </Modal>
+      </> : <RegistrarGradeImports mode={section} onNavigate={setSection} />}
+      </InternalTabs>
     </>
   );
 }

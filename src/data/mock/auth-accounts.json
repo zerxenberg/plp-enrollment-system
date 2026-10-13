@@ -8,6 +8,22 @@
     "redirect": "/student/dashboard"
   },
   {
+    "role": "student",
+    "name": "Katrina Mendoza",
+    "identifier": "2026-01896",
+    "alternateIdentifier": "katrina.mendoza@student.plp.edu.ph",
+    "password": "Student@123",
+    "redirect": "/student/dashboard"
+  },
+  {
+    "role": "student",
+    "name": "Dencie Aquino",
+    "identifier": "2026-00108",
+    "alternateIdentifier": "dencie.aquino@student.plp.edu.ph",
+    "password": "Student@123",
+    "redirect": "/student/dashboard"
+  },
+  {
     "role": "registrar",
     "name": "Maria Santos",
     "identifier": "registrar.demo",
