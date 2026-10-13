@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import {
   Button,
   DataTable,
-  FilterControl,
   Modal,
   PageHeader,
   SearchControl,
@@ -13,19 +12,21 @@ import {
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Details, Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
+import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
+import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
 
 export default function AcademicCoordinatorAcademicReview() {
-  const { registrar, decideAcademicReview } = useDemoData();
+  const { registrar, catalog, decideAcademicReview } = useDemoData();
   const [view, setView] = useState("pending");
   const [search, setSearch] = useState("");
-  const [program, setProgram] = useState("ALL");
+  const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
   const [selectedReference, setSelectedReference] = useState(null);
   const [dialog, setDialog] = useState(false);
   const [decision, setDecision] = useState("APPROVED");
   const [note, setNote] = useState("");
   const [feedback, setFeedback] = useState("");
 
-  const pending = useMemo(
+  const pendingCandidates = useMemo(
     () => registrar.enrollments
       .filter((item) => item.status === "NEEDS_ACADEMIC_REVIEW")
       .map((item) => ({
@@ -39,21 +40,23 @@ export default function AcademicCoordinatorAcademicReview() {
         dateSubmitted: item.submittedDate,
       }))
       .filter((item) =>
-        `${item.caseReference} ${item.studentReference} ${item.studentName} ${item.program} ${item.subject}`.toLowerCase().includes(search.toLowerCase()) &&
-        (program === "ALL" || item.program === program)
+        `${item.caseReference} ${item.studentReference} ${item.studentName} ${item.program} ${item.subject}`.toLowerCase().includes(search.trim().toLowerCase())
       ),
-    [program, registrar.enrollments, search],
+    [registrar.enrollments, search],
   );
 
-  const resolved = registrar.enrollments
+  const resolvedCandidates = registrar.enrollments
     .filter((item) => item.academicReviewDecision)
     .filter((item) =>
-      `${item.reference} ${item.studentNumber} ${item.studentName} ${item.program}`.toLowerCase().includes(search.toLowerCase()) &&
-      (program === "ALL" || item.program === program)
+      `${item.reference} ${item.studentNumber} ${item.studentName} ${item.program}`.toLowerCase().includes(search.trim().toLowerCase())
     );
+  const pending = filterAcademicRecords(pendingCandidates, academicFilters, [], catalog.programs);
+  const resolved = filterAcademicRecords(resolvedCandidates, academicFilters, [], catalog.programs);
+  const displayedCandidates = view === "pending" ? pendingCandidates : resolvedCandidates;
+  const displayedRows = view === "pending" ? pending : resolved;
+  const changeAcademicFilter = (key, value) => setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
 
   const current = registrar.enrollments.find((item) => item.reference === selectedReference);
-  const programOptions = [{ value: "ALL", label: "All Programs" }, ...new Set(registrar.enrollments.map((item) => item.program))].map((item) => typeof item === "string" ? { value: item, label: item } : item);
 
   function confirmDecision() {
     const result = decideAcademicReview(selectedReference, { decision, note });
@@ -73,7 +76,7 @@ export default function AcademicCoordinatorAcademicReview() {
 
       <Tabs
           selected={view}
-          onSelect={(next) => { setView(next); setSelectedReference(null); setFeedback(""); }}
+          onSelect={(next) => { setView(next); setAcademicFilters(ALL_ACADEMIC_FILTERS); setSelectedReference(null); setFeedback(""); }}
           label="Academic review queue sections"
           title="Academic Review Queue"
           subtitle="Only the academic context required for the decision is displayed."
@@ -85,8 +88,8 @@ export default function AcademicCoordinatorAcademicReview() {
 
         <div className="toolbar">
           <SearchControl value={search} onChange={setSearch} label="Search academic review" placeholder="Search case, student, program, or subject" />
-          <FilterControl label="Program" value={program} onChange={setProgram} options={programOptions} />
         </div>
+        <AcademicFilterBar records={displayedCandidates} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={displayedRows.length} label="Academic review student filters" />
 
         <Feedback message={feedback} warning={feedback.toLowerCase().includes("cannot") || feedback.toLowerCase().includes("required") || feedback.toLowerCase().includes("not")} />
 

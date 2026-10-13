@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Feedback, Metric, Panel, Tabs } from "@/components/registrar/RegistrarShared";
+import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
+import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
 
 const VIEWS = [
   { value: "reports", label: "Academic Reports" },
@@ -54,6 +56,7 @@ export default function AcademicCoordinatorReports() {
   const [program, setProgram] = useState("ALL");
   const [subject, setSubject] = useState("ALL");
   const [section, setSection] = useState("ALL");
+  const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
   const [search, setSearch] = useState("");
   const [preview, setPreview] = useState(false);
   const [message, setMessage] = useState("");
@@ -104,6 +107,8 @@ export default function AcademicCoordinatorReports() {
   }));
 
   const resolvedReviews = registrar.enrollments.filter((item) => item.academicReviewDecision);
+  const filteredReviews = filterAcademicRecords(resolvedReviews, academicFilters, [], catalog.programs);
+  const changeAcademicFilter = (key, value) => { setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value); setPreview(false); };
 
   const reportRows =
     report === "Program Summary"
@@ -122,7 +127,7 @@ export default function AcademicCoordinatorReports() {
                   ? scheduleRows
                   : report === "Capacity Report"
                     ? sectionRows
-                    : resolvedReviews.map((item) => ({ caseReference: `ACR-${item.reference}`, studentReference: item.studentNumber, program: item.program, decision: item.academicReviewDecision, reason: item.academicReviewReason, coordinator: item.academicReviewCoordinator, decisionDate: item.academicReviewDate }));
+                    : filteredReviews.map((item) => ({ caseReference: `ACR-${item.reference}`, studentReference: item.studentNumber, program: item.program, decision: item.academicReviewDecision, reason: item.academicReviewReason, coordinator: item.academicReviewCoordinator, decisionDate: item.academicReviewDate }));
 
   const filteredReportRows = reportRows.filter((row) =>
     JSON.stringify(row).toLowerCase().includes(search.toLowerCase()) &&
@@ -150,10 +155,10 @@ export default function AcademicCoordinatorReports() {
         {view === "reports" ? (
           <>
             <div className="toolbar">
-              <FilterControl label="Report Type" value={report} onChange={(next) => { setReport(next); setPreview(false); }} options={REPORTS.map((item) => ({ value: item, label: item }))} />
-              <FilterControl label="Program" value={program} onChange={(next) => { setProgram(next); setPreview(false); }} options={options(catalog.programs.map((item) => item.code))} />
-              <FilterControl label="Subject" value={subject} onChange={(next) => { setSubject(next); setPreview(false); }} options={options(catalog.subjects.map((item) => item.code))} />
-              <FilterControl label="Section" value={section} onChange={(next) => { setSection(next); setPreview(false); }} options={options(registrar.sections.map((item) => item.code))} />
+              <FilterControl label="Report Type" value={report} onChange={(next) => { setReport(next); setProgram("ALL"); setSubject("ALL"); setSection("ALL"); setAcademicFilters(ALL_ACADEMIC_FILTERS); setPreview(false); }} options={REPORTS.map((item) => ({ value: item, label: item }))} />
+              {report !== "Academic Exception Report" ? <FilterControl label="Program" value={program} onChange={(next) => { setProgram(next); setPreview(false); }} options={options(catalog.programs.map((item) => item.code))} /> : null}
+              {report !== "Academic Exception Report" ? <FilterControl label="Subject" value={subject} onChange={(next) => { setSubject(next); setPreview(false); }} options={options(catalog.subjects.map((item) => item.code))} /> : null}
+              {report !== "Academic Exception Report" ? <FilterControl label="Section" value={section} onChange={(next) => { setSection(next); setPreview(false); }} options={options(registrar.sections.map((item) => item.code))} /> : null}
               <Button onClick={() => { setPreview(true); setMessage(`${report} generated from ${filteredReportRows.length} demo records.`); }}>Generate & Preview</Button>
               <Button variant="secondary" onClick={() => exportCsv(filteredReportRows, `${report.toLowerCase().replaceAll(" ", "-")}.csv`)}>Export Spreadsheet</Button>
               <Button variant="secondary" onClick={() => window.print()}>Print / Save as PDF</Button>
@@ -161,6 +166,7 @@ export default function AcademicCoordinatorReports() {
             <div className="toolbar">
               <SearchControl value={search} onChange={setSearch} label="Search report" placeholder="Search report results" />
             </div>
+            {report === "Academic Exception Report" ? <AcademicFilterBar records={resolvedReviews} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={filteredReviews.length} label="Academic exception report student filters" /> : null}
             {preview ? <DataTable rowKey={(row) => Object.values(row).join(":")} rows={filteredReportRows} columns={reportColumns} emptyMessage="No records meet the report filters." /> : <div className="notice">Choose a report and click Generate & Preview.</div>}
           </>
         ) : null}

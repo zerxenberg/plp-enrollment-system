@@ -151,16 +151,18 @@ export function LoadingState({ label = "Loading portal..." }) {
   return <div className="portal-loading" role="status"><span className="loading-spinner" aria-hidden="true" />{label}</div>;
 }
 
-export function Modal({ open, title, children, onClose, footer }) {
+export function Modal({ open, title, children, onClose, footer, className = "" }) {
   const closeRef = useRef(null);
   const dialogRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return undefined;
     const previousFocus = document.activeElement;
     closeRef.current?.focus();
     const handleKey = (event) => {
       if (event.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -183,11 +185,11 @@ export function Modal({ open, title, children, onClose, footer }) {
       document.removeEventListener("keydown", handleKey);
       previousFocus?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
   if (!open) return null;
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section ref={dialogRef} className="portal-modal" role="dialog" aria-modal="true" aria-labelledby="portal-modal-title">
+      <section ref={dialogRef} className={`portal-modal ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby="portal-modal-title">
         <header><h2 id="portal-modal-title">{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><AppIcon name="close" /></button></header>
         <div className="modal-body">{children}</div>
         {footer ? <footer className="modal-footer">{footer}</footer> : null}

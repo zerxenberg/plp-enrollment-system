@@ -9,6 +9,14 @@ import systemAdministratorSource from "@/data/mock/system-administrators.json";
 import academicCoordinatorSource from "@/data/mock/academic-coordinators.json";
 import { validateStudentEnrollment } from "@/lib/validation/enrollment-validation";
 import { getDemoSession } from "@/lib/auth/demo-auth";
+import { withRepresentativeDemoStudents } from "@/features/students/mock-student-fixtures";
+import {
+  buildMockAcademicReferences, DEFAULT_DEMO_FEE_PER_UNIT,
+  summarizeCurriculum, validateCurriculumRecord, validateCurriculumActivation,
+  validatePrerequisiteGraph, getAcademicSubjectOptions as filterAcademicSubjectOptions,
+  getPrerequisiteCandidates,
+} from "@/features/academic/academic-reference";
+import { transitionCurriculumVersion } from "@/features/academic/curriculum-lifecycle";
 import {
   GRADE_IMPORT_EMPTY, GRADE_IMPORT_STORAGE_KEY, readGradeStore, saveGradeStore,
   createGradeBatch, validateGradeBatch, replaceGradeBatch, verifyGradeBatch,
@@ -19,17 +27,36 @@ const DemoDataContext = createContext(null);
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const STUDENT_EDITABLE_STATUSES = new Set(["ELIGIBLE", "IN_PROGRESS", "REQUIRES_CORRECTION"]);
 const STUDENT_SUBMITTABLE_STATUSES = new Set(["IN_PROGRESS"]);
+const ACADEMIC_STORAGE_KEY = "plp-demo-academic-setup-v1";
+const ACADEMIC_FIXTURE_VERSION = 2;
+const ACADEMIC_YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
+const ACADEMIC_SEMESTERS = ["First Semester", "Second Semester"];
+function withCurriculumMetrics(record, subjects) {
+  const assignments = record.assignments || [];
+  const summary = summarizeCurriculum(assignments, subjects).total;
+  return {
+    ...record, assignedSubjects: assignments.length, totalUnits: summary.units,
+    totalFee: summary.tuition,
+    totalFeeDisplay: new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(summary.tuition),
+    semesters: ACADEMIC_YEARS.flatMap((yearLevel) => ACADEMIC_SEMESTERS.map((semester) => ({
+      yearLevel, semester, subjects: assignments.filter((item) =>
+        item.yearLevel === yearLevel && item.semester === semester),
+    }))),
+  };
+}
+const ACADEMIC_FIXTURES = buildMockAcademicReferences(catalogSource.subjects, catalogSource.programs);
+const INITIAL_ACADEMIC_CATALOG = {
+  ...catalogSource,
+  departments: ACADEMIC_FIXTURES.departments,
+  programs: ACADEMIC_FIXTURES.programs,
+  subjects: ACADEMIC_FIXTURES.subjects,
+};
 
 const ACADEMIC_COORDINATOR_INITIAL_DATA = {
-  curricula: [
-    {
-      id: "CUR-BSIT-2024",
-      version: "BSIT Curriculum 2024",
-      program: "BSIT",
-      effectiveAcademicYear: "2024 to 2025",
-      status: "Active",
-      assignedSubjects: catalogSource.subjects.length,
-    },
+  curricula: ACADEMIC_FIXTURES.curricula.map((entry) => entry.program === "BSIT" ? {
+    ...entry, id: "CUR-BSIT-2024", version: "BSIT Curriculum 2024", effectiveAcademicYear: "2024 to 2025",
+  } : entry),
+  legacyCurricula: [
     {
       id: "CUR-BSBA-2024",
       version: "BSBA Curriculum 2024",
@@ -39,6 +66,7 @@ const ACADEMIC_COORDINATOR_INITIAL_DATA = {
       assignedSubjects: 0,
     },
   ],
+  prerequisiteRules: [],
   offerings: catalogSource.subjects.map((subject, index) => ({
     id: `OFF-${subject.code}`,
     academicTerm: "First Semester 2026 to 2027",
@@ -74,6 +102,87 @@ const ACADEMIC_COORDINATOR_INITIAL_DATA = {
     },
   ],
 };
+
+// Only pristine first-generation sample checklists are upgraded automatically.
+// User-edited versions and all student/grade-import records remain untouched.
+function isOriginalSampleCurriculum(record, revised) {
+  if (!record || !revised || record.id !== revised.id || record.version !== revised.version ||
+      record.program !== revised.program || (record.major || "") !== (revised.major || "") ||
+      record.status !== "Active" || record.effectiveAcademicYear !== revised.effectiveAcademicYear ||
+      !Array.isArray(record.assignments) || record.assignments.length !== 24) return false;
+  const match = /^CUR-DEMO-(.+)-2026$/.exec(record.id);
+  const prefix = match?.[1] || (record.id === "CUR-BSIT-2024" ? "IT" : null);
+  if (!prefix) return false;
+  const original = [];
+  for (let index = 0; index < 16; index++) {
+    original.push({
+      subjectCode: `${prefix}${String(index + 1).padStart(3, "0")}`,
+      yearLevel: ACADEMIC_YEARS[Math.floor(index / 4)],
+      semester: ACADEMIC_SEMESTERS[Math.floor(index / 2) % 2],
+      prerequisites: index >= 2 ? [`${prefix}${String(index - 1).padStart(3, "0")}`] : [],
+      feePerUnit: DEFAULT_DEMO_FEE_PER_UNIT,
+    });
+  }
+  for (let index = 0; index < 8; index++) {
+    original.push({
+      subjectCode: `GE${String(index + 101)}`,
+      yearLevel: ACADEMIC_YEARS[Math.floor(index / 2)],
+      semester: ACADEMIC_SEMESTERS[index % 2],
+      prerequisites: [], feePerUnit: DEFAULT_DEMO_FEE_PER_UNIT,
+    });
+  }
+  const canonical = (assignments) => assignments.map((item) => ({
+    subjectCode: item.subjectCode, yearLevel: item.yearLevel, semester: item.semester,
+    prerequisites: item.prerequisites || [], feePerUnit: item.feePerUnit ?? DEFAULT_DEMO_FEE_PER_UNIT,
+  })).sort((a, b) => a.subjectCode.localeCompare(b.subjectCode));
+  return JSON.stringify(canonical(record.assignments)) === JSON.stringify(canonical(original));
+}
+
+function upgradeOriginalAcademicSamples(saved) {
+  if (saved.fixtureVersion >= ACADEMIC_FIXTURE_VERSION) return saved;
+  const fixtures = new Map(ACADEMIC_COORDINATOR_INITIAL_DATA.curricula.map((item) => [item.id, item]));
+  let changed = false;
+  const curricula = saved.academicCoordinatorData.curricula.map((item) => {
+    const revised = fixtures.get(item.id);
+    if (!isOriginalSampleCurriculum(item, revised)) return item;
+    changed = true;
+    return clone(revised);
+  });
+  if (!changed) return { ...saved, fixtureVersion: ACADEMIC_FIXTURE_VERSION };
+  const existingCodes = new Set(saved.catalog.subjects.map((subject) => subject.code));
+  const addedSubjects = INITIAL_ACADEMIC_CATALOG.subjects.filter((item) => !existingCodes.has(item.code));
+  return {
+    ...saved, fixtureVersion: ACADEMIC_FIXTURE_VERSION,
+    catalog: { ...saved.catalog, subjects: [...saved.catalog.subjects, ...clone(addedSubjects)] },
+    academicCoordinatorData: { ...saved.academicCoordinatorData, curricula },
+  };
+}
+
+function validateSubjectContext(catalog, subject) {
+  const programs = Array.isArray(subject.programs) ? subject.programs : [];
+  if (!programs.length || programs.some((code) => !catalog.programs.some((entry) =>
+    entry.code === code && (subject.department === "SHARED" || entry.department === subject.department)))) {
+    return "Select academic programs belonging to the chosen department.";
+  }
+  if (subject.department === "SHARED" &&
+    (programs.length !== catalog.programs.length || catalog.programs.some((entry) => !programs.includes(entry.code)))) {
+    return "Shared General Education subjects must be applicable to all programs.";
+  }
+  if (subject.major && (programs.length !== 1 || !catalog.programs.find((entry) =>
+    entry.code === programs[0])?.majors?.includes(subject.major))) {
+    return "The selected specialization is incompatible with this subject.";
+  }
+  const prerequisites = subject.prerequisites || [];
+  const graphError = validatePrerequisiteGraph(catalog.subjects, subject.code, prerequisites);
+  if (graphError) return graphError;
+  const options = getPrerequisiteCandidates(catalog, subject);
+  for (const code of prerequisites) {
+    if (!options.some((candidate) => candidate.code === code)) {
+      return `Prerequisite ${code} must be a compatible subject in an earlier academic semester.`;
+    }
+  }
+  return null;
+}
 
 function timeToMinutes(value) {
   if (!value || !String(value).includes(":")) return null;
@@ -144,16 +253,67 @@ function buildRegistrarEnrollment(student, catalog, submittedDate) {
 
 export function DemoDataProvider({ children }) {
   const [student, setStudent] = useState(() => clone(studentSource));
-  const [registrar, setRegistrar] = useState(() => clone(registrarSource));
+  const [registrar, setRegistrar] = useState(() =>
+    withRepresentativeDemoStudents(clone(registrarSource), ACADEMIC_COORDINATOR_INITIAL_DATA.curricula, INITIAL_ACADEMIC_CATALOG.subjects));
   const [notifications, setNotifications] = useState(() => clone(notificationSource));
   const [systemAdministrators] = useState(() => clone(systemAdministratorSource));
   const [academicCoordinators] = useState(() => clone(academicCoordinatorSource));
-  const [catalog, setCatalog] = useState(() => clone(catalogSource));
+  const [catalog, setCatalog] = useState(() => clone(INITIAL_ACADEMIC_CATALOG));
   const [academicCoordinatorData, setAcademicCoordinatorData] = useState(() => clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
+  const curriculumDataRef = useRef(academicCoordinatorData);
+  const curriculumEventCounterRef = useRef(0);
+  const [academicLoaded, setAcademicLoaded] = useState(false);
   const [gradeImports, setGradeImports] = useState(() => clone(GRADE_IMPORT_EMPTY));
   const gradeStoreRef = useRef(gradeImports);
   const [sessionRevision, setSessionRevision] = useState(0);
   const hasRole = (role) => getDemoSession()?.role === role;
+
+  useEffect(() => { curriculumDataRef.current = academicCoordinatorData; }, [academicCoordinatorData]);
+
+  useEffect(() => {
+    const load = (raw) => {
+      if (!raw) {
+        setCatalog(clone(INITIAL_ACADEMIC_CATALOG));
+        setAcademicCoordinatorData(clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
+        return;
+      }
+      try {
+        const saved = JSON.parse(raw);
+        if (saved?.version !== 1 || !Array.isArray(saved.catalog?.programs) ||
+          !Array.isArray(saved.catalog?.subjects) || !Array.isArray(saved.academicCoordinatorData?.curricula)) return;
+        const restored = upgradeOriginalAcademicSamples(saved);
+        setCatalog(restored.catalog);
+        setAcademicCoordinatorData(restored.academicCoordinatorData);
+      } catch {
+        // Invalid or unavailable browser mock storage does not block the demo.
+      }
+    };
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try { load(window.localStorage.getItem(ACADEMIC_STORAGE_KEY)); } catch { /* use built-in fixtures */ }
+      setAcademicLoaded(true);
+    });
+    const onStorage = (event) => {
+      if (event.key === ACADEMIC_STORAGE_KEY) load(event.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!academicLoaded) return;
+    try {
+      const next = JSON.stringify({ version: 1, fixtureVersion: ACADEMIC_FIXTURE_VERSION, catalog, academicCoordinatorData });
+      if (window.localStorage.getItem(ACADEMIC_STORAGE_KEY) !== next)
+        window.localStorage.setItem(ACADEMIC_STORAGE_KEY, next);
+    } catch {
+      // Demo edits remain usable in memory when browser storage is unavailable.
+    }
+  }, [academicLoaded, catalog, academicCoordinatorData]);
 
   useEffect(() => {
     const onGradeChange = () => {
@@ -262,6 +422,10 @@ export function DemoDataProvider({ children }) {
       ...(primaryStudent ? {} : {
         studentNumber: activeStudentNumber, fullName: matchedRecord?.fullName || session?.name || "Demo Student",
         email: matchedRecord?.email || "", programCode: matchedRecord?.program || "BSIT",
+        major: matchedRecord?.major || "",
+        curriculum: matchedRecord?.curriculum ||
+          registrar.enrollments.find((entry) => entry.studentNumber === activeStudentNumber)?.curriculum ||
+          student.profile.curriculum,
         studentType: "Continuing Student", studentStatus: "ACTIVE",
       }),
       academicClassification: hasDeficiencies ? "IRREGULAR" : "REGULAR",
@@ -275,9 +439,20 @@ export function DemoDataProvider({ children }) {
   };
   const completedCodes = new Set(visibleResults.filter((result) => ["COMPLETED", "CREDITED"].includes(result.status)).map((result) => result.code));
   const latestByCode = new Map(visibleResults.map((result) => [result.code, result]));
+  const studentCurriculum = academicCoordinatorData.curricula.find((item) =>
+    item.version === studentView.profile.curriculum && item.program === studentView.profile.programCode &&
+    (item.major || "") === (studentView.profile.major || ""));
+  const curriculumCodes = studentCurriculum?.assignments?.length
+    ? new Set(studentCurriculum.assignments.map((item) => item.subjectCode)) : null;
   const catalogView = {
     ...catalog,
-    subjects: catalog.subjects.map((subject) => {
+    // The expanded catalog is shared by Academic Setup; the Student demo still
+    // displays only subjects from its original enabled enrollment offering.
+    subjects: catalog.subjects.filter((subject) => curriculumCodes
+      ? curriculumCodes.has(subject.code)
+      : subject.availableInStudentDemo &&
+        (subject.programs || [subject.program || "BSIT"]).includes(studentView.profile.programCode)
+    ).map((subject) => {
       const result = latestByCode.get(subject.code);
       const unmet = (subject.prerequisites || []).filter((code) => !completedCodes.has(code));
       if (unmet.length) return { ...subject, eligibility: "RESTRICTED", restrictionReason: `Complete prerequisite(s) ${unmet.join(", ")} first.` };
@@ -680,16 +855,23 @@ export function DemoDataProvider({ children }) {
     if (!code || !name || !department) {
       return { ok: false, message: "Program code, name, and department are required." };
     }
+    if (!catalog.departments.some((item) => item.id === department)) {
+      return { ok: false, message: "Select a valid college department." };
+    }
 
     if (catalog.programs.some((item) => item.code === code)) {
       return { ok: false, message: "That program code already exists." };
     }
 
     const record = {
+      id: `program-${code.toLowerCase()}`,
       code,
       name,
       department,
+      departmentId: department,
       status: values.status || "Active",
+      majors: Array.isArray(values.majors) ? values.majors : [],
+      reference: "Demo Academic Data",
       enrolled: 0,
     };
 
@@ -705,11 +887,13 @@ export function DemoDataProvider({ children }) {
     if (!hasRole("academic-coordinator")) return false;
     const existing = catalog.programs.find((item) => item.code === code);
     if (!existing) return false;
+    if (changes.department && !catalog.departments.some((item) => item.id === changes.department)) return false;
+    if (existing.reference === "Verified Program" && changes.department !== existing.department) return false;
 
     setCatalog((current) => ({
       ...current,
       programs: current.programs.map((item) =>
-        item.code === code ? { ...item, ...changes, code: item.code } : item
+        item.code === code ? { ...item, ...changes, code: item.code, id: item.id, departmentId: changes.department || item.department } : item
       ),
     }));
     addAcademicHistory(
@@ -728,23 +912,37 @@ export function DemoDataProvider({ children }) {
     const program = String(values?.program || "").trim();
     const version = String(values?.version || "").trim();
     const effectiveAcademicYear = String(values?.effectiveAcademicYear || "").trim();
+    const definition = catalog.programs.find((item) => item.code === program);
+    const department = values.department || definition?.department;
+    const major = values.major || "";
+    const assignments = Array.isArray(values.assignments) ? clone(values.assignments) : [];
 
     if (!program || !version || !effectiveAcademicYear) {
       return { ok: false, message: "Program, curriculum version, and effective academic year are required." };
     }
-
-    if (academicCoordinatorData.curricula.some((item) => item.version.toLowerCase() === version.toLowerCase())) {
-      return { ok: false, message: "That curriculum version already exists." };
+    if (!definition || definition.department !== department || (major && !definition.majors.includes(major))) {
+      return { ok: false, message: "Select a compatible department, program and major." };
     }
 
-    const record = {
+    if (academicCoordinatorData.curricula.some((item) => item.program === program && (item.major || "") === major && item.version.toLowerCase() === version.toLowerCase())) {
+      return { ok: false, message: "That curriculum version already exists." };
+    }
+    const problems = validateCurriculumRecord({ ...values, program, department, major, assignments, version, effectiveAcademicYear }, catalog);
+    if (problems.length) return { ok: false, message: problems[0] };
+
+    const record = withCurriculumMetrics({
       id: `CUR-${Date.now()}`,
       program,
+      programId: definition.id,
+      department,
+      departmentId: department,
+      major,
       version,
       effectiveAcademicYear,
-      status: values.status || "Draft",
-      assignedSubjects: 0,
-    };
+      status: "Draft",
+      assignments,
+      reference: "Demo Academic Data",
+    }, catalog.subjects);
 
     setAcademicCoordinatorData((current) => ({
       ...current,
@@ -755,15 +953,27 @@ export function DemoDataProvider({ children }) {
   }
 
   function updateCurriculumVersion(id, changes) {
-    if (!hasRole("academic-coordinator")) return false;
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Only Academic Coordinators can edit curricula." };
 
     const existing = academicCoordinatorData.curricula.find((item) => item.id === id);
-    if (!existing) return false;
+    if (!existing) return { ok: false, message: "Curriculum was not found." };
+    if (existing.status !== "Draft") return { ok: false, message: "Active or archived curricula cannot be edited. Duplicate as a new Draft." };
+    const selectedProgram = catalog.programs.find((item) => item.code === (changes.program || existing.program));
+    const merged = { ...existing, ...changes, id, status: "Draft",
+      department: changes.department || selectedProgram?.department || existing.department,
+      departmentId: changes.department || selectedProgram?.departmentId || existing.departmentId,
+      programId: selectedProgram?.id || existing.programId,
+    };
+    if (academicCoordinatorData.curricula.some((item) => item.id !== id && item.program === merged.program && (item.major || "") === (merged.major || "") && item.version.toLowerCase() === merged.version.toLowerCase())) {
+      return { ok: false, message: "A curriculum with this version already exists for the selected program and major." };
+    }
+    const errors = validateCurriculumRecord(merged, catalog);
+    if (errors.length) return { ok: false, message: errors[0] };
 
     setAcademicCoordinatorData((current) => ({
       ...current,
       curricula: current.curricula.map((item) =>
-        item.id === id ? { ...item, ...changes, id: item.id } : item
+        item.id === id ? withCurriculumMetrics(merged, catalog.subjects) : item
       ),
     }));
     addAcademicHistory(
@@ -773,7 +983,7 @@ export function DemoDataProvider({ children }) {
       existing.status,
       changes.status || existing.status,
     );
-    return true;
+    return { ok: true, record: withCurriculumMetrics(merged, catalog.subjects) };
   }
 
   function duplicateCurriculumVersion(id) {
@@ -782,19 +992,107 @@ export function DemoDataProvider({ children }) {
     const source = academicCoordinatorData.curricula.find((item) => item.id === id);
     if (!source) return { ok: false, message: "Curriculum was not found." };
 
+    const baseVersion = `${source.version} Copy`;
+    let version = baseVersion;
+    let counter = 2;
+    while (academicCoordinatorData.curricula.some((item) => item.program === source.program && (item.major || "") === (source.major || "") && item.version === version)) {
+      version = `${baseVersion} ${counter++}`;
+    }
     const record = {
       ...source,
       id: `CUR-${Date.now()}`,
-      version: `${source.version} Copy`,
+      version,
       status: "Draft",
+      assignments: clone(source.assignments || []),
     };
+    const duplicate = withCurriculumMetrics(record, catalog.subjects);
 
     setAcademicCoordinatorData((current) => ({
       ...current,
-      curricula: [record, ...current.curricula],
+      curricula: [duplicate, ...current.curricula],
     }));
     addAcademicHistory("Academic Setup", record.version, "Curriculum duplicated as new version", source.version, record.version);
-    return { ok: true, record };
+    return { ok: true, record: duplicate };
+  }
+
+  function getAcademicSubjectOptions(filters) {
+    return filterAcademicSubjectOptions(catalog, filters);
+  }
+
+  function validateCurriculumVersion(id) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Only Academic Coordinators can validate curricula." };
+    const record = academicCoordinatorData.curricula.find((item) => item.id === id);
+    if (!record) return { ok: false, message: "Curriculum was not found.", errors: ["Curriculum was not found."] };
+    const errors = validateCurriculumActivation(record, catalog);
+    addAcademicHistory("Academic Setup", record.version,
+      errors.length ? "Curriculum validation failed" : "Curriculum validation passed",
+      record.status, errors.length ? errors[0] : "Validation Passed");
+    return {
+      ok: errors.length === 0,
+      message: errors.length ? errors[0] : "All eight semesters and subject requirements are valid.",
+      errors,
+      summary: summarizeCurriculum(record.assignments || [], catalog.subjects),
+    };
+  }
+
+  function performCurriculumLifecycle(id, action) {
+    if (!hasRole("academic-coordinator")) {
+      return { ok: false, message: "Only Academic Coordinators may change curriculum status." };
+    }
+    const result = transitionCurriculumVersion(curriculumDataRef.current, catalog, {
+      id, action, actor: currentAcademicCoordinatorName(), dateTime: demoTimestamp(),
+      eventId: `ACH-${Date.now()}-${++curriculumEventCounterRef.current}`,
+    });
+    if (!result.ok) return result;
+    // The complete next state includes the curriculum switch and both history
+    // events. The ref serializes multiple actions within the same browser tick.
+    curriculumDataRef.current = result.next;
+    setAcademicCoordinatorData(result.next);
+    return result;
+  }
+
+  function activateCurriculumVersion(id) { return performCurriculumLifecycle(id, "activate"); }
+  function deactivateCurriculumVersion(id) { return performCurriculumLifecycle(id, "deactivate"); }
+  function archiveCurriculumVersion(id) { return performCurriculumLifecycle(id, "archive"); }
+  function restoreCurriculumVersion(id) { return performCurriculumLifecycle(id, "restore"); }
+
+  function resetMockAcademicSetup() {
+    if (!hasRole("academic-coordinator"))
+      return { ok: false, message: "Only the demo Academic Coordinator can reset Academic Setup data." };
+    setCatalog(clone(INITIAL_ACADEMIC_CATALOG));
+    setAcademicCoordinatorData(clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
+    return { ok: true, message: "Mock academic setup has been restored to its initial sample data." };
+  }
+
+  function deleteAcademicSubject(code) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+    const record = catalog.subjects.find((item) => item.code === code);
+    if (!record) return { ok: false, message: "Subject was not found." };
+    const inCurriculum = academicCoordinatorData.curricula.some((entry) =>
+      (entry.assignments || []).some((assignment) => assignment.subjectCode === code));
+    const hasEnrollment = registrar.enrollments.some((entry) => entry.subjects?.some((subject) => subject.code === code));
+    const neededAsPrerequisite = catalog.subjects.some((entry) => entry.prerequisites?.includes(code));
+    const hasSection = catalog.sections.some((section) => section.subjectCode === code);
+    if (inCurriculum || hasEnrollment || neededAsPrerequisite || hasSection || record.availableInStudentDemo)
+      return { ok: false, message: "This subject is referenced by a curriculum, section, enrollment, or prerequisite. Set it inactive or update the Draft curriculum first." };
+    setCatalog((current) => ({ ...current, subjects: current.subjects.filter((entry) => entry.code !== code) }));
+    addAcademicHistory("Academic Setup", code, "Unreferenced subject deleted", record.name, "");
+    return { ok: true };
+  }
+
+  function deleteAcademicProgram(code) {
+    if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
+    const record = catalog.programs.find((item) => item.code === code);
+    if (!record) return { ok: false, message: "Program was not found." };
+    if (academicCoordinatorData.curricula.some((entry) => entry.program === code) ||
+        catalog.subjects.some((entry) => entry.programs?.includes(code)) ||
+        registrar.students.some((entry) => entry.program === code) ||
+        student.profile.programCode === code) {
+      return { ok: false, message: "Program is referenced by an academic record. Deactivate it instead." };
+    }
+    setCatalog((current) => ({ ...current, programs: current.programs.filter((entry) => entry.code !== code) }));
+    addAcademicHistory("Academic Setup", code, "Unreferenced program deleted", record.name, "");
+    return { ok: true };
   }
 
   function createAcademicSubject(values) {
@@ -804,15 +1102,23 @@ export function DemoDataProvider({ children }) {
     const name = String(values?.name || "").trim();
     const units = Number(values?.units || 0);
 
-    if (!code || !name || units <= 0) {
+    if (!code || !name || !Number.isFinite(units) || units <= 0 || !Number.isFinite(Number(values.feePerUnit ?? DEFAULT_DEMO_FEE_PER_UNIT)) || Number(values.feePerUnit ?? DEFAULT_DEMO_FEE_PER_UNIT) < 0) {
       return { ok: false, message: "Subject code, name, and valid units are required." };
     }
+    const programs = Array.isArray(values.programs) ? values.programs : [values.program || "BSIT"];
+    if (!programs.length || programs.some((item) => !catalog.programs.some((program) => program.code === item))) {
+      return { ok: false, message: "Select valid applicable programs." };
+    }
+    const prerequisites = Array.isArray(values.prerequisites) ? values.prerequisites : [];
+    const invalid = validateSubjectContext(catalog, { ...values, code, programs, prerequisites });
+    if (invalid) return { ok: false, message: invalid };
 
     if (catalog.subjects.some((item) => item.code === code)) {
       return { ok: false, message: "That subject code already exists." };
     }
 
     const record = {
+      id: `subject-${code.toLowerCase()}`,
       code,
       name,
       units,
@@ -820,11 +1126,20 @@ export function DemoDataProvider({ children }) {
       yearLevel: values?.yearLevel || "1st Year",
       semester: values?.semester || "First Semester",
       category: "Other Eligible",
-      eligibility: "ELIGIBLE",
-      prerequisites: [],
+      eligibility: "NOT_OFFERED",
+      prerequisites,
       restrictionReason: "",
       status: values?.status || "Active",
       program: values?.program || "BSIT",
+      programs,
+      major: values?.major || "",
+      programIds: programs.map((item) => `program-${item.toLowerCase()}`),
+      department: values?.department || catalog.programs.find((item) => item.code === programs[0])?.department,
+      departmentId: values?.department || catalog.programs.find((item) => item.code === programs[0])?.departmentId,
+      feePerUnit: Number(values.feePerUnit ?? DEFAULT_DEMO_FEE_PER_UNIT),
+      fee: units * Number(values.feePerUnit ?? DEFAULT_DEMO_FEE_PER_UNIT),
+      availableInStudentDemo: false,
+      reference: "Demo Academic Data",
       curriculum: values?.curriculum || "BSIT Curriculum 2024",
     };
 
@@ -840,19 +1155,34 @@ export function DemoDataProvider({ children }) {
     if (!hasRole("academic-coordinator")) return false;
 
     const existing = catalog.subjects.find((item) => item.code === code);
-    if (!existing) return false;
+    if (!existing) return { ok: false, message: "Subject was not found." };
+    const next = { ...existing, ...changes, code, id: existing.id,
+      programIds: (changes.programs || existing.programs).map((item) => `program-${item.toLowerCase()}`),
+    };
+    next.departmentId = next.department;
+    next.fee = Number(next.units) * Number(next.feePerUnit);
+    if (!Number.isFinite(Number(next.units)) || Number(next.units) <= 0 || !Number.isFinite(Number(next.feePerUnit)) || Number(next.feePerUnit) < 0) return { ok: false, message: "Units and the demo fee rate must be valid nonnegative numbers." };
+    const invalid = validateSubjectContext(catalog, next);
+    if (invalid) return { ok: false, message: invalid };
+    if (!next.programs?.length || next.programs.some((item) => !catalog.programs.some((entry) => entry.code === item))) return { ok: false, message: "Select valid applicable programs." };
+    if (academicCoordinatorData.curricula.some((item) => ["Active", "Inactive", "Archived"].includes(item.status) && (item.assignments || []).some((assignment) => assignment.subjectCode === code)) &&
+      (next.units !== existing.units || JSON.stringify(next.prerequisites) !== JSON.stringify(existing.prerequisites) ||
+       next.department !== existing.department || next.major !== (existing.major || "") ||
+       JSON.stringify([...next.programs].sort()) !== JSON.stringify([...(existing.programs || [])].sort()))) {
+      return { ok: false, message: "A protected curriculum uses this subject. Duplicate its curriculum for structural or prerequisite changes." };
+    }
 
     setCatalog((current) => ({
       ...current,
       subjects: current.subjects.map((item) =>
-        item.code === code ? { ...item, ...changes, code: item.code } : item
+        item.code === code ? next : item
       ),
     }));
     addAcademicHistory("Academic Setup", code, "Subject updated", existing.name, changes.name || existing.name);
-    return true;
+    return { ok: true, record: next };
   }
 
-  function savePrerequisiteRule({ targetCode, prerequisiteCode }) {
+  function savePrerequisiteRule({ targetCode, prerequisiteCode, curriculumId, effectiveTerm }) {
     if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
 
     const target = catalog.subjects.find((item) => item.code === targetCode);
@@ -864,6 +1194,42 @@ export function DemoDataProvider({ children }) {
 
     if (targetCode === prerequisiteCode) {
       return { ok: false, message: "A subject cannot be its own prerequisite." };
+    }
+
+    if (curriculumId) {
+      const curriculum = academicCoordinatorData.curricula.find((entry) => entry.id === curriculumId);
+      if (!curriculum) return { ok: false, message: "Curriculum was not found." };
+      if (curriculum.status !== "Draft") return { ok: false, message: "Prerequisites may be edited only on Draft curricula." };
+      const targetAssignment = curriculum.assignments.find((entry) => entry.subjectCode === targetCode);
+      const prerequisiteAssignment = curriculum.assignments.find((entry) => entry.subjectCode === prerequisiteCode);
+      if (!targetAssignment || !prerequisiteAssignment)
+        return { ok: false, message: "Both subjects must be assigned to this curriculum." };
+      const ruleCodes = targetAssignment.prerequisites || target.prerequisites || [];
+      if (ruleCodes.includes(prerequisiteCode))
+        return { ok: false, message: "That prerequisite relationship already exists." };
+      const subjectGraph = catalog.subjects.map((subject) => {
+        const assignment = curriculum.assignments.find((entry) => entry.subjectCode === subject.code);
+        return assignment ? { ...subject, prerequisites: assignment.prerequisites ?? subject.prerequisites } : subject;
+      });
+      const problem = validatePrerequisiteGraph(subjectGraph, targetCode, [...ruleCodes, prerequisiteCode]);
+      if (problem) return { ok: false, message: problem };
+      const termIndex = (assignment) => ACADEMIC_YEARS.indexOf(assignment.yearLevel) * 2 + ACADEMIC_SEMESTERS.indexOf(assignment.semester);
+      if (termIndex(prerequisiteAssignment) >= termIndex(targetAssignment))
+        return { ok: false, message: "The prerequisite must be assigned to an earlier semester." };
+      const updated = withCurriculumMetrics({
+        ...curriculum, assignments: curriculum.assignments.map((entry) =>
+          entry.subjectCode === targetCode ? { ...entry, prerequisites: [...ruleCodes, prerequisiteCode] } : entry),
+      }, catalog.subjects);
+      setAcademicCoordinatorData((current) => ({
+        ...current,
+        curricula: current.curricula.map((entry) => entry.id === curriculumId ? updated : entry),
+        prerequisiteRules: [...(current.prerequisiteRules || []), {
+          id: `PR-${Date.now()}`, curriculumId, targetCode, prerequisiteCode,
+          effectiveTerm: effectiveTerm || student.term.shortLabel, status: "Active",
+        }],
+      }));
+      addAcademicHistory("Academic Setup", targetCode, "Curriculum prerequisite added", curriculum.version, prerequisiteCode);
+      return { ok: true };
     }
 
     if ((target.prerequisites || []).includes(prerequisiteCode)) {
@@ -886,8 +1252,30 @@ export function DemoDataProvider({ children }) {
     return { ok: true };
   }
 
-  function removePrerequisiteRule(targetCode, prerequisiteCode) {
+  function removePrerequisiteRule(targetCode, prerequisiteCode, curriculumId) {
     if (!hasRole("academic-coordinator")) return false;
+    if (curriculumId) {
+      const curriculum = academicCoordinatorData.curricula.find((entry) => entry.id === curriculumId);
+      if (!curriculum || curriculum.status !== "Draft") return false;
+      const assignment = curriculum.assignments.find((entry) => entry.subjectCode === targetCode);
+      if (!assignment?.prerequisites?.includes(prerequisiteCode)) return false;
+      const updated = withCurriculumMetrics({
+        ...curriculum, assignments: curriculum.assignments.map((entry) =>
+          entry.subjectCode === targetCode
+            ? { ...entry, prerequisites: entry.prerequisites.filter((code) => code !== prerequisiteCode) }
+            : entry),
+      }, catalog.subjects);
+      setAcademicCoordinatorData((current) => ({
+        ...current,
+        curricula: current.curricula.map((entry) => entry.id === curriculumId ? updated : entry),
+        prerequisiteRules: (current.prerequisiteRules || []).map((entry) =>
+          entry.curriculumId === curriculumId && entry.targetCode === targetCode && entry.prerequisiteCode === prerequisiteCode
+            ? { ...entry, status: "Inactive" } : entry),
+      }));
+      addAcademicHistory("Academic Setup", targetCode, "Curriculum prerequisite deactivated", prerequisiteCode, curriculum.version);
+      return true;
+    }
+    if (!catalog.subjects.some((entry) => entry.code === targetCode && entry.prerequisites?.includes(prerequisiteCode))) return false;
 
     setCatalog((current) => ({
       ...current,
@@ -1172,7 +1560,8 @@ export function DemoDataProvider({ children }) {
 
   const value = {
     student: studentView,
-    catalog: catalogView,
+    catalog: session?.role === "student" ? catalogView : catalog,
+    academicCatalog: catalog,
     registrar,
     systemAdministrators,
     academicCoordinators,
@@ -1204,6 +1593,15 @@ export function DemoDataProvider({ children }) {
     createCurriculumVersion,
     updateCurriculumVersion,
     duplicateCurriculumVersion,
+    getAcademicSubjectOptions,
+    validateCurriculumVersion,
+    activateCurriculumVersion,
+    deactivateCurriculumVersion,
+    archiveCurriculumVersion,
+    restoreCurriculumVersion,
+    resetMockAcademicSetup,
+    deleteAcademicSubject,
+    deleteAcademicProgram,
     createAcademicSubject,
     updateAcademicSubject,
     savePrerequisiteRule,

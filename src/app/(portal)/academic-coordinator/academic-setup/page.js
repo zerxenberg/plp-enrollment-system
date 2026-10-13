@@ -1,4 +1,4 @@
-import AcademicCoordinatorAcademicSetup from "@/components/academic-coordinator/AcademicCoordinatorAcademicSetup";
+import AcademicCoordinatorAcademicSetup from "@/components/academic-coordinator/AcademicSetupWorkspace";
 
 export const metadata = { title: "Academic Setup" };
 

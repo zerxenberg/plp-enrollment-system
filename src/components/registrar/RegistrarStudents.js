@@ -7,15 +7,16 @@ import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, Sear
 import AppIcon from "@/components/ui/AppIcon";
 import { Panel, Tabs, Info, Feedback, Details } from "./RegistrarShared";
 import RegistrarGradeImports from "./RegistrarGradeImports";
+import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
+import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
 
 const ALL = { value: "ALL", label: "All" };
 
 export default function RegistrarStudents() {
   const [section, setSection] = useState("list");
-  const { registrar, correctRegistrarStudent } = useDemoData();
+  const { registrar, catalog, correctRegistrarStudent } = useDemoData();
   const [search, setSearch] = useState("");
-  const [program, setProgram] = useState("ALL");
-  const [term, setTerm] = useState("ALL");
+  const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
   const [studentStatus, setStudentStatus] = useState("ALL");
   const [enrollmentStatus, setEnrollmentStatus] = useState("ALL");
   const [sort, setSort] = useState("name_asc");
@@ -30,14 +31,15 @@ export default function RegistrarStudents() {
   const selected = registrar.students.find((item) => item.studentNumber === selectedId);
   const selectedEnrollments = registrar.enrollments.filter((item) => item.studentNumber === selectedId);
   const options = (key) => [ALL, ...new Set(registrar.students.map((item) => item[key])).values()].map((item) => typeof item === "string" ? { value: item, label: item } : item);
-  const filtered = registrar.students.filter((item) => {
+  const statusFiltered = registrar.students.filter((item) => {
     const searchText = `${item.studentNumber} ${item.admissionReference} ${item.fullName} ${item.program}`.toLowerCase();
     return searchText.includes(search.trim().toLowerCase()) &&
-      (program === "ALL" || item.program === program) &&
-      (term === "ALL" || item.academicTerm === term) &&
       (studentStatus === "ALL" || item.studentStatus === studentStatus) &&
       (enrollmentStatus === "ALL" || (registrar.enrollments.find((entry) => entry.studentNumber === item.studentNumber)?.status || item.enrollmentStatus) === enrollmentStatus);
-  }).sort((a, b) => sort === "name_desc" ? b.fullName.localeCompare(a.fullName) : sort === "student_asc" ? a.studentNumber.localeCompare(b.studentNumber) : sort === "student_desc" ? b.studentNumber.localeCompare(a.studentNumber) : a.fullName.localeCompare(b.fullName));
+  });
+  const filtered = filterAcademicRecords(statusFiltered, academicFilters, registrar.enrollments, catalog.programs)
+    .sort((a, b) => sort === "name_desc" ? b.fullName.localeCompare(a.fullName) : sort === "student_asc" ? a.studentNumber.localeCompare(b.studentNumber) : sort === "student_desc" ? b.studentNumber.localeCompare(a.studentNumber) : a.fullName.localeCompare(b.fullName));
+  const changeAcademicFilter = (key, value) => setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
 
   function openStudent(number) { setSelectedId(number); setView("profile"); setFeedback(""); }
   function beginCorrection() { setField("email"); setValue(selected?.email || ""); setReason(""); setFeedback(""); setCorrectionOpen(true); }
@@ -62,14 +64,13 @@ export default function RegistrarStudents() {
       <Panel title="Student List" subtitle={`${filtered.length} matching student records. Records originate from the Admission handoff.`}>
         <div className="toolbar">
           <SearchControl label="Search students" value={search} onChange={setSearch} placeholder="Search student name, number or admission reference" />
-          <FilterControl label="Program" value={program} onChange={setProgram} options={options("program")} />
-          <FilterControl label="Academic Term" value={term} onChange={setTerm} options={options("academicTerm")} />
           <FilterControl label="Student Status" value={studentStatus} onChange={setStudentStatus} options={options("studentStatus")} />
           <FilterControl label="Enrollment Status" value={enrollmentStatus} onChange={setEnrollmentStatus} options={[ALL, ...new Set([...registrar.students.map((item) => item.enrollmentStatus), ...registrar.enrollments.map((item) => item.status)])].map((item) => typeof item === "string" ? {value:item,label:item.replaceAll("_", " ")} : item)} />
           <FilterControl label="Sort By" value={sort} onChange={setSort} options={[{value:"name_asc",label:"Name A to Z"},{value:"name_desc",label:"Name Z to A"},{value:"student_asc",label:"Student Number Ascending"},{value:"student_desc",label:"Student Number Descending"}]} />
-          <Button type="button" variant="ghost" onClick={() => { setSearch(""); setProgram("ALL"); setTerm("ALL"); setStudentStatus("ALL"); setEnrollmentStatus("ALL"); setSort("name_asc"); }}>Clear Filters</Button>
+          <Button type="button" variant="ghost" onClick={() => { setSearch(""); setAcademicFilters(ALL_ACADEMIC_FILTERS); setStudentStatus("ALL"); setEnrollmentStatus("ALL"); setSort("name_asc"); }}>Clear Filters</Button>
         </div>
-        <DataTable rowKey="studentNumber" rows={filtered} columns={[
+        <AcademicFilterBar records={statusFiltered} enrollments={registrar.enrollments} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={filtered.length} label="Student list academic filters" />
+        <DataTable rowKey="studentNumber" rows={filtered} emptyMessage="No student records match the selected filters." columns={[
           {key:"studentNumber",label:"Student Number"},{key:"fullName",label:"Full Name"},{key:"admissionReference",label:"Admission Reference"},{key:"program",label:"Program"},{key:"academicTerm",label:"Academic Term"},{key:"studentStatus",label:"Student Status",render:(row)=><StatusBadge value={row.studentStatus} />},
           {key:"enrollmentStatus",label:"Enrollment",render:(row)=><StatusBadge value={registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber)?.status || row.enrollmentStatus} />},
           {key:"actions",label:"Actions",render:(row)=><div className="cell-actions"><button className="table-action" type="button" onClick={() => openStudent(row.studentNumber)}>View Student</button>{registrar.enrollments.some((entry) => entry.studentNumber === row.studentNumber) ? <Link className="table-action" href={`/registrar/enrollment?reference=${encodeURIComponent(registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber).reference)}`}>Open Enrollment</Link> : null}<button className="table-action" type="button" onClick={() => {openStudent(row.studentNumber);setView("history");}}>View History</button></div>}

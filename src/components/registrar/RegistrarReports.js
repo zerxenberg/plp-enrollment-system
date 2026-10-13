@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Button, DataTable, FilterControl, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { Panel, Tabs, Metric, Feedback } from "./RegistrarShared";
+import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
+import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
 
 const VIEW_OPTIONS = [{value:"reports",label:"Reports"},{value:"statistics",label:"Enrollment Statistics"},{value:"monitoring",label:"Enrollment Monitoring"},{value:"quality",label:"Data Quality Review"},{value:"history",label:"Registrar Transaction History"}];
 const REPORTS = ["Enrollment Report", "Student Enrollment Report", "Enrollment Status Report", "Program Enrollment Report", "Subject Registration Report", "Section Capacity Report", "Academic Term Report"];
@@ -26,38 +28,38 @@ export default function RegistrarReports() {
   const { registrar, catalog } = useDemoData();
   const [view,setView] = useState("reports");
   const [report,setReport] = useState(REPORTS[0]);
-  const [term,setTerm] = useState("ALL");
-  const [program,setProgram] = useState("ALL");
+  const [academicFilters,setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
   const [status,setStatus] = useState("ALL");
   const [subject,setSubject] = useState("ALL");
   const [section,setSection] = useState("ALL");
   const [preview,setPreview] = useState(false);
   const [message,setMessage] = useState("");
-  const enrolled = registrar.enrollments.filter((entry) => (term === "ALL" || entry.term === term) && (program === "ALL" || entry.program === program) && (status === "ALL" || entry.status === status));
-  const reportEnrollments = enrolled.filter((entry) => (subject === "ALL" || entry.subjects.some((item)=>item.code===subject)) && (section === "ALL" || entry.subjects.some((item)=>item.section===section)));
+  const statusEnrolled = registrar.enrollments.filter((entry) => status === "ALL" || entry.status === status);
+  const enrolled = filterAcademicRecords(statusEnrolled, academicFilters, [], catalog.programs);
+  const reportEnrollments = enrolled.filter((entry) => subject === "ALL" || entry.subjects.some((item)=>item.code===subject));
   const reportRows = report === "Section Capacity Report" ? registrar.sections.filter((row)=>(section==="ALL" || row.code===section) && (subject==="ALL" || row.subject===subject)).map(({code,subject,capacity,confirmed,status})=>({code,subject,capacity,confirmed,remaining:Math.max(0,capacity-confirmed),status})) :
-    report === "Subject Registration Report" ? reportEnrollments.flatMap((entry)=>entry.subjects.filter((item)=>(subject==="ALL" || item.code===subject) && (section==="ALL" || item.section===section)).map((item)=>({enrollment:entry.reference,student:entry.studentName,program:entry.program,term:entry.term,code:item.code,subject:item.name,section:item.section}))) :
+    report === "Subject Registration Report" ? reportEnrollments.flatMap((entry)=>entry.subjects.filter((item)=>(subject==="ALL" || item.code===subject) && (academicFilters.section==="ALL" || item.section===academicFilters.section)).map((item)=>({enrollment:entry.reference,student:entry.studentName,program:entry.program,term:entry.term,code:item.code,subject:item.name,section:item.section}))) :
     report === "Academic Term Report" ? [...new Set(reportEnrollments.map((entry)=>entry.term))].map((academicTerm)=>({term:academicTerm,enrollments:reportEnrollments.filter((entry)=>entry.term===academicTerm).length,confirmed:reportEnrollments.filter((entry)=>entry.term===academicTerm && entry.status==="CONFIRMED").length})) :
-    report === "Program Enrollment Report" ? catalog.programs.filter((item)=>program==="ALL" || program===item.code).map((item)=>({program:item.code,name:item.name,enrollments:reportEnrollments.filter((entry)=>entry.program===item.code).length,confirmed:reportEnrollments.filter((entry)=>entry.program===item.code && entry.status==="CONFIRMED").length})) :
+    report === "Program Enrollment Report" ? catalog.programs.filter((item)=>academicFilters.program==="ALL" || academicFilters.program===item.code).map((item)=>({program:item.code,name:item.name,enrollments:reportEnrollments.filter((entry)=>entry.program===item.code).length,confirmed:reportEnrollments.filter((entry)=>entry.program===item.code && entry.status==="CONFIRMED").length})) :
     reportEnrollments.map(({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference})=>({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference:confirmationReference || ""}));
   const count = (filter) => enrolled.filter((entry)=>entry.status===filter).length;
   const reportColumns = Object.keys(reportRows[0] || {}).map((key)=>({key,label:key.replace(/([A-Z])/g," $1").replace(/^./, (letter)=>letter.toUpperCase())}));
   const choices = (array) => [{value:"ALL",label:"All"},...new Set(array)].map((item)=>typeof item==="string"?{value:item,label:item.replaceAll("_"," ")}:item);
   const showEnrollmentFilters = view === "statistics" || view === "monitoring" || (view === "reports" && report !== "Section Capacity Report");
+  const changeAcademicFilter = (key, value) => { setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value); setPreview(false); };
 
   return (
     <>
       <PageHeader title="Reports & Monitoring" description="Generate enrollment summaries, examine workload and review Registrar transaction history." />
       <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} label="Registrar reporting sections" title="Registrar Reporting" subtitle="Operational enrollment data and student record quality only.">
         {showEnrollmentFilters ? <div className="toolbar">
-          <FilterControl label="Academic Term" value={term} onChange={(next)=>{setTerm(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.term))} />
-          <FilterControl label="Program" value={program} onChange={(next)=>{setProgram(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.program))} />
           <FilterControl label="Enrollment Status" value={status} onChange={(next)=>{setStatus(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.status))} />
         </div> : null}
+        {showEnrollmentFilters ? <AcademicFilterBar records={statusEnrolled} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={enrolled.length} label="Registrar enrollment report academic filters" /> : null}
         {view==="reports" ? <>
           <div className="toolbar"><FilterControl label="Report Type" value={report} onChange={(next)=>{setReport(next);setPreview(false);}} options={REPORTS.map((item)=>({value:item,label:item}))} />
             <FilterControl label="Subject" value={subject} onChange={(next)=>{setSubject(next);setPreview(false);}} options={choices([...registrar.enrollments.flatMap((entry)=>entry.subjects.map((item)=>item.code)),...registrar.sections.map((item)=>item.subject)])} />
-            <FilterControl label="Section" value={section} onChange={(next)=>{setSection(next);setPreview(false);}} options={choices([...registrar.enrollments.flatMap((entry)=>entry.subjects.map((item)=>item.section)),...registrar.sections.map((item)=>item.code)])} />
+            {report==="Section Capacity Report" ? <FilterControl label="Section" value={section} onChange={(next)=>{setSection(next);setPreview(false);}} options={choices(registrar.sections.map((item)=>item.code))} /> : null}
             <Button type="button" onClick={()=>{setPreview(true);setMessage(`${report} generated from ${reportRows.length} demo records.`);}}>Generate & Preview</Button>
             <Button type="button" variant="secondary" onClick={()=>exportCsv(reportRows,`${report.toLowerCase().replaceAll(" ","-")}.csv`)}>Export Spreadsheet (CSV)</Button>
             <Button type="button" variant="secondary" onClick={()=>window.print()}>Print / Save as PDF</Button>

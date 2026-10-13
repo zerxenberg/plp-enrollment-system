@@ -6,6 +6,8 @@ import { useSearchParams } from "next/navigation";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
 import { Panel, Tabs, Info, Details, Feedback } from "./RegistrarShared";
+import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
+import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
 
 const QUEUES = [
   {value:"ALL",label:"All"}, {value:"PENDING",label:"Pending (Submitted)"},
@@ -18,11 +20,11 @@ const CHECKS = ["Program Match", "Curriculum Match", "Duplicate Subject Check", 
 const CATEGORIES = ["Student Information", "Subject Registration", "Prerequisite", "Section Availability", "Schedule Conflict", "Unit Load", "Other"];
 
 export default function RegistrarEnrollment() {
-  const { registrar, runRegistrarValidation, returnForCorrection, confirmRegistrarEnrollment, applyAuthorizedCorrection } = useDemoData();
+  const { registrar, catalog, runRegistrarValidation, returnForCorrection, confirmRegistrarEnrollment, applyAuthorizedCorrection } = useDemoData();
   const [queue, setQueue] = useState("ALL");
   const [search, setSearch] = useState("");
-  const [program, setProgram] = useState("ALL");
-  const [term, setTerm] = useState("ALL");
+  const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
+  const [historyAcademicFilters, setHistoryAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
   const [sort, setSort] = useState("newest");
   const params = useSearchParams();
   const [referenceOverride, setReference] = useState(undefined);
@@ -42,13 +44,16 @@ export default function RegistrarEnrollment() {
   const canConfirm = enrollment?.status === "VALIDATED";
   const histories = registrar.activity.filter((item) => item.reference === reference);
 
-  const options = (key) => [{value:"ALL",label:"All"}, ...new Set(registrar.enrollments.map((item) => item[key])).values()].map((item) => typeof item === "string" ? {value:item,label:item} : item);
-  const filtered = registrar.enrollments.filter((item) => {
+  const queueFiltered = registrar.enrollments.filter((item) => {
     const matchQueue = queue === "ALL" || (queue === "PENDING" ? item.status === "SUBMITTED" : item.status === queue);
-    return matchQueue && (program === "ALL" || program === item.program) &&
-      (term === "ALL" || term === item.term) &&
-      `${item.reference} ${item.studentName} ${item.studentNumber} ${item.program}`.toLowerCase().includes(search.trim().toLowerCase());
-  }).sort((a,b)=>sort==="name" ? a.studentName.localeCompare(b.studentName) : sort==="program" ? a.program.localeCompare(b.program) : sort==="oldest" ? a.reference.localeCompare(b.reference) : b.reference.localeCompare(a.reference));
+    return matchQueue && `${item.reference} ${item.studentName} ${item.studentNumber} ${item.program}`.toLowerCase().includes(search.trim().toLowerCase());
+  });
+  const filtered = filterAcademicRecords(queueFiltered, academicFilters, [], catalog.programs)
+    .sort((a,b)=>sort==="name" ? a.studentName.localeCompare(b.studentName) : sort==="program" ? a.program.localeCompare(b.program) : sort==="oldest" ? a.reference.localeCompare(b.reference) : b.reference.localeCompare(a.reference));
+  const historicalTransactions = registrar.enrollments.filter((item) => ["CONFIRMED","CANCELLED"].includes(item.status));
+  const historyRows = filterAcademicRecords(historicalTransactions, historyAcademicFilters, [], catalog.programs);
+  const changeAcademicFilter = (key, value) => setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
+  const changeHistoryAcademicFilter = (key, value) => setHistoryAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
 
   function openReview(nextReference, nextTab = "subjects") {
     setReference(nextReference);
@@ -98,12 +103,11 @@ export default function RegistrarEnrollment() {
       <Panel title="Enrollment Queue" subtitle="Pending is a queue view for Submitted only. Every stored enrollment retains its canonical status.">
         <div className="toolbar">
           <SearchControl label="Search enrollment" value={search} onChange={setSearch} placeholder="Search reference, student name or student number" />
-          <FilterControl label="Program" value={program} onChange={setProgram} options={options("program")} />
-          <FilterControl label="Academic Term" value={term} onChange={setTerm} options={options("term")} />
           <FilterControl label="Sort By" value={sort} onChange={setSort} options={[{value:"newest",label:"Newest Reference"},{value:"oldest",label:"Oldest Reference"},{value:"name",label:"Student Name"},{value:"program",label:"Program"}]} />
-          <Button type="button" variant="ghost" onClick={() => {setSearch("");setProgram("ALL");setTerm("ALL");setQueue("ALL");setSort("newest");}}>Clear Filters</Button>
+          <Button type="button" variant="ghost" onClick={() => {setSearch("");setAcademicFilters(ALL_ACADEMIC_FILTERS);setQueue("ALL");setSort("newest");}}>Clear Filters</Button>
         </div>
-        <DataTable rowKey="reference" rows={filtered} columns={[
+        <AcademicFilterBar records={queueFiltered} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={filtered.length} label="Enrollment queue academic filters" />
+        <DataTable rowKey="reference" rows={filtered} emptyMessage="No enrollment transactions match the selected filters." columns={[
           {key:"reference",label:"Enrollment Ref."},{key:"studentNumber",label:"Student No."},{key:"studentName",label:"Student"},
           {key:"program",label:"Program"},{key:"term",label:"Academic Term"},{key:"units",label:"Units"},
           {key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},
@@ -147,7 +151,8 @@ export default function RegistrarEnrollment() {
       </div> : reference ? <p className="notice warning" role="status">Enrollment reference {reference} was not found. Select another transaction from the queue.</p> : null}
 
       <div style={{marginTop:16}}><Panel title="Enrollment History" subtitle="Official confirmed and past transaction records stay available for review and audit.">
-        <DataTable rowKey="reference" rows={registrar.enrollments.filter((item) => ["CONFIRMED","CANCELLED"].includes(item.status))} emptyMessage="No confirmed enrollment records yet." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><button type="button" className="table-action" onClick={() => openReview(row.reference,"history")}>View Details</button>}]} />
+        <AcademicFilterBar records={historicalTransactions} programs={catalog.programs} departments={catalog.departments} value={historyAcademicFilters} onChange={changeHistoryAcademicFilter} matchingCount={historyRows.length} label="Enrollment history academic filters" />
+        <DataTable rowKey="reference" rows={historyRows} emptyMessage="No historical enrollment records match the selected academic filters." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><button type="button" className="table-action" onClick={() => openReview(row.reference,"history")}>View Details</button>}]} />
       </Panel></div>
 
       <Modal open={dialog === "return" && Boolean(enrollment)} title="Return for Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-return-form">Return for Correction</Button></>}>
