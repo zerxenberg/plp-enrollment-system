@@ -159,7 +159,7 @@ export default function RegistrarEnrollment() {
         <form id="registrar-return-form" className="form-grid" onSubmit={sendCorrection}>
           <label className="field full">Reason Category<select required value={category} onChange={(event) => setCategory(event.target.value)}>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
           <label className="field full">Explanation<textarea required value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="Describe what the student must correct" /></label>
-          <label className="field full">Affected Subject, Section or Field (optional)<input value={affected} onChange={(event) => setAffected(event.target.value)} placeholder="e.g. IT302 / CTC 205" /></label>
+          <label className="field full">Affected Subject, Section or Field (optional)<input value={affected} onChange={(event) => setAffected(event.target.value)} placeholder="e.g. IT302 / BSIT-3A" /></label>
         </form>
         <p className="notice warning" style={{marginTop:12}}>This records a Registrar correction reason and sets the transaction to Requires Correction.</p>
       </Modal>

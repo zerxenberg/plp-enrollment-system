@@ -17,6 +17,12 @@ import {
   getPrerequisiteCandidates,
 } from "@/features/academic/academic-reference";
 import { transitionCurriculumVersion } from "@/features/academic/curriculum-lifecycle";
+import { buildBlockPlanningSeed } from "@/features/block-planning/block-planning-seed";
+import {
+  createBlockSectionRecord, updateBlockSectionRecord, assignBlockStudentsRecord,
+  transferBlockStudentRecord, saveBlockMeetingRecord, removeBlockMeetingRecord,
+  finalizeBlockScheduleRecord,
+} from "@/features/block-planning/block-planning-service";
 import {
   GRADE_IMPORT_EMPTY, GRADE_IMPORT_STORAGE_KEY, readGradeStore, saveGradeStore,
   createGradeBatch, validateGradeBatch, replaceGradeBatch, verifyGradeBatch,
@@ -28,6 +34,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const STUDENT_EDITABLE_STATUSES = new Set(["ELIGIBLE", "IN_PROGRESS", "REQUIRES_CORRECTION"]);
 const STUDENT_SUBMITTABLE_STATUSES = new Set(["IN_PROGRESS"]);
 const ACADEMIC_STORAGE_KEY = "plp-demo-academic-setup-v1";
+const BLOCK_PLANNING_STORAGE_KEY = "plp-demo-block-planning-v1";
 const ACADEMIC_FIXTURE_VERSION = 2;
 const ACADEMIC_YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 const ACADEMIC_SEMESTERS = ["First Semester", "Second Semester"];
@@ -85,7 +92,7 @@ const ACADEMIC_COORDINATOR_INITIAL_DATA = {
       dateTime: "Oct 7, 2026 · 4:40 PM",
       coordinator: "Elena Cruz",
       module: "Sections & Schedules",
-      record: "CTC 301",
+      record: "BSIT-3A",
       action: "Section capacity reviewed",
       previousValue: "31 confirmed",
       newValue: "31 confirmed",
@@ -260,6 +267,10 @@ export function DemoDataProvider({ children }) {
   const [academicCoordinators] = useState(() => clone(academicCoordinatorSource));
   const [catalog, setCatalog] = useState(() => clone(INITIAL_ACADEMIC_CATALOG));
   const [academicCoordinatorData, setAcademicCoordinatorData] = useState(() => clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
+  const [blockPlanning, setBlockPlanning] = useState(() =>
+    buildBlockPlanningSeed(INITIAL_ACADEMIC_CATALOG, ACADEMIC_COORDINATOR_INITIAL_DATA.curricula));
+  const blockPlanningRef = useRef(blockPlanning);
+  const [blockPlanningLoaded, setBlockPlanningLoaded] = useState(false);
   const curriculumDataRef = useRef(academicCoordinatorData);
   const curriculumEventCounterRef = useRef(0);
   const [academicLoaded, setAcademicLoaded] = useState(false);
@@ -269,6 +280,60 @@ export function DemoDataProvider({ children }) {
   const hasRole = (role) => getDemoSession()?.role === role;
 
   useEffect(() => { curriculumDataRef.current = academicCoordinatorData; }, [academicCoordinatorData]);
+
+  useEffect(() => {
+    const load = (raw) => {
+      if (!raw) return;
+      try {
+        const saved = JSON.parse(raw);
+        const required = ["terms", "colleges", "programs", "curricula", "subjects",
+          "blockSections", "students", "assignments", "subjectClasses",
+          "classMeetings", "professors", "rooms", "history"];
+        if (saved?.version !== 1 || !saved.data ||
+          required.some((key) => !Array.isArray(saved.data[key]))) return;
+        // Validate basic referential integrity before accepting an old browser snapshot.
+        const data = saved.data;
+        const ids = (rows) => new Set(rows.map((item) => item.id));
+        const sectionIds = ids(data.blockSections);
+        const studentIds = ids(data.students);
+        const classIds = ids(data.subjectClasses);
+        if (data.blockSections.some((item) => !item.id || !data.terms.some((term) => term.id === item.termId)) ||
+          data.assignments.some((item) => !sectionIds.has(item.sectionId) || !studentIds.has(item.studentId)) ||
+          data.subjectClasses.some((item) => !sectionIds.has(item.sectionId)) ||
+          data.classMeetings.some((item) => !classIds.has(item.subjectClassId))) return;
+        blockPlanningRef.current = data;
+        setBlockPlanning(data);
+      } catch {
+        // A malformed demo snapshot cannot prevent the page from loading.
+      }
+    };
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try { load(window.localStorage.getItem(BLOCK_PLANNING_STORAGE_KEY)); } catch { /* use fixture */ }
+      setBlockPlanningLoaded(true);
+    });
+    const onStorage = (event) => {
+      if (event.key === BLOCK_PLANNING_STORAGE_KEY) load(event.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!blockPlanningLoaded) return;
+    try {
+      const value = JSON.stringify({ version: 1, data: blockPlanning });
+      if (window.localStorage.getItem(BLOCK_PLANNING_STORAGE_KEY) !== value) {
+        window.localStorage.setItem(BLOCK_PLANNING_STORAGE_KEY, value);
+      }
+    } catch {
+      // Changes remain available within this browser session.
+    }
+  }, [blockPlanning, blockPlanningLoaded]);
 
   useEffect(() => {
     const load = (raw) => {
@@ -1452,6 +1517,74 @@ export function DemoDataProvider({ children }) {
     return { ok: true };
   }
 
+  // Block planning actions operate only on a separate browser demo snapshot.
+  // Academic Setup remains the current source for the underlying catalog.
+  const effectiveBlockPlanning = {
+    ...blockPlanning,
+    colleges: catalog.departments,
+    programs: catalog.programs,
+    curricula: academicCoordinatorData.curricula,
+    subjects: catalog.subjects,
+  };
+
+  function runBlockPlanningAction(action, ...args) {
+    if (!hasRole("academic-coordinator")) {
+      return { ok: false, message: "Only the Academic Coordinator can edit block planning proposals." };
+    }
+    const current = {
+      ...blockPlanningRef.current,
+      colleges: catalog.departments,
+      programs: catalog.programs,
+      curricula: academicCoordinatorData.curricula,
+      subjects: catalog.subjects,
+    };
+    const result = action(current, ...args);
+    if (result.ok && result.next) {
+      blockPlanningRef.current = result.next;
+      setBlockPlanning(result.next);
+    }
+    const { next, ...response } = result;
+    return response;
+  }
+
+  function createBlockSection(values) {
+    return runBlockPlanningAction(createBlockSectionRecord, values);
+  }
+
+  function updateBlockSection(id, values) {
+    return runBlockPlanningAction(updateBlockSectionRecord, id, values);
+  }
+
+  function assignBlockStudents(values) {
+    return runBlockPlanningAction(assignBlockStudentsRecord, values);
+  }
+
+  function transferBlockStudent(values) {
+    return runBlockPlanningAction(transferBlockStudentRecord, values);
+  }
+
+  function saveBlockMeeting(values) {
+    return runBlockPlanningAction(saveBlockMeetingRecord, values);
+  }
+
+  function removeBlockMeeting(id) {
+    return runBlockPlanningAction(removeBlockMeetingRecord, id);
+  }
+
+  function finalizeBlockSchedule(sectionId) {
+    return runBlockPlanningAction(finalizeBlockScheduleRecord, sectionId);
+  }
+
+  function resetBlockDemoData() {
+    if (!hasRole("academic-coordinator")) {
+      return { ok: false, message: "Only the Academic Coordinator can reset block planning demo data." };
+    }
+    const next = buildBlockPlanningSeed(catalog, academicCoordinatorData.curricula);
+    blockPlanningRef.current = next;
+    setBlockPlanning(next);
+    return { ok: true, message: "Block planning mock data restored. Official enrollments and other demo stores were not changed." };
+  }
+
   function decideAcademicReview(reference, { decision, note }) {
     if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
 
@@ -1566,6 +1699,7 @@ export function DemoDataProvider({ children }) {
     systemAdministrators,
     academicCoordinators,
     academicCoordinatorData,
+    blockPlanning: effectiveBlockPlanning,
     notifications: visibleNotifications,
     gradeImports,
     createMockGradeImport,
@@ -1611,6 +1745,14 @@ export function DemoDataProvider({ children }) {
     createAcademicSection,
     updateAcademicSection,
     saveAcademicSchedule,
+    createBlockSection,
+    updateBlockSection,
+    assignBlockStudents,
+    transferBlockStudent,
+    saveBlockMeeting,
+    removeBlockMeeting,
+    finalizeBlockSchedule,
+    resetBlockDemoData,
     decideAcademicReview,
   };
 

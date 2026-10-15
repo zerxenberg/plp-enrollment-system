@@ -5,26 +5,30 @@ import { useRouter } from "next/navigation";
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
+import { getBlockOccupancy } from "@/features/block-planning/block-planning-service";
 
 export default function AcademicCoordinatorDashboard() {
   const router = useRouter();
-  const { catalog, registrar, student, academicCoordinatorData, notifications } = useDemoData();
+  const { catalog, registrar, student, academicCoordinatorData, blockPlanning, notifications } = useDemoData();
 
   const activePrograms = catalog.programs.filter((item) => item.status === "Active").length;
   const activeCurricula = academicCoordinatorData.curricula.filter((item) => item.status === "Active").length;
   const activeSubjects = catalog.subjects.filter((item) => item.status !== "Inactive").length;
   const prerequisiteRules = catalog.subjects.reduce((sum, item) => sum + (item.prerequisites?.length || 0), 0);
-  const fullSections = registrar.sections.filter((item) => item.confirmed >= item.capacity || item.status === "Full");
-  const nearSections = registrar.sections.filter(
-    (item) => item.confirmed < item.capacity && item.capacity - item.confirmed <= 5,
-  );
+  const planningSections = blockPlanning?.blockSections || [];
+  const activePlanningTerm = blockPlanning?.terms?.find((item) => item.status === "CURRENT");
+  const currentSections = planningSections.filter((item) => item.termId === activePlanningTerm?.id);
+  const fullSections = currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "FULL");
+  const nearSections = currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "NEAR_FULL");
   const pendingReviews = registrar.enrollments.filter((item) => item.status === "NEEDS_ACADEMIC_REVIEW");
   const resolvedReviews = registrar.enrollments.filter((item) => item.academicReviewDecision);
-  const highDemandSubjects = [...new Set(
-    registrar.sections
-      .filter((item) => item.capacity - item.confirmed <= 5)
-      .map((item) => item.subject),
-  )];
+  const highDemandSubjects = [...new Set(blockPlanning?.subjectClasses?.filter((item) =>
+    [...fullSections, ...nearSections].some((section) => section.id === item.sectionId)
+  ).map((item) => item.subjectCode) || [])];
+  const recentBlockChanges = (blockPlanning?.history || []).map((item) => ({
+    id: item.id, dateTime: item.at, module: "Sections & Schedules",
+    record: item.record, action: item.action,
+  }));
 
   return (
     <>
@@ -52,9 +56,9 @@ export default function AcademicCoordinatorDashboard() {
         <Metric label="Active Curriculum Versions" value={activeCurricula} hint="Current academic structures" />
         <Metric label="Active Subjects" value={activeSubjects} hint="Subject catalog" />
         <Metric label="Prerequisite Rules" value={prerequisiteRules} hint="Active relationships" />
-        <Metric label="Offered Subjects" value={academicCoordinatorData.offerings.length} hint="Current planning list" />
+        <Metric label="Subject Classes" value={blockPlanning?.subjectClasses?.filter((item) => currentSections.some((section) => section.id === item.sectionId)).length || 0} hint="Current term academic proposals" />
         <Metric label="Full Sections" value={fullSections.length} hint="No remaining slots" />
-        <Metric label="Near Capacity" value={nearSections.length} hint="Five or fewer slots" />
+        <Metric label="Near Capacity" value={nearSections.length} hint="At least 90% assigned" />
         <Metric label="Pending Reviews" value={pendingReviews.length} hint="Academic decisions required" />
       </div>
 
@@ -82,8 +86,8 @@ export default function AcademicCoordinatorDashboard() {
 
         <Panel title="Section Planning Summary" className="span-6">
           <div className="detail-list">
-            <div className="detail-row"><span>Planned Sections</span><strong>{registrar.sections.filter((item) => (item.sectionStatus || "Open") === "Planned").length}</strong></div>
-            <div className="detail-row"><span>Open Sections</span><strong>{registrar.sections.filter((item) => (item.sectionStatus || "Open") === "Open").length}</strong></div>
+            <div className="detail-row"><span>Future Draft Sections</span><strong>{planningSections.filter((item) => item.status === "DRAFT").length}</strong></div>
+            <div className="detail-row"><span>Open Current Blocks</span><strong>{currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "OPEN").length}</strong></div>
             <div className="detail-row"><span>Full Sections</span><strong>{fullSections.length}</strong></div>
             <div className="detail-row"><span>Near Capacity Sections</span><strong>{nearSections.length}</strong></div>
           </div>
@@ -108,7 +112,7 @@ export default function AcademicCoordinatorDashboard() {
         <Panel title="Recent Academic Activity" className="span-7">
           <DataTable
             rowKey="id"
-            rows={academicCoordinatorData.history.slice(0, 5)}
+            rows={[...recentBlockChanges, ...academicCoordinatorData.history].slice(0, 5)}
             columns={[
               { key: "dateTime", label: "Date & Time" },
               { key: "module", label: "Module" },

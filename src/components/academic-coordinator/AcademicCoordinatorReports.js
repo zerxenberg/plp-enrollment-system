@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Button,
   DataTable,
@@ -14,6 +14,7 @@ import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Feedback, Metric, Panel, Tabs } from "@/components/registrar/RegistrarShared";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import { getBlockOccupancy } from "@/features/block-planning/block-planning-service";
 
 const VIEWS = [
   { value: "reports", label: "Academic Reports" },
@@ -50,7 +51,7 @@ function exportCsv(rows, filename) {
 }
 
 export default function AcademicCoordinatorReports() {
-  const { catalog, registrar, student, academicCoordinatorData } = useDemoData();
+  const { catalog, registrar, student, academicCoordinatorData, blockPlanning } = useDemoData();
   const [view, setView] = useState("reports");
   const [report, setReport] = useState(REPORTS[0]);
   const [program, setProgram] = useState("ALL");
@@ -61,7 +62,39 @@ export default function AcademicCoordinatorReports() {
   const [preview, setPreview] = useState(false);
   const [message, setMessage] = useState("");
 
-  const demandRows = useMemo(() => {
+  const activeTermId = blockPlanning?.terms?.find((item) => item.status === "CURRENT")?.id;
+  const currentSections = (blockPlanning?.blockSections || []).filter((item) => item.termId === activeTermId);
+  const allSections = blockPlanning?.blockSections || [];
+  const planningClasses = blockPlanning?.subjectClasses || [];
+  const planningMeetings = blockPlanning?.classMeetings || [];
+  const planningRooms = blockPlanning?.rooms || [];
+  const currentClasses = planningClasses.filter((item) => currentSections.some((section) => section.id === item.sectionId));
+  const sectionRows = currentSections.map((section) => {
+    const occupancy = getBlockOccupancy(blockPlanning, section.id);
+    return {
+      section: section.code, program: section.programCode,
+      academicTerm: `${section.semester} ${section.academicYear}`,
+      capacity: section.capacity, proposedCount: occupancy?.proposed || 0,
+      confirmedCount: occupancy?.confirmed || 0, remainingSlots: occupancy?.available || 0,
+      status: occupancy?.status === "FULL" ? "Full" : occupancy?.status === "NEAR_FULL" ? "Near Capacity" : "Available",
+    };
+  });
+  const scheduleRows = planningClasses.flatMap((subjectClass) => {
+    const block = allSections.find((item) => item.id === subjectClass.sectionId);
+    if (!block) return [];
+    const entries = planningMeetings.filter((item) => item.subjectClassId === subjectClass.id);
+    return (entries.length ? entries : [null]).map((meeting) => ({
+      id: meeting?.id || subjectClass.id, section: block.code,
+      academicTerm: `${block.semester} ${block.academicYear}`,
+      subject: subjectClass.subjectCode,
+      day: meeting?.day || "Not scheduled", startTime: meeting?.start || "Not scheduled",
+      endTime: meeting?.end || "Not scheduled",
+      room: planningRooms.find((room) => room.id === meeting?.roomId)?.name || "Not assigned",
+      conflictStatus: block.status === "PUBLISHED" ? "Validated proposal" : "Draft: pending validation",
+    }));
+  });
+
+  const demandRows = (() => {
     const demand = new Map();
 
     registrar.enrollments.forEach((entry) => {
@@ -71,9 +104,12 @@ export default function AcademicCoordinatorReports() {
     });
 
     return catalog.subjects.map((item) => {
-      const related = registrar.sections.filter((row) => row.subject === item.code);
+      const relatedIds = new Set(currentClasses.filter((entry) => entry.subjectCode === item.code).map((entry) => entry.sectionId));
+      const related = currentSections.filter((entry) => relatedIds.has(entry.id));
       const capacity = related.reduce((sum, row) => sum + row.capacity, 0);
-      const confirmed = related.reduce((sum, row) => sum + row.confirmed, 0);
+      const confirmed = new Set(registrar.enrollments.filter((entry) => entry.status === "CONFIRMED" &&
+        entry.subjects.some((subject) => subject.code === item.code && related.some((block) => subject.section === block.code)))
+        .map((entry) => entry.studentNumber)).size;
 
       return {
         program: item.program || "BSIT",
@@ -85,25 +121,12 @@ export default function AcademicCoordinatorReports() {
         remainingCapacity: Math.max(0, capacity - confirmed),
       };
     });
-  }, [catalog.subjects, registrar.enrollments, registrar.sections]);
+  })();
 
-  const sectionRows = registrar.sections.map((row) => ({
-    section: row.code,
-    subject: row.subject,
-    capacity: row.capacity,
-    enrolledCount: row.confirmed,
-    remainingSlots: Math.max(0, row.capacity - row.confirmed),
-    status: row.confirmed >= row.capacity ? "Full" : row.capacity - row.confirmed <= 5 ? "Near Capacity" : "Available",
-  }));
-
-  const scheduleRows = registrar.sections.map((row) => ({
-    section: row.code,
-    subject: row.subject,
-    day: row.day || "Not assigned",
-    startTime: row.start || "Not assigned",
-    endTime: row.end || "Not assigned",
-    room: row.room,
-    conflictStatus: row.day && row.start && row.end ? "No Known Conflict" : "Not Checked",
+  const planningHistory = (blockPlanning?.history || []).map((item) => ({
+    id: item.id, dateTime: item.at, coordinator: item.actor,
+    module: "Sections & Schedules", record: item.record, action: item.action,
+    previousValue: item.previousValue || "", newValue: item.newValue || "",
   }));
 
   const resolvedReviews = registrar.enrollments.filter((item) => item.academicReviewDecision);
@@ -122,7 +145,10 @@ export default function AcademicCoordinatorReports() {
             : report === "Subject Offering Report"
               ? academicCoordinatorData.offerings
               : report === "Section Planning Report"
-                ? registrar.sections.map(({ code, subject, capacity, confirmed, status }) => ({ code, subject, capacity, confirmed, status }))
+                ? allSections.map((item) => ({ code: item.code, program: item.programCode,
+                  yearLevel: item.yearLevel, academicTerm: `${item.semester} ${item.academicYear}`,
+                  capacity: item.capacity, proposed: getBlockOccupancy(blockPlanning, item.id)?.proposed || 0,
+                  status: item.status }))
                 : report === "Class Schedule Report"
                   ? scheduleRows
                   : report === "Capacity Report"
@@ -158,7 +184,7 @@ export default function AcademicCoordinatorReports() {
               <FilterControl label="Report Type" value={report} onChange={(next) => { setReport(next); setProgram("ALL"); setSubject("ALL"); setSection("ALL"); setAcademicFilters(ALL_ACADEMIC_FILTERS); setPreview(false); }} options={REPORTS.map((item) => ({ value: item, label: item }))} />
               {report !== "Academic Exception Report" ? <FilterControl label="Program" value={program} onChange={(next) => { setProgram(next); setPreview(false); }} options={options(catalog.programs.map((item) => item.code))} /> : null}
               {report !== "Academic Exception Report" ? <FilterControl label="Subject" value={subject} onChange={(next) => { setSubject(next); setPreview(false); }} options={options(catalog.subjects.map((item) => item.code))} /> : null}
-              {report !== "Academic Exception Report" ? <FilterControl label="Section" value={section} onChange={(next) => { setSection(next); setPreview(false); }} options={options(registrar.sections.map((item) => item.code))} /> : null}
+              {report !== "Academic Exception Report" ? <FilterControl label="Section" value={section} onChange={(next) => { setSection(next); setPreview(false); }} options={options(allSections.map((item) => item.code))} /> : null}
               <Button onClick={() => { setPreview(true); setMessage(`${report} generated from ${filteredReportRows.length} demo records.`); }}>Generate & Preview</Button>
               <Button variant="secondary" onClick={() => exportCsv(filteredReportRows, `${report.toLowerCase().replaceAll(" ", "-")}.csv`)}>Export Spreadsheet</Button>
               <Button variant="secondary" onClick={() => window.print()}>Print / Save as PDF</Button>
@@ -176,8 +202,8 @@ export default function AcademicCoordinatorReports() {
             <div className="stats-grid" style={{ marginBottom: 14 }}>
               <Metric label="Programs" value={catalog.programs.length} />
               <Metric label="Subjects" value={catalog.subjects.length} />
-              <Metric label="Available Sections" value={registrar.sections.filter((item) => item.confirmed < item.capacity).length} />
-              <Metric label="Total Capacity" value={registrar.sections.reduce((sum, item) => sum + item.capacity, 0)} />
+              <Metric label="Available Blocks" value={sectionRows.filter((item) => item.remainingSlots > 0).length} />
+              <Metric label="Proposed Block Capacity" value={currentSections.reduce((sum, item) => sum + item.capacity, 0)} />
             </div>
             <DataTable
               rowKey="subject"
@@ -201,9 +227,10 @@ export default function AcademicCoordinatorReports() {
             rows={sectionRows}
             columns={[
               { key: "section", label: "Section" },
-              { key: "subject", label: "Subject" },
-              { key: "capacity", label: "Capacity" },
-              { key: "enrolledCount", label: "Enrolled Count" },
+                  { key: "program", label: "Program" },
+                  { key: "capacity", label: "Capacity" },
+                  { key: "proposedCount", label: "Proposed Assignments" },
+                  { key: "confirmedCount", label: "Confirmed Assignments" },
               { key: "remainingSlots", label: "Remaining Slots" },
               { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "Full" ? "FULL" : row.status === "Near Capacity" ? "REQUIRES_REVIEW" : "OPEN"} label={row.status} /> },
             ]}
@@ -214,7 +241,7 @@ export default function AcademicCoordinatorReports() {
           <>
             <div className="toolbar"><SearchControl value={search} onChange={setSearch} label="Search schedules" placeholder="Search section, subject, room, or day" /></div>
             <DataTable
-              rowKey="section"
+              rowKey="id"
               rows={scheduleRows.filter((row) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase()))}
               columns={[
                 { key: "section", label: "Section" },
@@ -234,7 +261,7 @@ export default function AcademicCoordinatorReports() {
             <div className="toolbar"><SearchControl value={search} onChange={setSearch} label="Search academic history" placeholder="Search record, module, action, or coordinator" /></div>
             <DataTable
               rowKey="id"
-              rows={academicCoordinatorData.history.filter((row) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase()))}
+              rows={[...planningHistory, ...academicCoordinatorData.history].filter((row) => JSON.stringify(row).toLowerCase().includes(search.toLowerCase()))}
               columns={[
                 { key: "dateTime", label: "Date and Time" },
                 { key: "coordinator", label: "Academic Coordinator" },

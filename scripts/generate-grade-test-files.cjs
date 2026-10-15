@@ -28,7 +28,7 @@ const TERM = {
   subject_code: "IT204",
   academic_year: "2025 to 2026",
   semester: "Second Semester",
-  section_code: "CTC 205",
+  section_code: "BSIT-2A",
   Subject_name: "Object Oriented Programming",
 };
 

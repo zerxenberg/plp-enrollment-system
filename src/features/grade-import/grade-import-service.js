@@ -10,7 +10,7 @@ export const GRADE_IMPORT_SCOPE = Object.freeze({
   program: "BSIT",
   subjectCode: "IT204",
   subjectName: "Object Oriented Programming",
-  sectionCode: "CTC 205",
+  sectionCode: "BSIT-2A",
   facultyMember: "Prof. R. Mendoza",
 });
 
@@ -33,9 +33,9 @@ export const GRADE_IMPORT_EMPTY = Object.freeze({ batches: [], publications: [],
 // Verified historical fixtures added explicitly for this demo. Current-term
 // unconfirmed enrollment submissions cannot be treated as past attempts.
 export const MOCK_CONFIRMED_ATTEMPTS = Object.freeze([
-  { studentNumber: "2024-00123", academicYear: "2025 to 2026", semester: "Second Semester", subjectCode: "IT204", sectionCode: "CTC 205", status: "CONFIRMED" },
-  { studentNumber: "2026-01896", academicYear: "2025 to 2026", semester: "Second Semester", subjectCode: "IT204", sectionCode: "CTC 205", status: "CONFIRMED" },
-  { studentNumber: "2026-00108", academicYear: "2025 to 2026", semester: "Second Semester", subjectCode: "IT204", sectionCode: "CTC 205", status: "CONFIRMED" },
+  { studentNumber: "2024-00123", academicYear: "2025 to 2026", semester: "Second Semester", subjectCode: "IT204", sectionCode: "BSIT-2A", status: "CONFIRMED" },
+  { studentNumber: "2026-01896", academicYear: "2025 to 2026", semester: "Second Semester", subjectCode: "IT204", sectionCode: "BSIT-2A", status: "CONFIRMED" },
+  { studentNumber: "2026-00108", academicYear: "2025 to 2026", semester: "Second Semester", subjectCode: "IT204", sectionCode: "BSIT-2A", status: "CONFIRMED" },
 ]);
 
 const text = (value) => String(value ?? "").trim();

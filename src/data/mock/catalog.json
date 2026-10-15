@@ -9,15 +9,15 @@
     {"code":"IT305","name":"Advanced Programming","units":3,"yearLevel":"3rd Year","semester":"First Semester","category":"Restricted","eligibility":"RESTRICTED","prerequisites":["IT204"],"restrictionReason":"IT204 Object Oriented Programming must be completed first."}
   ],
   "sections": [
-    {"id":"CTC301-A","subjectCode":"IT301","section":"CTC 301","day":"Monday","start":"08:00","end":"10:00","displayTime":"8:00 AM to 10:00 AM","room":"CTC 201","capacity":40,"enrolled":31,"status":"OPEN","instructor":"Prof. M. Garcia"},
-    {"id":"CTC301-B","subjectCode":"IT301","section":"CTC 302","day":"Wednesday","start":"13:00","end":"15:00","displayTime":"1:00 PM to 3:00 PM","room":"CTC 202","capacity":40,"enrolled":38,"status":"OPEN","instructor":"Prof. M. Garcia"},
-    {"id":"CTC205-A","subjectCode":"IT302","section":"CTC 205","day":"Tuesday","start":"13:00","end":"16:00","displayTime":"1:00 PM to 4:00 PM","room":"CTC 205","capacity":40,"enrolled":28,"status":"OPEN","instructor":"Prof. R. Mendoza"},
-    {"id":"CTC205-B","subjectCode":"IT302","section":"CTC 206","day":"Monday","start":"09:00","end":"11:00","displayTime":"9:00 AM to 11:00 AM","room":"CTC 206","capacity":35,"enrolled":22,"status":"OPEN","instructor":"Prof. R. Mendoza"},
-    {"id":"CTC203-A","subjectCode":"IT303","section":"CTC 203","day":"Wednesday","start":"10:00","end":"13:00","displayTime":"10:00 AM to 1:00 PM","room":"CTC 203","capacity":40,"enrolled":30,"status":"OPEN","instructor":"Prof. S. Lim"},
-    {"id":"CTC203-B","subjectCode":"IT303","section":"CTC 207","day":"Tuesday","start":"14:00","end":"16:00","displayTime":"2:00 PM to 4:00 PM","room":"CTC 207","capacity":40,"enrolled":34,"status":"OPEN","instructor":"Prof. S. Lim"},
-    {"id":"CTC207-A","subjectCode":"IT304","section":"CTC 207","day":"Thursday","start":"08:00","end":"11:00","displayTime":"8:00 AM to 11:00 AM","room":"CTC 207","capacity":40,"enrolled":39,"status":"OPEN","instructor":"Prof. J. Cruz"},
-    {"id":"CTC204-A","subjectCode":"IT204","section":"CTC 204","day":"Friday","start":"08:00","end":"11:00","displayTime":"8:00 AM to 11:00 AM","room":"CTC 204","capacity":35,"enrolled":20,"status":"OPEN","instructor":"Prof. A. Villanueva"},
-    {"id":"AB301-A","subjectCode":"GE101","section":"AB 301","day":"Friday","start":"13:00","end":"16:00","displayTime":"1:00 PM to 4:00 PM","room":"AB 301","capacity":45,"enrolled":41,"status":"OPEN","instructor":"Prof. L. Reyes"}
+    {"id":"CTC301-A","subjectCode":"IT301","section":"BSIT-3A","day":"Monday","start":"08:00","end":"10:00","displayTime":"8:00 AM to 10:00 AM","room":"CTC 201","capacity":40,"enrolled":31,"status":"OPEN","instructor":"Prof. M. Garcia"},
+    {"id":"CTC301-B","subjectCode":"IT301","section":"BSIT-3B","day":"Wednesday","start":"13:00","end":"15:00","displayTime":"1:00 PM to 3:00 PM","room":"CTC 202","capacity":40,"enrolled":38,"status":"OPEN","instructor":"Prof. M. Garcia"},
+    {"id":"CTC205-A","subjectCode":"IT302","section":"BSIT-3A","day":"Tuesday","start":"13:00","end":"16:00","displayTime":"1:00 PM to 4:00 PM","room":"CTC 205","capacity":40,"enrolled":28,"status":"OPEN","instructor":"Prof. R. Mendoza"},
+    {"id":"CTC205-B","subjectCode":"IT302","section":"BSIT-3B","day":"Monday","start":"09:00","end":"11:00","displayTime":"9:00 AM to 11:00 AM","room":"CTC 206","capacity":35,"enrolled":22,"status":"OPEN","instructor":"Prof. R. Mendoza"},
+    {"id":"CTC203-A","subjectCode":"IT303","section":"BSIT-3A","day":"Wednesday","start":"10:00","end":"13:00","displayTime":"10:00 AM to 1:00 PM","room":"CTC 203","capacity":40,"enrolled":30,"status":"OPEN","instructor":"Prof. S. Lim"},
+    {"id":"CTC203-B","subjectCode":"IT303","section":"BSIT-3B","day":"Tuesday","start":"14:00","end":"16:00","displayTime":"2:00 PM to 4:00 PM","room":"CTC 207","capacity":40,"enrolled":34,"status":"OPEN","instructor":"Prof. S. Lim"},
+    {"id":"CTC207-A","subjectCode":"IT304","section":"BSIT-3A","day":"Thursday","start":"08:00","end":"11:00","displayTime":"8:00 AM to 11:00 AM","room":"CTC 207","capacity":40,"enrolled":39,"status":"OPEN","instructor":"Prof. J. Cruz"},
+    {"id":"CTC204-A","subjectCode":"IT204","section":"BSIT-2A","day":"Friday","start":"08:00","end":"11:00","displayTime":"8:00 AM to 11:00 AM","room":"CTC 204","capacity":35,"enrolled":20,"status":"OPEN","instructor":"Prof. A. Villanueva"},
+    {"id":"AB301-A","subjectCode":"GE101","section":"BSIT-1A","day":"Friday","start":"13:00","end":"16:00","displayTime":"1:00 PM to 4:00 PM","room":"AB 301","capacity":45,"enrolled":41,"status":"OPEN","instructor":"Prof. L. Reyes"}
   ],
   "programs": [
     {"code":"BSIT","name":"BS Information Technology","department":"CCSIT","status":"Active","enrolled":303},
