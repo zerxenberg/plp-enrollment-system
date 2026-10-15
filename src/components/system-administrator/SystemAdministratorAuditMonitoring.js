@@ -1,10 +1,25 @@
 
 "use client";
 
-import { useState } from "react";
-import { Button, Card, DataTable, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { useMemo, useState } from "react";
+import {
+  Button,
+  DataTable,
+  FilterControl,
+  Modal,
+  PageHeader,
+  SearchControl,
+  StatusBadge,
+} from "@/components/ui/PortalUI";
+import { Details, Feedback, Info, Metric, Tabs } from "@/components/registrar/RegistrarShared";
 
-const TABS = ["Audit Logs", "Security Activity", "Administrator Activity", "System Errors", "System Health"];
+const TABS = [
+  { value: "Audit Logs", label: "Audit Logs" },
+  { value: "Security Activity", label: "Security Activity" },
+  { value: "Administrator Activity", label: "Administrator Activity" },
+  { value: "System Errors", label: "System Errors" },
+  { value: "System Health", label: "System Health" },
+];
 
 const AUDIT_LOGS = [
   { id: "AUD-00091", dateTime: "Oct 7, 2026 · 5:42 PM", source: "Integration Service", role: "System", module: "System Integration", action: "Applicant synchronization", relatedRecord: "APP-2026-0149", result: "Successful", ipAddress: "10.0.0.15" },
@@ -13,9 +28,9 @@ const AUDIT_LOGS = [
 ];
 
 const SECURITY = [
-  { id: "SEC-001", event: "Successful Login", user: "Adrian Reyes", dateTime: "Oct 7, 2026 · 5:52 PM", status: "Successful" },
-  { id: "SEC-002", event: "Failed Login", user: "Unknown account", dateTime: "Oct 7, 2026 · 5:21 PM", status: "Failed" },
-  { id: "SEC-003", event: "Role Change", user: "Karen Mendoza", dateTime: "Oct 6, 2026 · 3:14 PM", status: "Successful" },
+  { id: "SEC-001", event: "Successful Login", user: "Adrian Reyes", role: "System Administrator", dateTime: "Oct 7, 2026 · 5:52 PM", status: "Successful", ipAddress: "10.0.0.27", relatedAccount: "PLP-SA-001" },
+  { id: "SEC-002", event: "Failed Login", user: "Unknown account", role: "Unknown", dateTime: "Oct 7, 2026 · 5:21 PM", status: "Failed", ipAddress: "10.0.0.44", relatedAccount: "Not resolved" },
+  { id: "SEC-003", event: "Role Change", user: "Karen Mendoza", role: "System Administrator", dateTime: "Oct 6, 2026 · 3:14 PM", status: "Successful", ipAddress: "10.0.0.29", relatedAccount: "USR-REG-001" },
 ];
 
 const ADMIN_ACTIVITY = [
@@ -24,134 +39,248 @@ const ADMIN_ACTIVITY = [
 ];
 
 const ERRORS = [
-  { reference: "ERR-2026-0081", errorType: "Synchronization Error", module: "System Integration", message: "Approved program is required.", timestamp: "Oct 7, 2026 · 4:18 PM", status: "Open" },
-  { reference: "ERR-2026-0080", errorType: "Authentication Warning", module: "Users & Access", message: "Repeated failed login attempts detected.", timestamp: "Oct 7, 2026 · 3:03 PM", status: "Reviewed" },
+  { reference: "ERR-2026-0081", errorType: "Synchronization Error", module: "System Integration", message: "Approved program is required.", timestamp: "Oct 7, 2026 · 4:18 PM", status: "Open", relatedRecord: "APP-2026-0148", severity: "Medium" },
+  { reference: "ERR-2026-0080", errorType: "Authentication Warning", module: "Users & Access", message: "Repeated failed login attempts detected.", timestamp: "Oct 7, 2026 · 3:03 PM", status: "Reviewed", relatedRecord: "SEC-002", severity: "Low" },
 ];
 
 export default function SystemAdministratorAuditMonitoring() {
   const [activeTab, setActiveTab] = useState("Audit Logs");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("ALL");
+  const [selected, setSelected] = useState(null);
+  const [selectedType, setSelectedType] = useState("");
   const [message, setMessage] = useState("");
+
+  const rows = useMemo(() => {
+    if (activeTab === "Audit Logs") return AUDIT_LOGS;
+    if (activeTab === "Security Activity") return SECURITY;
+    if (activeTab === "Administrator Activity") return ADMIN_ACTIVITY;
+    if (activeTab === "System Errors") return ERRORS;
+    return [];
+  }, [activeTab]);
+
+  const filterValues = useMemo(() => {
+    if (activeTab === "Audit Logs") return rows.map((row) => row.module);
+    if (activeTab === "Security Activity") return rows.map((row) => row.status);
+    if (activeTab === "Administrator Activity") return rows.map((row) => row.module);
+    if (activeTab === "System Errors") return rows.map((row) => row.status);
+    return [];
+  }, [activeTab, rows]);
+
+  const filteredRows = rows.filter((row) => {
+    if (!JSON.stringify(row).toLowerCase().includes(search.toLowerCase())) return false;
+    if (filter === "ALL") return true;
+    if (activeTab === "Audit Logs" || activeTab === "Administrator Activity") return row.module === filter;
+    return row.status === filter;
+  });
+
+  const filterLabel =
+    activeTab === "Audit Logs" || activeTab === "Administrator Activity"
+      ? "Module"
+      : "Status";
+
+  function openDetails(type, row) {
+    setSelectedType(type);
+    setSelected(row);
+  }
+
+  function changeTab(next) {
+    setActiveTab(next);
+    setSearch("");
+    setFilter("ALL");
+    setSelected(null);
+    setMessage("");
+  }
 
   return (
     <>
       <PageHeader
         title="Audit & Monitoring"
-        description="Read only technical activity, security events, administrator actions, system errors, and health monitoring."
+        description="Read only technical activity, security events, administrator actions, system errors, and operational health."
       />
 
-      <InternalTabs items={TABS.map((value) => ({ value, label: value }))} selected={activeTab} onSelect={setActiveTab} label="Audit and monitoring sections">
+      <Tabs
+        items={TABS}
+        selected={activeTab}
+        onSelect={changeTab}
+        label="Audit and monitoring sections"
+        title="Technical Monitoring"
+        subtitle="Rows stay concise. Select a row to inspect the complete event in a modal."
+      >
+        <Feedback message={message} />
 
-      {message ? <div className="notice" style={{ marginBottom: 14 }}>{message}</div> : null}
+        {activeTab !== "System Health" ? (
+          <>
+            <div className="toolbar">
+              <SearchControl value={search} onChange={setSearch} label={`Search ${activeTab}`} placeholder={`Search ${activeTab.toLowerCase()}`} />
+              <FilterControl
+                label={filterLabel}
+                value={filter}
+                onChange={setFilter}
+                options={[
+                  { value: "ALL", label: `All ${filterLabel}s` },
+                  ...[...new Set(filterValues)].map((value) => ({ value, label: value })),
+                ]}
+              />
+              {(search || filter !== "ALL") ? <Button variant="ghost" onClick={() => { setSearch(""); setFilter("ALL"); }}>Clear Filters</Button> : null}
+            </div>
 
-      {activeTab === "Audit Logs" ? (
-        <Card className="section-card">
-          <div className="notice" style={{ marginBottom: 12 }}>Audit records are read only through the ordinary interface. There are no normal Edit or Delete actions.</div>
-          <DataTable
-            rowKey="id"
-            rows={AUDIT_LOGS}
-            columns={[
-              { key: "dateTime", label: "Date and Time" },
-              { key: "source", label: "User or System Source" },
-              { key: "role", label: "Role" },
-              { key: "module", label: "Module" },
-              { key: "action", label: "Action" },
-              { key: "relatedRecord", label: "Related Record" },
-              { key: "result", label: "Result", render: (row) => <StatusBadge value={row.result === "Successful" ? "COMPLETED" : "FAILED"} label={row.result} /> },
-              { key: "ipAddress", label: "IP Address" },
-            ]}
-          />
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button variant="secondary" onClick={() => setMessage("Audit details opened.")}>View Details</Button>
-            <Button variant="secondary" onClick={() => setMessage("Audit logs sorted in mock mode.")}>Sort</Button>
-            <Button variant="secondary" onClick={() => setMessage("Audit logs exported in mock mode.")}>Export Logs</Button>
-          </div>
-        </Card>
-      ) : null}
+            {activeTab === "Audit Logs" ? (
+              <>
+                <div className="notice" style={{ marginBottom: 12 }}>
+                  Audit records are read only. Ordinary interfaces intentionally provide no Edit or Delete operation.
+                </div>
+                <DataTable
+                  rowKey="id"
+                  rows={filteredRows}
+                  onRowClick={(row) => openDetails("Audit Log", row)}
+                  getRowAriaLabel={(row) => `View audit log ${row.id}`}
+                  columns={[
+                    { key: "dateTime", label: "Date & Time" },
+                    { key: "source", label: "Source" },
+                    { key: "module", label: "Module" },
+                    { key: "action", label: "Action" },
+                    { key: "result", label: "Result", render: (row) => <StatusBadge value={row.result === "Successful" ? "COMPLETED" : "FAILED"} label={row.result} /> },
+                  ]}
+                />
+              </>
+            ) : null}
 
-      {activeTab === "Security Activity" ? (
-        <Card className="section-card">
-          <DataTable
-            rowKey="id"
-            rows={SECURITY}
-            columns={[
-              { key: "event", label: "Event Type" },
-              { key: "user", label: "User" },
-              { key: "dateTime", label: "Date and Time" },
-              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "Successful" ? "COMPLETED" : "FAILED"} label={row.status} /> },
-            ]}
-          />
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button variant="secondary" onClick={() => setMessage("Security event details opened.")}>View Details</Button>
-            <Button variant="secondary" onClick={() => setMessage("Related user account opened.")}>Open User Account</Button>
-            <Button variant="secondary" onClick={() => setMessage("Security activity exported in mock mode.")}>Export</Button>
-          </div>
-        </Card>
-      ) : null}
+            {activeTab === "Security Activity" ? (
+              <DataTable
+                rowKey="id"
+                rows={filteredRows}
+                onRowClick={(row) => openDetails("Security Event", row)}
+                getRowAriaLabel={(row) => `View security event ${row.id}`}
+                columns={[
+                  { key: "event", label: "Event" },
+                  { key: "user", label: "User" },
+                  { key: "role", label: "Role" },
+                  { key: "dateTime", label: "Date & Time" },
+                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "Successful" ? "COMPLETED" : "FAILED"} label={row.status} /> },
+                ]}
+              />
+            ) : null}
 
-      {activeTab === "Administrator Activity" ? (
-        <Card className="section-card">
-          <DataTable
-            rowKey="id"
-            rows={ADMIN_ACTIVITY}
-            columns={[
-              { key: "administrator", label: "Administrator" },
-              { key: "action", label: "Action" },
-              { key: "module", label: "Module" },
-              { key: "previousConfiguration", label: "Previous Configuration" },
-              { key: "newConfiguration", label: "New Configuration" },
-              { key: "dateTime", label: "Date and Time" },
-            ]}
-          />
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button variant="secondary" onClick={() => setMessage("Administrator activity details opened.")}>View Details</Button>
-            <Button variant="secondary" onClick={() => setMessage("Search action ready in mock mode.")}>Search</Button>
-            <Button variant="secondary" onClick={() => setMessage("Filter action ready in mock mode.")}>Filter</Button>
-          </div>
-        </Card>
-      ) : null}
+            {activeTab === "Administrator Activity" ? (
+              <DataTable
+                rowKey="id"
+                rows={filteredRows}
+                onRowClick={(row) => openDetails("Administrator Activity", row)}
+                getRowAriaLabel={(row) => `View administrator activity ${row.id}`}
+                columns={[
+                  { key: "administrator", label: "Administrator" },
+                  { key: "action", label: "Action" },
+                  { key: "module", label: "Module" },
+                  { key: "dateTime", label: "Date & Time" },
+                ]}
+              />
+            ) : null}
 
-      {activeTab === "System Errors" ? (
-        <Card className="section-card">
-          <div className="notice" style={{ marginBottom: 12 }}>Historical errors remain available for troubleshooting and accountability.</div>
-          <DataTable
-            rowKey="reference"
-            rows={ERRORS}
-            columns={[
-              { key: "reference", label: "Error Reference" },
-              { key: "errorType", label: "Error Type" },
-              { key: "module", label: "Module" },
-              { key: "message", label: "Message" },
-              { key: "timestamp", label: "Timestamp" },
-              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
-            ]}
-          />
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button variant="secondary" onClick={() => setMessage("Error details opened.")}>View Details</Button>
-            <Button variant="secondary" onClick={() => setMessage("Error marked reviewed in mock mode.")}>Mark Reviewed</Button>
-            <Button variant="secondary" onClick={() => setMessage("Related module opened in mock mode.")}>Open Related Module</Button>
-          </div>
-        </Card>
-      ) : null}
+            {activeTab === "System Errors" ? (
+              <DataTable
+                rowKey="reference"
+                rows={filteredRows}
+                onRowClick={(row) => openDetails("System Error", row)}
+                getRowAriaLabel={(row) => `View system error ${row.reference}`}
+                columns={[
+                  { key: "reference", label: "Error Reference" },
+                  { key: "errorType", label: "Error Type" },
+                  { key: "module", label: "Module" },
+                  { key: "severity", label: "Severity" },
+                  { key: "timestamp", label: "Timestamp" },
+                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
+                ]}
+              />
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div className="stats-grid" style={{ marginBottom: 14 }}>
+              <Metric label="Application" value="Healthy" hint="Frontend operating normally" />
+              <Metric label="Database" value="Healthy" hint="Connection available" />
+              <Metric label="Admission API" value="Healthy" hint="Authenticated connection" />
+              <Metric label="Authentication" value="Healthy" hint="Protected sessions available" />
+              <Metric label="Last Backup" value="Successful" hint="Oct 7, 2026" />
+              <Metric label="Recent Errors" value="1" hint="Open technical error" />
+            </div>
+            <div className="info-grid">
+              <div className="info-item"><span>Application Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
+              <div className="info-item"><span>Database Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
+              <div className="info-item"><span>API Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
+              <div className="info-item"><span>Authentication Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
+            </div>
+            <div className="action-row" style={{ marginTop: 14 }}>
+              <Button onClick={() => setMessage("System health checks completed in mock mode.")}>Run Health Checks</Button>
+            </div>
+          </>
+        )}
+      </Tabs>
 
-      {activeTab === "System Health" ? (
-        <Card className="section-card">
-          <div className="info-grid">
-            <div className="info-item"><span>Application Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-            <div className="info-item"><span>Database Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-            <div className="info-item"><span>API Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-            <div className="info-item"><span>Authentication Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-            <div className="info-item"><span>Backup Status</span><strong><StatusBadge value="COMPLETED" label="Successful" /></strong></div>
-            <div className="info-item"><span>Recent Error Count</span><strong><StatusBadge value="FOR_VALIDATION" label="1" /></strong></div>
-          </div>
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button onClick={() => setMessage("System health refreshed.")}>Refresh Status</Button>
-            <Button variant="secondary" onClick={() => setMessage("API connection test succeeded.")}>Test API Connection</Button>
-            <Button variant="secondary" onClick={() => setMessage("Database connection check succeeded.")}>Check Database Connection</Button>
-            <Button variant="secondary" onClick={() => setActiveTab("Audit Logs")}>Open Related Logs</Button>
-          </div>
-        </Card>
-      ) : null}
-      </InternalTabs>
+      <Modal
+        open={Boolean(selected)}
+        title={selected ? `${selectedType} Details` : "Technical Event Details"}
+        onClose={() => setSelected(null)}
+        className="system-admin-detail-modal"
+        footer={<Button onClick={() => setSelected(null)}>Close</Button>}
+      >
+        {selected && selectedType === "Audit Log" ? (
+          <Details items={[
+            ["Audit ID", selected.id],
+            ["Date and Time", selected.dateTime],
+            ["User or System Source", selected.source],
+            ["Role", selected.role],
+            ["Module", selected.module],
+            ["Action", selected.action],
+            ["Related Record", selected.relatedRecord],
+            ["Result", selected.result],
+            ["IP Address", selected.ipAddress],
+          ]} />
+        ) : null}
+
+        {selected && selectedType === "Security Event" ? (
+          <Details items={[
+            ["Security Event", selected.id],
+            ["Event Type", selected.event],
+            ["User", selected.user],
+            ["Role", selected.role],
+            ["Date and Time", selected.dateTime],
+            ["Status", selected.status],
+            ["IP Address", selected.ipAddress],
+            ["Related Account", selected.relatedAccount],
+          ]} />
+        ) : null}
+
+        {selected && selectedType === "Administrator Activity" ? (
+          <Details items={[
+            ["Activity ID", selected.id],
+            ["Administrator", selected.administrator],
+            ["Action", selected.action],
+            ["Module", selected.module],
+            ["Previous Configuration", selected.previousConfiguration],
+            ["New Configuration", selected.newConfiguration],
+            ["Date and Time", selected.dateTime],
+          ]} />
+        ) : null}
+
+        {selected && selectedType === "System Error" ? (
+          <>
+            <Details items={[
+              ["Error Reference", selected.reference],
+              ["Error Type", selected.errorType],
+              ["Module", selected.module],
+              ["Severity", selected.severity],
+              ["Timestamp", selected.timestamp],
+              ["Status", selected.status],
+              ["Related Record", selected.relatedRecord],
+              ["Message", selected.message],
+            ]} />
+            <div className="notice" style={{ marginTop: 14 }}>
+              Error history remains preserved for troubleshooting. Reviewing an error must not delete the historical record.
+            </div>
+          </>
+        ) : null}
+      </Modal>
     </>
   );
 }

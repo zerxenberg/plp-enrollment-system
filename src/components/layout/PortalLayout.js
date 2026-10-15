@@ -135,7 +135,7 @@ export default function PortalLayout({ role, children }) {
           markNotification,
           notificationHref: meta.notificationHref,
           utilityLabel: meta.topbarUtilityLabel,
-          showTerm: role !== "system-administrator",
+          showTerm: true,
           menuOpen: sidebarOpen,
           onMenu: toggleSidebar,
         }}>

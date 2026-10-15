@@ -156,18 +156,65 @@ export function TableActions({ children, className = "" }) {
   return <div className={`cell-actions ${className}`.trim()}>{children}</div>;
 }
 
-export function DataTable({ columns, rows, rowKey, emptyMessage = "No records found." }) {
+export function DataTable({
+  columns,
+  rows,
+  rowKey,
+  emptyMessage = "No records found.",
+  onRowClick,
+  rowTitle = "Click to view details",
+  getRowAriaLabel,
+  rowClassName,
+}) {
   if (!rows.length) return <EmptyState title={emptyMessage} />;
+
+  const isInteractive = typeof onRowClick === "function";
+  const shouldIgnoreRowActivation = (target) =>
+    Boolean(target.closest("button, a, input, select, textarea, [role='button'], [data-stop-row-click='true']"));
+
+  const activateRow = (event, row) => {
+    if (!isInteractive || shouldIgnoreRowActivation(event.target)) return;
+    onRowClick(row);
+  };
+
+  const handleRowKeyDown = (event, row) => {
+    if (!isInteractive || shouldIgnoreRowActivation(event.target)) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onRowClick(row);
+  };
+
   return (
     <div className="table-scroll" role="region" tabIndex={0} aria-label="Scrollable table region">
       <table className="data-table">
         <thead><tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
         <tbody>
-          {rows.map((row, index) => (
-            <tr key={typeof rowKey === "function" ? rowKey(row) : row[rowKey] || index}>
-              {columns.map((column) => <td className={column.key === "actions" || (column.key === "action" && column.render) ? "table-actions-cell" : undefined} key={column.key}>{column.render ? column.render(row) : row[column.key]}</td>)}
-            </tr>
-          ))}
+          {rows.map((row, index) => {
+            const key = typeof rowKey === "function" ? rowKey(row) : row[rowKey] || index;
+            const customClassName = typeof rowClassName === "function" ? rowClassName(row) : rowClassName;
+            const ariaLabel = typeof getRowAriaLabel === "function" ? getRowAriaLabel(row) : undefined;
+
+            return (
+              <tr
+                key={key}
+                className={`${isInteractive ? "is-clickable" : ""} ${customClassName || ""}`.trim() || undefined}
+                tabIndex={isInteractive ? 0 : undefined}
+                title={isInteractive ? rowTitle : undefined}
+                aria-label={isInteractive ? ariaLabel : undefined}
+                onClick={isInteractive ? (event) => activateRow(event, row) : undefined}
+                onKeyDown={isInteractive ? (event) => handleRowKeyDown(event, row) : undefined}
+              >
+                {columns.map((column) => (
+                  <td
+                    className={column.key === "actions" || (column.key === "action" && column.render) ? "table-actions-cell" : undefined}
+                    key={column.key}
+                  >
+                    {column.render ? column.render(row) : row[column.key]}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

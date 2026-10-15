@@ -605,3 +605,70 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
   .portal-app .portal-button:hover, .portal-app .portal-button:active, .portal-app .notification-button:hover, .portal-app .mobile-menu-button:hover, .portal-app .icon-button:hover { transform: none; }
   .portal-app a.list-item:hover, .portal-app button.list-item:hover, .portal-app label.list-item:hover, .portal-app a.portal-card:hover, .portal-app button.portal-card:hover, .portal-app .tabs .tab-button:hover:not(.is-active):not(:disabled) { transform: none; }
 }
+
+
+/* System Administrator UI overhaul
+   Shared table behavior is opt-in through DataTable onRowClick, so existing
+   Student, Registrar, and Academic Coordinator tables keep their current behavior. */
+.data-table tbody tr.is-clickable {
+  cursor: pointer;
+}
+.data-table tbody tr.is-clickable td {
+  transition: background var(--portal-motion), box-shadow var(--portal-motion), color var(--portal-motion);
+}
+.data-table tbody tr.is-clickable:hover td:first-child {
+  box-shadow: inset 3px 0 0 var(--portal-green-600);
+}
+.data-table tbody tr.is-clickable:focus-visible {
+  outline: 3px solid rgba(14, 124, 70, .54);
+  outline-offset: -2px;
+}
+.data-table tbody tr.is-clickable:focus-visible td {
+  background: var(--portal-table-row-hover);
+}
+.portal-role-system-administrator .system-admin-dynamic-filters {
+  margin-bottom: 14px;
+  animation: system-admin-filter-enter 180ms cubic-bezier(.2, .75, .25, 1);
+}
+.portal-role-system-administrator .system-admin-detail-modal {
+  width: min(760px, 96vw);
+}
+.portal-role-system-administrator .system-admin-enter {
+  animation: system-admin-surface-enter 260ms cubic-bezier(.2, .75, .25, 1);
+}
+.portal-role-system-administrator .tab-panel > :first-child {
+  animation: system-admin-surface-enter 220ms cubic-bezier(.2, .75, .25, 1);
+}
+.portal-role-system-administrator .modal-backdrop {
+  animation: system-admin-backdrop-enter 150ms ease-out;
+}
+.portal-role-system-administrator .portal-modal {
+  animation: system-admin-modal-enter 220ms cubic-bezier(.2, .78, .25, 1);
+}
+
+@keyframes system-admin-filter-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes system-admin-surface-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes system-admin-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes system-admin-modal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-role-system-administrator .system-admin-dynamic-filters,
+  .portal-role-system-administrator .system-admin-enter,
+  .portal-role-system-administrator .tab-panel > :first-child,
+  .portal-role-system-administrator .modal-backdrop,
+  .portal-role-system-administrator .portal-modal {
+    animation: none;
+  }
+}

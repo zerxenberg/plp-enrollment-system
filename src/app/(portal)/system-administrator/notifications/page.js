@@ -1,7 +1,8 @@
-import RoleNotifications from "@/components/shared/RoleNotifications";
 
-export const metadata = { title: "System Administrator Notifications" };
+import SystemAdministratorNotifications from "@/components/system-administrator/SystemAdministratorNotifications";
+
+export const metadata = { title: "Technical Alerts" };
 
 export default function SystemAdministratorNotificationsPage() {
-  return <RoleNotifications role="system-administrator" />;
+  return <SystemAdministratorNotifications />;
 }
