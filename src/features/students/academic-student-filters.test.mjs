@@ -25,11 +25,11 @@ test("all academic filters retain each original student and enrollment record", 
 test("section and historical term must belong to the same student's enrollment", () => {
   const student = fixture.students.find((item) => item.studentNumber === "2026-01896");
   const history = [
-    { studentNumber: student.studentNumber, program: student.program, term: "1st Sem 2025", subjects: [{ section: "CTC 101" }] },
-    { studentNumber: student.studentNumber, program: student.program, term: "1st Sem 2026", subjects: [{ section: "CTC 301" }] },
+    { studentNumber: student.studentNumber, program: student.program, term: "1st Sem 2025", subjects: [{ section: "BSIT-2A" }] },
+    { studentNumber: student.studentNumber, program: student.program, term: "1st Sem 2026", subjects: [{ section: "BSIT-3A" }] },
   ];
-  const wrongPair = { ...ALL_ACADEMIC_FILTERS, academicYear: "2025", section: "CTC 301" };
-  const correctPair = { ...ALL_ACADEMIC_FILTERS, academicYear: "2025", section: "CTC 101" };
+  const wrongPair = { ...ALL_ACADEMIC_FILTERS, academicYear: "2025", section: "BSIT-3A" };
+  const correctPair = { ...ALL_ACADEMIC_FILTERS, academicYear: "2025", section: "BSIT-2A" };
   assert.equal(filterAcademicRecords([student], wrongPair, history).length, 0);
   assert.equal(filterAcademicRecords([student], correctPair, history).length, 1);
 });
@@ -46,7 +46,7 @@ test("the two COE departments retain distinct IDs and cascaded programs", () => 
 });
 
 test("changing an upstream filter clears every dependent selection", () => {
-  const current = { department: "CCS", program: "BSIT", academicYear: "2026", semester: "First Semester", yearLevel: "3rd Year", section: "CTC 301" };
+  const current = { department: "CCS", program: "BSIT", academicYear: "2026", semester: "First Semester", yearLevel: "3rd Year", section: "BSIT-3A" };
   const next = updateAcademicFilters(current, "program", "BSCS");
   assert.equal(next.department, "CCS");
   assert.equal(next.program, "BSCS");

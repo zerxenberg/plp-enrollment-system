@@ -61,9 +61,9 @@
   "confirmedSchedule": {
     "term": "Second Semester 2025 to 2026",
     "items": [
-      {"code":"IT203","name":"Data Structures Fundamentals","section":"CTC201","day":"Monday","start":"8:00 AM","end":"10:00 AM","room":"CTC 201","instructor":"Prof. A. Villanueva"},
-      {"code":"IT204","name":"Object Oriented Programming","section":"CTC205","day":"Tuesday","start":"1:00 PM","end":"4:00 PM","room":"CTC 205","instructor":"Prof. R. Mendoza"},
-      {"code":"GE201","name":"Science, Technology and Society","section":"AB301","day":"Friday","start":"1:00 PM","end":"4:00 PM","room":"AB 301","instructor":"Prof. L. Reyes"}
+      {"code":"IT203","name":"Data Structures Fundamentals","section":"BSIT-2A","day":"Monday","start":"8:00 AM","end":"10:00 AM","room":"CTC 201","instructor":"Prof. A. Villanueva"},
+      {"code":"IT204","name":"Object Oriented Programming","section":"BSIT-2A","day":"Tuesday","start":"1:00 PM","end":"4:00 PM","room":"CTC 205","instructor":"Prof. R. Mendoza"},
+      {"code":"GE201","name":"Science, Technology and Society","section":"BSIT-2A","day":"Friday","start":"1:00 PM","end":"4:00 PM","room":"AB 301","instructor":"Prof. L. Reyes"}
     ]
   },
   "enrollmentHistory": [

@@ -672,3 +672,51 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
     animation: none;
   }
 }
+
+/* Academic Coordinator block planning: scoped presentation and responsive modal controls. */
+.block-planning .block-note { margin-bottom: 15px; }
+.block-planning .block-filters { gap: 12px; margin: 16px 0 19px; }
+.block-planning .block-filters .search-field { min-width: min(100%, 220px); }
+.block-planning .block-filters .select-field { flex: 1 1 170px; min-width: min(100%, 170px); }
+.block-planning .block-stats { grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); margin-bottom: 18px; }
+.block-planning .block-stats .metric-card { min-height: 95px; padding: 14px; }
+.block-planning .block-stats .metric-value { font-size: clamp(1.1rem, 1.8vw, 1.5rem); overflow-wrap: anywhere; }
+.block-planning .block-heading { margin: 18px 0 13px; flex-wrap: wrap; align-items: center; }
+.block-planning .block-heading .action-row { justify-content: flex-end; }
+.block-planning .block-title { color: var(--portal-green-800); font-size: .87rem; margin: 20px 0 11px; }
+.block-planning .block-schedule-select { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 22px; margin: 0 0 18px; }
+.block-planning .block-schedule-select .select-field { flex: 1 1 260px; max-width: 390px; }
+.block-planning .block-selected-description { display: flex; flex: 3 1 390px; align-items: center; flex-wrap: wrap; gap: 7px 13px; color: var(--portal-muted); font-size: .73rem; }
+.block-planning .block-selected-description strong { color: var(--portal-green-800); font-size: .84rem; }
+.block-planning .block-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 0; color: var(--portal-muted); font-size: .74rem; line-height: 1.6; }
+.block-planning .block-footer p { flex: 1 1 290px; }
+.block-planning .block-empty { padding: 16px; color: var(--portal-muted); font-size: .77rem; }
+.block-planning .block-error { grid-column: 1 / -1; padding: 10px 12px; border: 1px solid #dfb4b4; border-radius: 10px; color: #91303c; background: #fff0f1; font-size: .76rem; line-height: 1.5; }
+.block-planning .block-form-note { grid-column: 1 / -1; margin: 0; }
+.block-planning .block-dialog-actions { justify-content: flex-end; margin-top: 16px; }
+.block-planning .block-curriculum-preview { border: 1px solid #d6e8dd; border-radius: 12px; padding: 12px 14px; background: rgba(240, 250, 245, .8); }
+.block-planning .block-curriculum-preview h3 { margin-bottom: 5px; color: #285b42; font-size: .78rem; }
+.block-planning .block-curriculum-preview ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 6px 12px; margin: 8px 0 0; padding-left: 17px; color: #315541; font-size: .73rem; line-height: 1.55; }
+.block-planning .block-student-heading { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0 10px; }
+.block-planning .block-student-heading h3 { color: var(--portal-green-800); font-size: .83rem; }
+.block-planning .block-student-list { display: grid; gap: 7px; margin-top: 11px; max-height: 280px; overflow: auto; padding: 4px; }
+.block-planning .block-student-choice { display: flex; align-items: center; gap: 10px; padding: 11px; border: 1px solid #d8e5dd; border-radius: 11px; background: #fff; cursor: pointer; transition: border-color var(--portal-motion), background var(--portal-motion); }
+.block-planning .block-student-choice:hover { background: #f4fbf6; border-color: #a1cdb4; }
+.block-planning .block-student-choice:focus-within { outline: 3px solid rgba(21, 155, 91, .2); outline-offset: 1px; }
+.block-planning .block-student-choice input { accent-color: var(--portal-green-700); width: 17px; height: 17px; flex: 0 0 auto; }
+.block-planning .block-student-choice input:disabled { cursor: not-allowed; }
+.block-planning .block-student-choice span { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.block-planning .block-student-choice strong { font-size: .76rem; color: #24503a; }
+.block-planning .block-student-choice small { color: #61756a; font-size: .7rem; line-height: 1.45; }
+.block-planning .block-student-choice:has(input:disabled) { opacity: .67; cursor: default; }
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .block-planning :is(.block-curriculum-preview, .block-student-choice) { background: #1c3b2a; border-color: #446e56; }
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .block-planning :is(.block-curriculum-preview h3, .block-curriculum-preview ul, .block-student-choice strong, .block-student-heading h3, .block-selected-description strong) { color: #e2f5e8; }
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .block-planning .block-student-choice small { color: #c6d8cc; }
+:is(.portal-app[data-theme="dark"], .portal-app.dark, [data-theme="dark"] .portal-app, .dark .portal-app) .block-planning .block-student-choice:hover { background: #245037; }
+@media (max-width: 760px) {
+  .block-planning .block-schedule-select .select-field { max-width: none; }
+}
+@media (max-width: 480px) {
+  .block-planning .block-heading .action-row, .block-planning .block-footer .portal-button { width: 100%; }
+  .block-planning .block-heading .action-row .portal-button { flex: 1 1 auto; }
+}

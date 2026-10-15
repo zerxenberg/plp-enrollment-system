@@ -111,7 +111,7 @@ async function run() {
     await chooseFile.click();
     const csv = [
       "student_number,student_full_name,subject_code,academic_year,semester,section_code,grade_value,completion_status,source_record_reference,Subject_name",
-      "2024-00123,Juan Dela Cruz,IT204,2025 to 2026,Second Semester,CTC 205,1.75,COMPLETED,CSV-IT204-001,Object Oriented Programming",
+      "2024-00123,Juan Dela Cruz,IT204,2025 to 2026,Second Semester,BSIT-2A,1.75,COMPLETED,CSV-IT204-001,Object Oriented Programming",
     ].join("\n");
     await dropFiles(page, [{ name: "drag-example.csv", type: "text/csv", buffer: Buffer.from(csv) }]);
     assert.equal(await uploadDialog.count(), 0, "Valid CSV drop should close modal");

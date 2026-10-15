@@ -38,7 +38,7 @@ Every workbook uses the same ten columns in this exact order:
 student_number,student_full_name,subject_code,academic_year,semester,section_code,grade_value,completion_status,source_record_reference,Subject_name
 ```
 
-The valid batch uses subject `IT204` (`Object Oriented Programming`), academic year `2025 to 2026`, `Second Semester`, and section `CTC 205`.
+The valid batch uses subject `IT204` (`Object Oriented Programming`), academic year `2025 to 2026`, `Second Semester`, and block section `BSIT-2A`.
 
 | Student | Student number | Grade | Completion status |
 | --- | --- | --- | --- |
