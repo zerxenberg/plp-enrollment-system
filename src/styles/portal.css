@@ -165,7 +165,7 @@
 .portal-button-danger { color: #9b2d36; border-color: rgba(181,57,69,.25); background: #fff5f6; }
 .portal-button-ghost { color: #4e6057; border-color: var(--portal-line); background: #fff; }
 
-.status-badge { display: inline-flex; align-items: center; justify-content: center; gap: 5.4px; min-height: 23.4px; max-width: 100%; padding: 4.5px 9.9px; border-radius: 999px; font-size: .612rem; font-weight: 740; line-height: 1.3; text-align: center; white-space: normal; overflow-wrap: anywhere; }
+.status-badge { display: inline-flex; align-items: center; justify-content: center; gap: 5.4px; min-height: 23.4px; max-width: none; flex-shrink: 0; padding: 4.5px 9.9px; border-radius: 999px; font-size: .612rem; font-weight: 740; line-height: 1.3; text-align: center; white-space: nowrap; overflow-wrap: normal; }
 .status-positive { color: #0c6a3b; background: #dff5e8; border: 1px solid #bce9cf; }
 .status-warning { color: #815c0a; background: #fff5cf; border: 1px solid #f1df9b; }
 .status-danger { color: #9d3038; background: #ffe4e7; border: 1px solid #f3bec4; }
@@ -378,8 +378,8 @@
 .academic-prerequisite-details summary { cursor: pointer; color: var(--portal-green-700); font-weight: 700; }
 .academic-sort-control { width: min(240px, 100%); margin: 8px 0 12px; }
 .academic-curriculum-table { width: 100%; min-width: 0; max-width: 100%; }
-.academic-curriculum-scroll { max-height: min(64dvh, 680px); overflow: auto; overscroll-behavior: contain; border-color: #d4e4db; background: #f8fbf9; }
-.academic-curriculum-grid { width: 1596px; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.academic-curriculum-scroll { border-color: #d4e4db; background: #f8fbf9; }
+.academic-curriculum-grid { width: 1614px; min-width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-variant-numeric: tabular-nums; }
 .academic-curriculum-grid thead th { position: sticky; top: 0; z-index: 3; padding: 10.45px 7.6px; background: #f0f6f2; border-bottom: 1px solid #d5e2d9; color: #344b3d; text-align: center; vertical-align: middle; line-height: 1.35; white-space: normal; }
 .academic-curriculum-grid thead th:nth-child(1) { width: 190px; min-width: 190px; }
 .academic-curriculum-grid thead th:nth-child(2) { width: 155px; min-width: 155px; }
@@ -390,7 +390,7 @@
 .academic-curriculum-grid thead th:nth-child(7) { width: 115px; min-width: 115px; }
 .academic-curriculum-grid thead th:nth-child(8) { width: 78px; min-width: 78px; }
 .academic-curriculum-grid thead th:nth-child(9) { width: 84px; min-width: 84px; }
-.academic-curriculum-grid thead th:nth-child(10) { width: 90px; min-width: 90px; }
+.academic-curriculum-grid thead th:nth-child(10) { width: 108px; min-width: 108px; }
 .academic-curriculum-grid thead th:nth-child(11) { width: 515px; min-width: 515px; }
 .academic-curriculum-grid tbody[hidden] { display: none; }
 .academic-curriculum-grid tbody tr > td, .academic-curriculum-grid tbody tr > th { padding: 8.55px 7.6px; color: #2a4033; font-size: .665rem; font-weight: 550; line-height: 1.45; text-align: center; vertical-align: middle; overflow-wrap: anywhere; }
