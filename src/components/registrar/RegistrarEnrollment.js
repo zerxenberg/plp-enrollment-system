@@ -39,6 +39,12 @@ export default function RegistrarEnrollment() {
   const [feedback, setFeedback] = useState("");
 
   const enrollment = registrar.enrollments.find((item) => item.reference === reference);
+  const reviewApprovalConsumed = ["APPROVED", "APPLIED"].includes(enrollment?.academicReviewDecision);
+  const reviewAwaitingClarification = enrollment?.status === "NEEDS_ACADEMIC_REVIEW" &&
+    enrollment?.academicReviewDecision === "RETURNED_FOR_CLARIFICATION";
+  const validationResult = !enrollment?.lastValidatedAt ? "NOT_RUN" :
+    enrollment.validationPreset === "pass" || (enrollment.validationPreset === "review" && reviewApprovalConsumed)
+      ? "PASSED" : enrollment.validationPreset === "review" ? "REQUIRES_REVIEW" : "FAILED";
   const canValidate = Boolean(enrollment && ["SUBMITTED", "FOR_VALIDATION", "VALIDATED"].includes(enrollment.status));
   const canReturn = Boolean(enrollment && ["FOR_VALIDATION", "VALIDATED"].includes(enrollment.status));
   const canConfirm = enrollment?.status === "VALIDATED";
@@ -91,8 +97,12 @@ export default function RegistrarEnrollment() {
   function saveAuthorizedCorrection(event) {
     event.preventDefault();
     if (!enrollment || !correctedInformation.trim() || !correctionReason.trim()) {setFeedback("Corrected information and a reason are required.");return;}
+    const resolvesClarification = reviewAwaitingClarification;
     const success = applyAuthorizedCorrection(enrollment.reference, correctedInformation.trim(), correctionReason.trim());
-    setFeedback(success ? "Authorized correction recorded in the transaction history." : "Authorized correction could not be saved.");
+    setFeedback(success ? resolvesClarification
+      ? "Clarification recorded. The academic review case is pending a new Coordinator decision."
+      : "Authorized correction recorded in the transaction history."
+      : "Authorized correction could not be saved.");
     if (success) setDialog(null);
   }
 
@@ -117,7 +127,7 @@ export default function RegistrarEnrollment() {
       </Panel>
 
       {enrollment ? <div style={{marginTop:16}}>
-        <Tabs selected={detailTab} onSelect={setDetailTab} label="Enrollment review sections" title={`Enrollment Review · ${enrollment.reference}`} subtitle="Current record, registered subjects, validation results and Registrar actions." actions={<Button type="button" variant="ghost" onClick={() => {setReference(null);setFeedback("");}}>Close Review</Button>} items={[{value:"subjects",label:"Registered Subjects"},{value:"validation",label:"Validation Summary"},{value:"history",label:"Transaction History"}]}>
+        <Tabs selected={detailTab} onSelect={setDetailTab} label="Enrollment review sections" title={`Enrollment Review · ${enrollment.reference}`} actions={<Button type="button" variant="ghost" onClick={() => {setReference(null);setFeedback("");}}>Close Review</Button>} items={[{value:"subjects",label:"Registered Subjects"},{value:"validation",label:"Validation Summary"},{value:"history",label:"Transaction History"}]}>
         <div className="info-grid" style={{marginBottom:16}}>
           <Info label="Student Number" value={enrollment.studentNumber} />
           <Info label="Student" value={enrollment.studentName} />
@@ -131,10 +141,11 @@ export default function RegistrarEnrollment() {
         {detailTab === "subjects" ? <DataTable rowKey="code" rows={enrollment.subjects} columns={[{key:"code",label:"Subject Code"},{key:"name",label:"Subject Name"},{key:"units",label:"Units"},{key:"section",label:"Section"},{key:"schedule",label:"Schedule"},{key:"room",label:"Room"}]} /> : null}
         {detailTab === "validation" ? <>
           <div className="notice" style={{marginBottom:12}}>Demo validation uses the existing record validation preset. It does not independently verify live academic or section data.</div>
-          <DataTable rowKey="rule" rows={CHECKS.map((rule) => ({rule,result:enrollment.lastValidatedAt ? enrollment.validationPreset === "pass" ? "PASSED" : enrollment.validationPreset === "review" ? "REQUIRES_REVIEW" : "FAILED" : "NOT_RUN"}))} columns={[{key:"rule",label:"Rule"},{key:"result",label:"Validation Result",render:(row)=><StatusBadge value={row.result} />}]} />
-          <div className="summary-strip" style={{marginTop:12}}><span>Overall Validation Result: <strong><StatusBadge value={enrollment.lastValidatedAt ? enrollment.validationPreset === "pass" ? "PASSED" : enrollment.validationPreset === "review" ? "REQUIRES_REVIEW" : "FAILED" : "NOT_RUN"} /></strong></span><span>Last validated: <strong>{enrollment.lastValidatedAt || "Not run during this demo session"}</strong></span></div>
+          <DataTable rowKey="rule" rows={CHECKS.map((rule) => ({rule,result:validationResult}))} columns={[{key:"rule",label:"Rule"},{key:"result",label:"Demo Validation Result",render:(row)=><StatusBadge value={row.result} />}]} />
+          <div className="summary-strip" style={{marginTop:12}}><span>Overall Demo Validation Result: <strong><StatusBadge value={validationResult} /></strong></span><span>Last validated: <strong>{enrollment.lastValidatedAt || "Not run during this demo session"}</strong></span></div>
+          {enrollment.academicReviewDecision === "APPLIED" ? <p className="notice" style={{marginTop:12}}>The approved exception for this enrollment was applied during Registrar demo validation. Enrollment still requires separate Registrar confirmation.</p> : null}
         </> : null}
-        {detailTab === "history" ? <><DataTable rowKey="id" rows={histories} emptyMessage="No transaction history is recorded yet." columns={[{key:"date",label:"Date & Time"},{key:"registrar",label:"Responsible Registrar"},{key:"action",label:"Action"},{key:"previousStatus",label:"Previous"},{key:"newStatus",label:"Result"},{key:"reason",label:"Reason"}]} />{enrollment.confirmationReference ? <div className="summary-strip" style={{marginTop:12}}><span>Confirmation: <strong>{enrollment.confirmationReference}</strong></span><span>Date: <strong>{enrollment.confirmationDate}</strong></span></div> : null}</> : null}
+        {detailTab === "history" ? <><DataTable rowKey="id" rows={histories} emptyMessage="No transaction history is recorded yet." columns={[{key:"date",label:"Date & Time"},{key:"registrar",label:"Responsible Staff",render:(row)=>row.actorName || row.registrar},{key:"action",label:"Action"},{key:"previousStatus",label:"Previous"},{key:"newStatus",label:"Result"},{key:"reason",label:"Reason"}]} />{enrollment.confirmationReference ? <div className="summary-strip" style={{marginTop:12}}><span>Confirmation: <strong>{enrollment.confirmationReference}</strong></span><span>Date: <strong>{enrollment.confirmationDate}</strong></span></div> : null}</> : null}
         {enrollment.correctionReason ? <div className="notice warning" style={{marginTop:12}}>Correction reason: {enrollment.correctionReason}</div> : null}
         {enrollment.authorizedCorrection ? <div className="notice" style={{marginTop:12}}>Last authorized correction: {enrollment.authorizedCorrection}. Reason: {enrollment.authorizedCorrectionReason}</div> : null}
         <div className="action-row" style={{marginTop:16}}>
@@ -144,7 +155,7 @@ export default function RegistrarEnrollment() {
           <Button type="button" disabled={!canConfirm} onClick={() => setDialog("confirm")}>Confirm Enrollment</Button>
           <Button type="button" variant="ghost" onClick={() => setDetailTab("history")}>View History</Button>
         </div>
-        {enrollment.status === "NEEDS_ACADEMIC_REVIEW" ? <p className="notice warning" style={{marginTop:12}}>An Academic Coordinator decision is required before Registrar validation can continue.</p> : null}
+        {enrollment.status === "NEEDS_ACADEMIC_REVIEW" ? <p className="notice warning" style={{marginTop:12}}>{reviewAwaitingClarification ? "Academic Review is waiting for clarification. Use Authorized Correction to document the supporting information and reopen the case for Coordinator review." : "An Academic Coordinator decision is required before Registrar validation can continue."}</p> : null}
         {enrollment.status === "CONFIRMED" ? <p className="notice" style={{marginTop:12}}>This confirmed transaction is protected from ordinary edits and deletion. Only traceable, authorized corrections are permitted.</p> : null}
         <Feedback message={feedback} />
         </Tabs>
@@ -169,7 +180,7 @@ export default function RegistrarEnrollment() {
           <label className="field full">Corrected Information<textarea required value={correctedInformation} onChange={(event) => setCorrectedInformation(event.target.value)} placeholder="Describe the approved record correction" /></label>
           <label className="field full">Correction Reason<textarea required value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Why was this correction authorized?" /></label>
         </form>
-        <p className="notice" style={{marginTop:12}}>This demo records a correction annotation and audit entry; official confirmed record fields remain intact.</p>
+        <p className="notice" style={{marginTop:12}}>{reviewAwaitingClarification ? "Recording a documented clarification returns this case to the pending Academic Review queue. The Coordinator must still make a new decision." : "This demo records a correction annotation and audit entry; official confirmed record fields remain intact."}</p>
       </Modal>
       <Modal open={dialog === "confirm" && Boolean(enrollment)} title="Confirm Enrollment" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button disabled={!canConfirm} onClick={confirm}>Confirm Enrollment</Button></>}>
         <Details items={[["Student", enrollment?.studentName],["Academic Term",enrollment?.term],["Subject Count",enrollment?.subjects.length],["Total Units",enrollment?.units],["Current Status",enrollment?.status]]} />

@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions, TablePagination } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
 import { Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
@@ -345,8 +345,8 @@ export default function AcademicSetupWorkspace() {
     <>
       <PageHeader title="Academic Setup" description="Manage programs, shared subjects and complete curriculum versions. Academic records and fees below are illustrative demo data." />
       <div className="academic-setup-tabs">
-        <Tabs items={VIEWS} selected={view} onSelect={(value) => { setView(value); resetFilters(); setSelected(null); setFeedback(null); }} label="Academic setup sections" title={VIEWS.find((item) => item.value === view)?.label} subtitle="Browse all demo academic records, or narrow them using filters.">
-          <p className="academic-demo-note">Demo Academic Data. Subjects, curriculum checklists and ₱100.00 per unit default are sample values, not official PLP academic or tuition policies.</p>
+        <Tabs items={VIEWS} selected={view} onSelect={(value) => { setView(value); resetFilters(); setSelected(null); setFeedback(null); }} label="Academic setup sections" title={VIEWS.find((item) => item.value === view)?.label}>
+          <p className="portal-demo-caption"><strong>Demo Data</strong> · Subjects, curriculum examples and the ₱100 per unit default are illustrative, not official academic or tuition policies.</p>
           {feedback && <Feedback message={feedback.text} warning={!feedback.ok} />}
           <div className="academic-filters">
             <SearchControl label="Search academic records" value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by code, title or version" />
@@ -374,7 +374,7 @@ export default function AcademicSetupWorkspace() {
           )}
           {view === "subjects" && (
             <>
-              <div className="academic-list-heading"><span>{visibleSubjects.length} subjects. Page {Math.min(page, subjectPageCount)} of {subjectPageCount}</span><Button onClick={() => openSubject()}>Add Subject</Button></div>
+              <div className="academic-list-heading"><span>{visibleSubjects.length} subjects</span><Button onClick={() => openSubject()}>Add Subject</Button></div>
               <DataTable rowKey="code" rows={shownSubjects} emptyMessage="No subjects match these academic filters." columns={[
                 { key: "code", label: "Subject Code" },
                 { key: "name", label: "Subject Name" },
@@ -387,7 +387,7 @@ export default function AcademicSetupWorkspace() {
                 { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status || "Active"} /> },
                 { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="edit" onClick={() => openSubject(row)}>Edit / Prerequisites</TableActionButton></TableActions> },
               ]} />
-              {subjectPageCount > 1 && <div className="academic-pagination"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><span>{Math.min(page, subjectPageCount)} / {subjectPageCount}</span><Button variant="ghost" disabled={page >= subjectPageCount} onClick={() => setPage((current) => current + 1)}>Next</Button></div>}
+              {subjectPageCount > 1 && <TablePagination page={page} pageSize={20} total={visibleSubjects.length} onPageChange={setPage} label="Academic subject table pagination" />}
             </>
           )}
           {view === "curriculum" && (

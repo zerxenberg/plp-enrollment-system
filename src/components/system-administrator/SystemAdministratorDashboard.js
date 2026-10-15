@@ -28,10 +28,6 @@ export default function SystemAdministratorDashboard() {
 
       <Card className="hero-card">
         <h2>Technical operations at a glance</h2>
-        <p>
-          Monitor the Enrollment System without taking over Registrar enrollment decisions
-          or Academic Coordinator academic decisions.
-        </p>
         <div className="hero-meta">
           <span className="hero-chip">Application Healthy</span>
           <span className="hero-chip">Database Connected</span>
@@ -52,10 +48,7 @@ export default function SystemAdministratorDashboard() {
       <div className="content-grid" style={{ marginTop: 16 }}>
         <Card className="section-card span-6">
           <div className="section-header">
-            <div>
-              <h2>Integration Summary</h2>
-              <p>Admission System and synchronization condition.</p>
-            </div>
+            <h2>Integration Summary</h2>
           </div>
           <div className="detail-list">
             <div className="detail-row"><span>Admission System Connection</span><strong><StatusBadge value="ACTIVE" label="Connected" /></strong></div>
@@ -71,10 +64,7 @@ export default function SystemAdministratorDashboard() {
 
         <Card className="section-card span-6">
           <div className="section-header">
-            <div>
-              <h2>Security Summary</h2>
-              <p>Authentication and access related activity.</p>
-            </div>
+            <h2>Security Summary</h2>
           </div>
           <div className="detail-list">
             <div className="detail-row"><span>Failed Logins</span><strong>3</strong></div>
@@ -88,7 +78,7 @@ export default function SystemAdministratorDashboard() {
         </Card>
 
         <Card className="section-card span-6">
-          <div className="section-header"><div><h2>Backup Summary</h2><p>Current recovery readiness.</p></div></div>
+          <div className="section-header"><h2>Backup Summary</h2></div>
           <div className="detail-list">
             <div className="detail-row"><span>Last Backup Date</span><strong>Oct 7, 2026</strong></div>
             <div className="detail-row"><span>Last Backup Result</span><strong><StatusBadge value="COMPLETED" label="Successful" /></strong></div>
@@ -98,7 +88,7 @@ export default function SystemAdministratorDashboard() {
         </Card>
 
         <Card className="section-card span-6">
-          <div className="section-header"><div><h2>Recent Administrative Activity</h2><p>Traceable technical changes.</p></div></div>
+          <div className="section-header"><h2>Recent Administrative Activity</h2></div>
           <div className="list-stack">
             <div className="list-item"><strong>API configuration changed</strong><p>Adrian Reyes · 5:10 PM</p></div>
             <div className="list-item"><strong>Backup created</strong><p>Adrian Reyes · 8:30 AM</p></div>
@@ -107,7 +97,7 @@ export default function SystemAdministratorDashboard() {
         </Card>
 
         <Card className="section-card span-12">
-          <div className="section-header"><div><h2>Quick Actions</h2><p>Open the existing parent module for each technical task.</p></div></div>
+          <div className="section-header"><h2>Quick Actions</h2></div>
           <div className="action-row">
             <Button onClick={() => router.push("/system-administrator/users-access")}>Create User Account</Button>
             <Button variant="secondary" onClick={() => router.push("/system-administrator/system-integration")}>Review Failed API Requests</Button>

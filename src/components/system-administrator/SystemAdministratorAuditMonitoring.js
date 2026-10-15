@@ -112,7 +112,6 @@ export default function SystemAdministratorAuditMonitoring() {
 
       {activeTab === "System Errors" ? (
         <Card className="section-card">
-          <div className="notice" style={{ marginBottom: 12 }}>Historical errors remain available for troubleshooting and accountability.</div>
           <DataTable
             rowKey="reference"
             rows={ERRORS}

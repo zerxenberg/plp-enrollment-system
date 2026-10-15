@@ -110,10 +110,7 @@ export default function StudentDashboard() {
       <div className="content-grid" style={{ marginTop: 16 }}>
         <Card className="section-card span-7">
           <div className="section-header">
-            <div>
-              <h2>Next Required Action</h2>
-              <p>The portal prioritizes the next step based on your current enrollment and academic status.</p>
-            </div>
+            <h2>Next Required Action</h2>
             <StatusBadge value={student.profile.progressionStatus} />
           </div>
           <div className="notice">
@@ -128,10 +125,7 @@ export default function StudentDashboard() {
 
         <Card className="section-card span-5">
           <div className="section-header">
-            <div>
-              <h2>Current Term</h2>
-              <p>Enrollment timing and active student context.</p>
-            </div>
+            <h2>Current Term</h2>
             <StatusBadge value={student.term.status} label={student.term.status} />
           </div>
           <div className="detail-list">
@@ -144,10 +138,7 @@ export default function StudentDashboard() {
 
         <Card className="section-card span-6">
           <div className="section-header">
-            <div>
-              <h2>Academic Summary</h2>
-              <p>Read only completion information used by enrollment eligibility.</p>
-            </div>
+            <h2>Academic Summary</h2>
             <Link className="section-link" href="/student/academic-records">Open Academic Records</Link>
           </div>
           <div className="info-grid">

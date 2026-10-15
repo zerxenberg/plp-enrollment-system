@@ -78,7 +78,7 @@ export default function SystemAdministratorUsersAccess() {
 
       {activeTab === "Users" ? (
         <Card className="section-card">
-          <div className="section-header"><div><h2>User Account Management</h2><p>Account administration only. Registrar and Academic Coordinator business records remain outside this module.</p></div></div>
+          <div className="section-header"><h2>User Account Management</h2></div>
           <div className="toolbar">
             <SearchControl value={search} onChange={setSearch} placeholder="Search user, username, role, or ID" />
           </div>
@@ -149,7 +149,7 @@ export default function SystemAdministratorUsersAccess() {
 
       {activeTab === "Access Activity" ? (
         <Card className="section-card">
-          <div className="section-header"><div><h2>User Access Activity</h2><p>Login information, account status changes, and recent access events.</p></div></div>
+          <div className="section-header"><h2>User Access Activity</h2></div>
           <DataTable
             columns={[
               { key: "user", label: "User" },

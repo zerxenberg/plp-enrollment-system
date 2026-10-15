@@ -51,7 +51,7 @@ export default function RegistrarReports() {
   return (
     <>
       <PageHeader title="Reports & Monitoring" description="Generate enrollment summaries, examine workload and review Registrar transaction history." />
-      <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} label="Registrar reporting sections" title="Registrar Reporting" subtitle="Operational enrollment data and student record quality only.">
+      <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} label="Registrar reporting sections" title="Registrar Reporting">
         {showEnrollmentFilters ? <div className="toolbar">
           <FilterControl label="Enrollment Status" value={status} onChange={(next)=>{setStatus(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.status))} />
         </div> : null}

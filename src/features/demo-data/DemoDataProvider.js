@@ -17,6 +17,9 @@ import {
   getPrerequisiteCandidates,
 } from "@/features/academic/academic-reference";
 import { transitionCurriculumVersion } from "@/features/academic/curriculum-lifecycle";
+import {
+  academicReviewOutcome, demoValidationOutcome,
+} from "@/features/academic/academic-review-workflow";
 import { buildBlockPlanningSeed } from "@/features/block-planning/block-planning-seed";
 import {
   createBlockSectionRecord, updateBlockSectionRecord, assignBlockStudentsRecord,
@@ -267,6 +270,7 @@ export function DemoDataProvider({ children }) {
   const [academicCoordinators] = useState(() => clone(academicCoordinatorSource));
   const [catalog, setCatalog] = useState(() => clone(INITIAL_ACADEMIC_CATALOG));
   const [academicCoordinatorData, setAcademicCoordinatorData] = useState(() => clone(ACADEMIC_COORDINATOR_INITIAL_DATA));
+  const reviewDecisionLocksRef = useRef(new Set());
   const [blockPlanning, setBlockPlanning] = useState(() =>
     buildBlockPlanningSeed(INITIAL_ACADEMIC_CATALOG, ACADEMIC_COORDINATOR_INITIAL_DATA.curricula));
   const blockPlanningRef = useRef(blockPlanning);
@@ -280,6 +284,7 @@ export function DemoDataProvider({ children }) {
   const hasRole = (role) => getDemoSession()?.role === role;
 
   useEffect(() => { curriculumDataRef.current = academicCoordinatorData; }, [academicCoordinatorData]);
+  useEffect(() => { reviewDecisionLocksRef.current.clear(); }, [registrar.enrollments]);
 
   useEffect(() => {
     const load = (raw) => {
@@ -765,10 +770,21 @@ export function DemoDataProvider({ children }) {
       return "FOR_VALIDATION";
     }
     if (previousStatus !== "FOR_VALIDATION" && previousStatus !== "VALIDATED") return previousStatus;
-    const nextStatus = enrollment.validationPreset === "pass" ? "VALIDATED" : enrollment.validationPreset === "review" ? "NEEDS_ACADEMIC_REVIEW" : "REQUIRES_CORRECTION";
+    const nextStatus = demoValidationOutcome(enrollment);
+    const appliesAcademicApproval = nextStatus === "VALIDATED" && enrollment.academicReviewDecision === "APPROVED";
     const validationReason = nextStatus === "VALIDATED" ? "All demo validation checks passed." : nextStatus === "NEEDS_ACADEMIC_REVIEW" ? "The enrollment requires an Academic Coordinator decision." : "The enrollment requires a correction before validation can continue.";
     const correctionReason = nextStatus === "REQUIRES_CORRECTION" ? "Validation identified a correctable enrollment issue." : enrollment.correctionReason;
-    updateEnrollment(reference, (item) => ({ ...item, status: nextStatus, lastValidatedAt: demoTimestamp(), correctionReason }));
+    updateEnrollment(reference, (item) => ({
+      ...item,
+      status: nextStatus,
+      lastValidatedAt: demoTimestamp(),
+      correctionReason,
+      ...(appliesAcademicApproval ? { academicReviewDecision: "APPLIED", academicReviewAppliedDate: demoTimestamp() } : {}),
+    }));
+    if (appliesAcademicApproval) {
+      addAcademicHistory("Academic Review", reference, "Approved exception applied during validation",
+        "APPROVED", "APPLIED", enrollment.academicReviewReason || "", enrollment.academicReviewScope || null);
+    }
     syncEnrollmentStatus(enrollment, nextStatus, { correctionReason });
     addActivity(enrollment, "Validation completed", previousStatus, nextStatus, validationReason);
     addStudentEnrollmentNotification(enrollment, `Enrollment ${nextStatus === "VALIDATED" ? "Validated" : nextStatus === "NEEDS_ACADEMIC_REVIEW" ? "Needs Academic Review" : "Requires Correction"}`, validationReason);
@@ -843,8 +859,24 @@ export function DemoDataProvider({ children }) {
     if (!hasRole("registrar")) return false;
     const enrollment = registrar.enrollments.find((item) => item.reference === reference);
     if (!enrollment || !reason.trim() || !correctedInformation.trim()) return false;
-    updateEnrollment(reference, (item) => ({ ...item, authorizedCorrection: correctedInformation, authorizedCorrectionReason: reason }));
+    const clarifiesReview = enrollment.status === "NEEDS_ACADEMIC_REVIEW" &&
+      enrollment.academicReviewDecision === "RETURNED_FOR_CLARIFICATION";
+    updateEnrollment(reference, (item) => ({
+      ...item,
+      authorizedCorrection: correctedInformation,
+      authorizedCorrectionReason: reason,
+      ...(clarifiesReview ? {
+        academicReviewDecision: "PENDING",
+        academicReviewClarification: correctedInformation,
+        academicReviewClarificationReason: reason,
+        academicReviewClarificationDate: demoTimestamp(),
+      } : {}),
+    }));
     addActivity(enrollment, "Authorized correction recorded", enrollment.status, enrollment.status, reason);
+    if (clarifiesReview) {
+      addAcademicHistory("Academic Review", reference, "Clarification supplied for academic exception",
+        "RETURNED_FOR_CLARIFICATION", "PENDING", reason, enrollment.academicReviewScope || null);
+    }
     return true;
   }
 
@@ -891,7 +923,7 @@ export function DemoDataProvider({ children }) {
     return record?.fullName || academicCoordinators[0]?.fullName || "Academic Coordinator";
   }
 
-  function addAcademicHistory(module, record, action, previousValue = "", newValue = "") {
+  function addAcademicHistory(module, record, action, previousValue = "", newValue = "", reason = "", scope = null) {
     setAcademicCoordinatorData((current) => ({
       ...current,
       history: [
@@ -904,6 +936,8 @@ export function DemoDataProvider({ children }) {
           action,
           previousValue,
           newValue,
+          ...(reason ? { reason } : {}),
+          ...(scope ? { scope } : {}),
         },
         ...current.history,
       ],
@@ -1589,30 +1623,24 @@ export function DemoDataProvider({ children }) {
     if (!hasRole("academic-coordinator")) return { ok: false, message: "Unauthorized role." };
 
     const enrollment = registrar.enrollments.find((item) => item.reference === reference);
-    if (!enrollment || enrollment.status !== "NEEDS_ACADEMIC_REVIEW") {
-      return { ok: false, message: "This case is not waiting for an Academic Coordinator decision." };
-    }
-
     const normalizedDecision = String(decision || "").toUpperCase();
     const academicReason = String(note || "").trim();
-
-    if (!["APPROVED", "REJECTED", "RETURNED_FOR_CLARIFICATION"].includes(normalizedDecision)) {
-      return { ok: false, message: "Select a valid academic decision." };
+    const outcome = academicReviewOutcome(enrollment, normalizedDecision, academicReason);
+    if (!outcome.ok) return outcome;
+    if (reviewDecisionLocksRef.current.has(reference)) {
+      return { ok: false, message: "An academic decision for this case is already being processed." };
     }
-
-    if (!academicReason) {
-      return { ok: false, message: "An academic reason or decision note is required." };
-    }
-
-    const nextStatus =
-      normalizedDecision === "APPROVED"
-        ? "FOR_VALIDATION"
-        : normalizedDecision === "REJECTED"
-          ? "REQUIRES_CORRECTION"
-          : "NEEDS_ACADEMIC_REVIEW";
+    reviewDecisionLocksRef.current.add(reference);
+    const nextStatus = outcome.nextStatus;
 
     const coordinator = currentAcademicCoordinatorName();
     const decisionDate = demoTimestamp();
+    const scope = {
+      studentReference: enrollment.studentNumber,
+      enrollmentReference: enrollment.reference,
+      subjectCode: enrollment.academicReviewSubjectCode || enrollment.subjects?.[0]?.code || null,
+      rule: enrollment.academicReviewRule || enrollment.validationPreset || "Defined Academic Exception",
+    };
 
     setRegistrar((current) => ({
       ...current,
@@ -1625,6 +1653,11 @@ export function DemoDataProvider({ children }) {
               academicReviewReason: academicReason,
               academicReviewCoordinator: coordinator,
               academicReviewDate: decisionDate,
+              academicReviewScope: scope,
+              academicReviewHistory: [
+                ...(item.academicReviewHistory || []),
+                { status: normalizedDecision, reason: academicReason, coordinator, date: decisionDate, scope },
+              ],
             }
           : item
       ),
@@ -1633,6 +1666,8 @@ export function DemoDataProvider({ children }) {
           id: `ACT-${Date.now()}`,
           date: decisionDate,
           registrar: coordinator,
+          actorRole: "ACADEMIC_COORDINATOR",
+          actorName: coordinator,
           student: enrollment.studentName,
           reference,
           action: `Academic exception ${normalizedDecision.toLowerCase().replaceAll("_", " ")}`,
@@ -1683,9 +1718,11 @@ export function DemoDataProvider({ children }) {
     addAcademicHistory(
       "Academic Review",
       reference,
-      "Academic exception decided",
+      "Academic exception " + normalizedDecision.toLowerCase().replaceAll("_", " "),
       "NEEDS_ACADEMIC_REVIEW",
       `${normalizedDecision} → ${nextStatus}`,
+      academicReason,
+      scope,
     );
 
     return { ok: true, nextStatus };

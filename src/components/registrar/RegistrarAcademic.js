@@ -123,7 +123,6 @@ export default function RegistrarAcademic() {
           ["Capacity", currentSection.capacity], ["Confirmed Students", currentSection.confirmed],
           ["Remaining Slots", currentSection.remaining], ["Capacity Indicator", currentSection.status],
         ]} />
-        <p className="notice" style={{ marginTop: 12 }}>Details are provided for Registrar enrollment reference. Academic planning remains with the Academic Coordinator; final student confirmation requires Registrar validation.</p>
       </Panel></div> : null}
     </>
   );

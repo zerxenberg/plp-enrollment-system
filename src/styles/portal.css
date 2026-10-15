@@ -358,8 +358,39 @@
 .academic-filters .select-field { min-width: 0; }
 .academic-filters .portal-button { align-self: end; }
 .academic-demo-note { padding: 11px 14px; border: 1px solid #c8e7d3; border-radius: 10px; color: #37634d; background: rgba(232, 249, 239, .74); font-size: .74rem; line-height: 1.5; }
+.portal-demo-caption { display: block; margin: 0 0 12px; color: var(--portal-muted); font-size: .76rem; font-weight: 450; line-height: 1.5; }
+.portal-demo-caption strong { color: var(--portal-green-700); font-weight: 650; }
 .academic-list-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; color: #4b6255; font-size: .76rem; font-weight: 700; }
-.academic-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 14px; font-size: .75rem; }
+.portal-table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 100%;
+  margin-top: 16px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 450;
+  color: var(--portal-muted);
+}
+.portal-table-pagination .portal-button {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.35;
+}
+.portal-table-pagination-summary { color: var(--portal-muted); font-size: 14px; font-weight: 450; line-height: 1.45; white-space: nowrap; }
+@media (max-width: 480px) {
+  .portal-table-pagination { gap: 8px; }
+  .portal-table-pagination-summary { order: -1; flex: 1 0 100%; white-space: normal; }
+}
 .portal-modal.academic-setup-wide-modal { width: min(896px, 96vw); max-height: 78dvh; }
 .academic-setup-wide-modal > header, .academic-setup-wide-modal > footer { flex-shrink: 0; }
 .academic-editor { display: flex; flex-direction: column; gap: 10px; }
@@ -467,6 +498,7 @@
   .portal-modal.academic-setup-wide-modal { width: 100%; max-height: 94dvh; }
   .academic-curriculum-metrics { grid-template-columns: 1fr; }
 }
+.portal-modal.academic-setup-wide-modal.academic-review-case-modal { max-height: 85dvh; }
 @media (max-width: 420px) {
   .academic-term-grid, .academic-summary-grid { grid-template-columns: 1fr; }
 }
@@ -598,6 +630,19 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
   .portal-main-shell { margin: 0; }
   .portal-content { width: 100%; max-width: none; padding: 0; }
   .portal-card { box-shadow: none; break-inside: avoid; }
+  /* Academic reports print the current generated preview without portal chrome. */
+  body:has(.academic-report-print) .portal-app * { visibility: hidden !important; }
+  body:has(.academic-report-print) .academic-report-print,
+  body:has(.academic-report-print) .academic-report-print * { visibility: visible !important; }
+  body:has(.academic-report-print) .academic-report-print {
+    position: absolute !important; top: 0; left: 0; width: 100% !important;
+    padding: 0 !important; margin: 0 !important; color: #000; background: #fff;
+  }
+  body:has(.academic-report-print) .portal-card { break-inside: auto !important; }
+  body:has(.academic-report-print) .academic-report-print .table-scroll { overflow: visible !important; }
+  body:has(.academic-report-print) .academic-report-print .data-table { min-width: 0; width: 100%; font-size: 8pt; }
+  body:has(.academic-report-print) .academic-report-print .data-table tr { break-inside: avoid; }
+  body:has(.academic-report-print) .academic-report-print .data-table thead { display: table-header-group; }
 }
 
 @media (prefers-reduced-motion: reduce) {

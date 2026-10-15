@@ -231,7 +231,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
     <div className="block-planning">
       <PageHeader title="Sections & Schedules" description="Plan block sections, student assignments, subject classes and weekly meeting times across academic terms." />
       <InternalTabs items={TABS} selected={tab} onSelect={(value) => { setTab(value); close(); setFeedback(null); }} label="Sections and class schedule navigation" panelCard>
-        <p className="academic-demo-note block-note">Academic Coordinator demo planning. Assignments and schedules are proposed until processed through their official workflows. Registrar confirmation is the authority for enrolled students.</p>
+        <p className="portal-demo-caption block-note"><strong>Demo Planning</strong> · Schedules and assignments remain proposals until approved through the official enrollment workflow.</p>
         {feedback && <Feedback message={feedback.message} warning={feedback.warning} />}
         <div className="toolbar block-filters">
           <SearchControl value={search} onChange={setSearch} label="Search block sections" placeholder="Search block, program or major" />
@@ -257,7 +257,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <Metric label="Full Sections" value={filtered.filter((item) => occupancyStatus(item) === "FULL").length} />
             <Metric label="Needs Attention" value={filtered.filter((item) => occupancyStatus(item) === "NEAR_FULL").length} hint="At least 90% occupied" />
           </div>
-          <div className="section-header block-heading"><div><h2>Block Section Management</h2><p>Review enrollment demand, create blocks and manage proposed rosters.</p></div>
+          <div className="section-header block-heading"><h2>Block Section Management</h2>
             <div className="action-row"><Button variant="secondary" onClick={() => setDialog("reset")}>Reset Demo Planning</Button>
               <Button onClick={() => openSection()}>Create Block Section</Button></div></div>
           <DataTable rowKey="id" rows={filtered} emptyMessage="No block sections match your filters." columns={[

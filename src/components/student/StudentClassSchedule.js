@@ -40,10 +40,7 @@ export default function StudentClassSchedule() {
         panelCard
       >
         <div className="section-header">
-          <div>
-            <h2>{schedule.term}</h2>
-            <p>Confirmed schedule record</p>
-          </div>
+          <h2>{schedule.term}</h2>
           <StatusBadge value="CONFIRMED" />
         </div>
         <div className="toolbar">
