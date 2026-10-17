@@ -247,61 +247,146 @@ export function LoadingState({ label = "Loading portal..." }) {
   return <div className="portal-loading" role="status"><span className="loading-spinner" aria-hidden="true" />{label}</div>;
 }
 
-export function Modal({ open, title, children, onClose, footer, className = "" }) {
+export function Modal({
+  open,
+  title,
+  children,
+  onClose,
+  footer,
+  className = "",
+}) {
   const closeRef = useRef(null);
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
-  const titleId = useId();
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return undefined;
+
     const previousFocus = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    closeRef.current?.focus();
-    const getFocusable = () => dialogRef.current?.querySelectorAll(
-      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-    );
-    const handleKey = (event) => {
+
+    const getFocusable = () =>
+      Array.from(
+        dialogRef.current?.querySelectorAll(
+          [
+            'button:not([disabled])',
+            'a[href]',
+            'input:not([disabled])',
+            'select:not([disabled])',
+            'textarea:not([disabled])',
+            '[tabindex]:not([tabindex="-1"])',
+          ].join(","),
+        ) || [],
+      ).filter(
+        (element) =>
+          element instanceof HTMLElement &&
+          !element.hidden &&
+          element.offsetParent !== null,
+      );
+
+    // Wait until the modal is mounted before moving focus.
+    requestAnimationFrame(() => {
+      closeRef.current?.focus();
+    });
+
+    const handleKeyDown = (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCloseRef.current();
+        onCloseRef.current?.();
         return;
       }
+
       if (event.key !== "Tab") return;
+
       const focusable = getFocusable();
-      if (!focusable?.length) return;
+
+      if (!focusable.length) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey) {
+        if (
+          activeElement === first ||
+          !dialogRef.current?.contains(activeElement)
+        ) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (
+        activeElement === last ||
+        !dialogRef.current?.contains(activeElement)
+      ) {
         event.preventDefault();
         first.focus();
       }
     };
-    const containFocus = (event) => {
-      if (!dialogRef.current?.contains(event.target)) {
-        (getFocusable()?.[0] || dialogRef.current)?.focus();
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+
+      if (
+        previousFocus instanceof HTMLElement &&
+        previousFocus.isConnected
+      ) {
+        previousFocus.focus();
       }
     };
-    document.addEventListener("keydown", handleKey);
-    document.addEventListener("focusin", containFocus);
-    return () => {
-      document.removeEventListener("keydown", handleKey);
-      document.removeEventListener("focusin", containFocus);
-      document.body.style.overflow = previousOverflow;
-      previousFocus?.focus?.();
-    };
   }, [open]);
+
   if (!open) return null;
+
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section ref={dialogRef} className={`portal-modal ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-        <header><h2 id={titleId}>{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><AppIcon name="close" /></button></header>
-        <div className="modal-body">{children}</div>
-        {footer ? <footer className="modal-footer">{footer}</footer> : null}
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onCloseRef.current?.();
+        }
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className={`portal-modal ${className}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="portal-modal-title"
+        tabIndex={-1}
+      >
+        <header>
+          <h2 id="portal-modal-title">{title}</h2>
+
+          <button
+            ref={closeRef}
+            className="icon-button"
+            type="button"
+            onClick={() => onCloseRef.current?.()}
+            aria-label="Close dialog"
+          >
+            <AppIcon name="close" />
+          </button>
+        </header>
+
+        <div className="modal-body">
+          {children}
+        </div>
+
+        {footer ? (
+          <footer className="modal-footer">
+            {footer}
+          </footer>
+        ) : null}
       </section>
     </div>
   );
