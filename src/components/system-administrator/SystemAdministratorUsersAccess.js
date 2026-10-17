@@ -1,7 +1,9 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+
 import {
   Button,
   DataTable,
@@ -11,511 +13,559 @@ import {
   SearchControl,
   StatusBadge,
 } from "@/components/ui/PortalUI";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { Details, Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
-import { departmentName } from "@/features/academic/academic-reference";
-
-const TABS = [
-  { value: "Users", label: "Users" },
-  { value: "Roles", label: "Roles" },
-  { value: "Permissions", label: "Permissions" },
-  { value: "Access Activity", label: "Access Activity" },
-];
+import {
+  changeUserRole,
+  createStaffUserAccount,
+  provisionExistingApplicationUser,
+  resetUserPassword,
+  setRolePermission,
+  setUserAccessState,
+  updateRoleDescription,
+  updateUserAccount,
+} from "@/features/system-administration/system-admin-actions";
 
 const ALL = "ALL";
 
-const ROLE_DESCRIPTIONS = {
-  Student: "Student self service and access to the student's own permitted records.",
-  Registrar: "Official enrollment processing, student record administration, and enrollment confirmation.",
-  "Academic Coordinator": "Academic setup, planning, schedules, capacity, and defined academic exception decisions.",
-  "System Administrator": "Technical access, integration, security, maintenance, permissions, and monitoring.",
+const AUTHORIZED_ROLE_PERMISSIONS = {
+  student: new Set([
+    "notifications.read_self",
+    "student.self_service",
+    "student.profile_edit",
+    "academic.master_data_read",
+  ]),
+  registrar: new Set([
+    "notifications.read_self",
+    "registrar.students_read",
+    "registrar.students_manage",
+    "registrar.enrollment_process",
+    "academic.master_data_read",
+  ]),
+  "academic-coordinator": new Set([
+    "notifications.read_self",
+    "registrar.students_read",
+    "academic.master_data_read",
+    "academic.master_data_manage",
+    "academic.review_decide",
+  ]),
+  "system-administrator": new Set([
+    "notifications.read_self",
+    "system.users_manage",
+    "system.permissions_manage",
+    "system.integration_manage",
+    "system.settings_manage",
+    "system.audit_read",
+  ]),
 };
 
-const PERMISSION_ROWS = [
-  { module: "Student Self Service", student: "Own records", registrar: "Limited operational access", coordinator: "No", administrator: "No" },
-  { module: "Enrollment Administration", student: "No", registrar: "Yes", coordinator: "Limited academic review", administrator: "No" },
-  { module: "Academic Setup", student: "No", registrar: "Reference or authorized", coordinator: "Yes", administrator: "No" },
-  { module: "System Integration", student: "No", registrar: "Limited view if approved", coordinator: "No", administrator: "Full technical access" },
-  { module: "Users & Access", student: "No", registrar: "No", coordinator: "No", administrator: "Yes" },
-  { module: "System Administration", student: "No", registrar: "No", coordinator: "No", administrator: "Yes" },
-  { module: "Technical Audit Logs", student: "No", registrar: "No", coordinator: "No", administrator: "Yes" },
+
+const TABS = [
+  { value: "users", label: "Users" },
+  { value: "roles", label: "Roles" },
+  { value: "permissions", label: "Permissions" },
+  { value: "activity", label: "Access Activity" },
 ];
 
-const ACCESS_ACTIVITY = [
-  { id: "ACC-001", user: "Adrian Reyes", role: "System Administrator", lastLogin: "Oct 7, 2026 · 5:52 PM", accountStatus: "Active", recentLoginResult: "Successful", recentAccountChange: "None", source: "Staff Login" },
-  { id: "ACC-002", user: "Maria Santos", role: "Registrar", lastLogin: "Oct 7, 2026 · 5:31 PM", accountStatus: "Active", recentLoginResult: "Successful", recentAccountChange: "Password reset · Oct 2", source: "Staff Login" },
-  { id: "ACC-003", user: "Elena Cruz", role: "Academic Coordinator", lastLogin: "Oct 7, 2026 · 4:55 PM", accountStatus: "Active", recentLoginResult: "Successful", recentAccountChange: "None", source: "Staff Login" },
-  { id: "ACC-004", user: "Unknown account", role: "Unknown", lastLogin: "Oct 7, 2026 · 5:21 PM", accountStatus: "Unknown", recentLoginResult: "Failed", recentAccountChange: "No account change", source: "Staff Login" },
-];
-
-function normalizeStatus(value) {
-  return String(value || "").toUpperCase() === "ACTIVE" || value === "Active" ? "Active" : "Inactive";
-}
-
-function distinctOptions(values, allLabel) {
+function distinctOptions(values, label) {
   return [
-    { value: ALL, label: allLabel },
-    ...[...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)))
+    { value: ALL, label },
+    ...[...new Set(values.filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b)))
       .map((value) => ({ value, label: value })),
   ];
 }
 
-export default function SystemAdministratorUsersAccess() {
-  const { student, registrar, catalog, systemAdministrators, academicCoordinators } = useDemoData();
-  const [activeTab, setActiveTab] = useState("Users");
+function actionResultMessage(result) {
+  return result?.message || (result?.ok ? "Action completed." : "Action failed.");
+}
+
+export default function SystemAdministratorUsersAccess({ usersAccessData }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  const {
+    users,
+    roles,
+    permissions,
+    rolePermissions,
+    organizationalUnits,
+    accessActivity,
+  } = usersAccessData;
+
+  const [tab, setTab] = useState("users");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState(ALL);
   const [accountStatus, setAccountStatus] = useState(ALL);
   const [college, setCollege] = useState(ALL);
   const [program, setProgram] = useState(ALL);
   const [yearLevel, setYearLevel] = useState(ALL);
-  const [enrollmentStatus, setEnrollmentStatus] = useState(ALL);
-  const [office, setOffice] = useState(ALL);
-  const [department, setDepartment] = useState(ALL);
+  const [studentStatus, setStudentStatus] = useState(ALL);
+  const [organization, setOrganization] = useState(ALL);
   const [position, setPosition] = useState(ALL);
-  const [selectedRecord, setSelectedRecord] = useState(null);
+
+  const [selectedUser, setSelectedUser] = useState(null);
   const [selectedRole, setSelectedRole] = useState(null);
   const [selectedPermission, setSelectedPermission] = useState(null);
   const [selectedActivity, setSelectedActivity] = useState(null);
+
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [roleChangeOpen, setRoleChangeOpen] = useState(false);
+  const [roleDescriptionOpen, setRoleDescriptionOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageWarning, setMessageWarning] = useState(false);
 
-  const programByCode = useMemo(
-    () => new Map((catalog.programs || []).map((item) => [item.code, item])),
-    [catalog.programs],
-  );
+  const [createMode, setCreateMode] = useState("existing");
+  const [createForm, setCreateForm] = useState({
+    existingUserId: "",
+    fullName: "",
+    email: "",
+    username: "",
+    employeeId: "",
+    roleCode: "registrar",
+    organizationalUnitCode: "",
+    positionTitle: "",
+    officeName: "",
+    accountStatus: "Active",
+    temporaryPassword: "",
+  });
 
-  const users = useMemo(() => {
-    const students = registrar.students.map((item) => {
-      const programRecord = programByCode.get(item.program);
-      const departmentId = item.department || programRecord?.department || "";
-      const isCurrentStudent = item.studentNumber === student.profile.studentNumber;
+  const [editForm, setEditForm] = useState({
+    userId: "",
+    fullName: "",
+    email: "",
+    username: "",
+    employeeId: "",
+    organizationalUnitCode: "",
+    positionTitle: "",
+    officeName: "",
+  });
 
-      return {
-        userId: item.studentNumber,
-        fullName: item.fullName,
-        username: item.studentNumber,
-        email: item.email,
-        assignedRole: "Student",
-        accountStatus: normalizeStatus(item.accountStatus || item.studentStatus),
-        lastLogin: isCurrentStudent ? "Current demo session available" : "Not recorded",
-        dateCreated: "Not recorded",
-        organization: departmentName(departmentId, catalog.departments),
-        college: departmentName(departmentId, catalog.departments),
-        departmentId,
-        program: item.program,
-        yearLevel: item.yearLevel || (isCurrentStudent ? student.profile.yearLevel : "Not recorded"),
-        studentType: item.studentType || (isCurrentStudent ? student.profile.studentType : "Not recorded"),
-        academicClassification: item.academicClassification || (isCurrentStudent ? student.profile.academicClassification : "Not recorded"),
-        studentStatus: item.studentStatus,
-        enrollmentStatus: item.enrollmentStatus,
-        academicTerm: item.academicTerm,
-      };
-    });
+  const [passwordForm, setPasswordForm] = useState({
+    temporaryPassword: "",
+  });
 
-    const registrarUser = {
-      userId: registrar.registrar.accountId,
-      fullName: registrar.registrar.fullName,
-      username: "registrar.demo",
-      email: registrar.registrar.email,
-      assignedRole: "Registrar",
-      accountStatus: normalizeStatus(registrar.registrar.accountStatus),
-      lastLogin: "Not recorded",
-      dateCreated: "Not recorded",
-      organization: registrar.registrar.office,
-      office: registrar.registrar.office,
-    };
+  const [roleChangeCode, setRoleChangeCode] = useState("registrar");
+  const [roleDescription, setRoleDescription] = useState("");
 
-    const coordinators = academicCoordinators.map((item) => ({
-      ...item,
-      organization: item.department,
-    }));
-
-    const administrators = systemAdministrators.map((item) => ({
-      ...item,
-      organization: item.department,
-    }));
-
-    return [...students, registrarUser, ...coordinators, ...administrators];
-  }, [academicCoordinators, catalog.departments, programByCode, registrar, student, systemAdministrators]);
-
-  const roleOptions = [
+  const approvedRoleOptions = [
     { value: ALL, label: "All Roles" },
-    ...Object.keys(ROLE_DESCRIPTIONS).map((value) => ({ value, label: value })),
+    ...roles.map((role) => ({ value: role.code, label: role.name })),
   ];
 
-  const filteredUsers = users.filter((item) => {
-    const searchable = `${item.userId} ${item.fullName} ${item.username || ""} ${item.email || ""} ${item.assignedRole} ${item.organization || ""}`.toLowerCase();
-    if (!searchable.includes(search.toLowerCase())) return false;
-    if (roleFilter !== ALL && item.assignedRole !== roleFilter) return false;
-    if (accountStatus !== ALL && item.accountStatus !== accountStatus) return false;
+  const staffRoleOptions = roles
+    .filter((role) => ["registrar", "academic-coordinator", "system-administrator"].includes(role.code))
+    .map((role) => ({ value: role.code, label: role.name }));
 
-    if (roleFilter === "Student") {
-      if (college !== ALL && item.college !== college) return false;
-      if (program !== ALL && item.program !== program) return false;
-      if (yearLevel !== ALL && item.yearLevel !== yearLevel) return false;
-      if (enrollmentStatus !== ALL && item.enrollmentStatus !== enrollmentStatus) return false;
-    }
+  const unlinkedUsers = users.filter((user) => !user.authLinked);
 
-    if (roleFilter === "Registrar" && office !== ALL && item.office !== office) return false;
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const searchable = [
+        user.fullName,
+        user.email,
+        user.username,
+        user.roleName,
+        user.student?.student_number,
+        user.staff?.employee_id,
+        user.student?.program_code,
+        user.student?.collegeName,
+        user.staff?.organizationName,
+      ].filter(Boolean).join(" ").toLowerCase();
 
-    if (roleFilter === "Academic Coordinator") {
-      if (department !== ALL && item.department !== department) return false;
-      if (position !== ALL && item.position !== position) return false;
-    }
+      if (!searchable.includes(search.toLowerCase())) return false;
+      if (roleFilter !== ALL && user.roleCode !== roleFilter) return false;
+      if (accountStatus !== ALL && user.accountStatus !== accountStatus) return false;
 
-    if (roleFilter === "System Administrator") {
-      if (department !== ALL && item.department !== department) return false;
-      if (position !== ALL && item.position !== position) return false;
+      if (roleFilter === "student") {
+        if (college !== ALL && user.student?.collegeName !== college) return false;
+        if (program !== ALL && user.student?.program_code !== program) return false;
+        if (yearLevel !== ALL && user.student?.year_level !== yearLevel) return false;
+        if (studentStatus !== ALL && user.student?.student_status !== studentStatus) return false;
+      }
+
+      if (["registrar", "academic-coordinator", "system-administrator"].includes(roleFilter)) {
+        if (organization !== ALL && user.staff?.organizationName !== organization) return false;
+        if (position !== ALL && user.staff?.position_title !== position) return false;
+      }
+
+      return true;
+    });
+  }, [
+    users,
+    search,
+    roleFilter,
+    accountStatus,
+    college,
+    program,
+    yearLevel,
+    studentStatus,
+    organization,
+    position,
+  ]);
+
+  const filteredActivity = accessActivity.filter((item) => {
+    const text = [
+      item.actor_label,
+      item.action,
+      item.module,
+      item.entity_key,
+      item.result,
+      item.reason,
+    ].filter(Boolean).join(" ").toLowerCase();
+
+    if (!text.includes(search.toLowerCase())) return false;
+
+    if (roleFilter !== ALL) {
+      const actor = users.find((user) => user.id === item.actor_user_id);
+      if (actor?.roleCode !== roleFilter) return false;
     }
 
     return true;
   });
 
-  const roleRows = Object.keys(ROLE_DESCRIPTIONS).map((role) => ({
-    id: `ROLE-${role.toUpperCase().replaceAll(" ", "-")}`,
-    roleName: role,
-    description: ROLE_DESCRIPTIONS[role],
-    users: users.filter((item) => item.assignedRole === role).length,
-    status: "Active",
-  }));
+  function setResult(result) {
+    setMessage(actionResultMessage(result));
+    setMessageWarning(!result?.ok);
+    if (result?.ok) router.refresh();
+  }
 
-  function resetRoleSpecificFilters(nextRole) {
+  function run(action) {
+    startTransition(async () => {
+      const result = await action();
+      setResult(result);
+    });
+  }
+
+  function resetRoleFilters(nextRole) {
     setRoleFilter(nextRole);
     setCollege(ALL);
     setProgram(ALL);
     setYearLevel(ALL);
-    setEnrollmentStatus(ALL);
-    setOffice(ALL);
-    setDepartment(ALL);
+    setStudentStatus(ALL);
+    setOrganization(ALL);
     setPosition(ALL);
   }
 
-  function changeTab(next) {
-    setActiveTab(next);
-    setSearch("");
-    setAccountStatus(ALL);
-    resetRoleSpecificFilters(ALL);
-    setMessage("");
-    setSelectedRecord(null);
-    setSelectedRole(null);
-    setSelectedPermission(null);
-    setSelectedActivity(null);
+  function openEdit(user) {
+    setSelectedUser(user);
+    setEditForm({
+      userId: user.id,
+      fullName: user.fullName,
+      email: user.email,
+      username: user.username || "",
+      employeeId: user.staff?.employee_id || "",
+      organizationalUnitCode: user.staff?.organizational_unit_code || "",
+      positionTitle: user.staff?.position_title || "",
+      officeName: user.staff?.office_name || "",
+    });
+    setEditOpen(true);
   }
 
-  const userColumns = [
-    { key: "userId", label: "User / Account ID" },
-    { key: "fullName", label: "Name" },
-    { key: "assignedRole", label: "Role" },
-    { key: "organization", label: "College / Office / Department" },
-    { key: "accountStatus", label: "Status", render: (row) => <StatusBadge value={row.accountStatus === "Active" ? "ACTIVE" : "INACTIVE"} label={row.accountStatus} /> },
-    { key: "lastLogin", label: "Last Login" },
-  ];
+  function openPassword(user) {
+    setSelectedUser(user);
+    setPasswordForm({ temporaryPassword: "" });
+    setPasswordOpen(true);
+  }
+
+  function openRoleChange(user) {
+    setSelectedUser(user);
+    setRoleChangeCode(
+      ["registrar", "academic-coordinator", "system-administrator"].includes(user.roleCode)
+        ? user.roleCode
+        : "registrar",
+    );
+    setRoleChangeOpen(true);
+  }
+
+  const studentUsers = users.filter((user) => user.roleCode === "student");
 
   return (
     <>
       <PageHeader
         title="Users & Access"
-        description="Search and manage account access without mixing System Administrator controls with academic or enrollment records."
-        actions={<Button onClick={() => setCreateOpen(true)}>Create User</Button>}
+        description="Live Supabase account administration, predefined roles, permissions, and recorded access activity."
+        actions={<Button onClick={() => setCreateOpen(true)}>Create User Account</Button>}
       />
 
       <Tabs
         items={TABS}
-        selected={activeTab}
-        onSelect={changeTab}
+        selected={tab}
+        onSelect={(next) => {
+          setTab(next);
+          setSearch("");
+          setRoleFilter(ALL);
+          setMessage("");
+          setSelectedUser(null);
+        }}
         label="Users and access sections"
         title="Access Administration"
-        subtitle="Tables are intentionally concise. Select a row to open the complete record in a modal."
+        subtitle="Select a table row to inspect the full record. Account actions are available only inside the selected user modal."
       >
-        <Feedback message={message} />
+        <Feedback message={message} warning={messageWarning} />
 
-        {activeTab === "Users" ? (
+        {tab === "users" ? (
           <>
             <div className="toolbar">
-              <SearchControl value={search} onChange={setSearch} label="Search users" placeholder="Search ID, name, email, role, or organization" />
-              <FilterControl label="Role" value={roleFilter} onChange={resetRoleSpecificFilters} options={roleOptions} />
+              <SearchControl
+                value={search}
+                onChange={setSearch}
+                label="Search users"
+                placeholder="Search name, email, ID, role, program, or organization"
+              />
+              <FilterControl
+                label="Role"
+                value={roleFilter}
+                onChange={resetRoleFilters}
+                options={approvedRoleOptions}
+              />
               <FilterControl
                 label="Account Status"
                 value={accountStatus}
                 onChange={setAccountStatus}
                 options={[
-                  { value: ALL, label: "All Account Statuses" },
+                  { value: ALL, label: "All Statuses" },
                   { value: "Active", label: "Active" },
                   { value: "Inactive", label: "Inactive" },
                 ]}
               />
-              {roleFilter !== ALL || accountStatus !== ALL || search ? (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setSearch("");
-                    setAccountStatus(ALL);
-                    resetRoleSpecificFilters(ALL);
-                  }}
-                >
-                  Clear Filters
-                </Button>
-              ) : null}
             </div>
 
             <div className="system-admin-dynamic-filters" key={roleFilter}>
               {roleFilter === ALL ? (
                 <div className="summary-strip" role="status">
-                  <span><strong>{filteredUsers.length}</strong> of {users.length} directory records</span>
-                  <span>Select a role to reveal the most useful role specific filters.</span>
+                  <span><strong>{filteredUsers.length}</strong> of {users.length} accounts shown</span>
+                  <span>Select a role to display the most relevant role-specific filters.</span>
                 </div>
               ) : null}
 
-              {roleFilter === "Student" ? (
+              {roleFilter === "student" ? (
                 <div className="toolbar">
-                  <FilterControl label="College" value={college} onChange={setCollege} options={distinctOptions(users.filter((item) => item.assignedRole === "Student").map((item) => item.college), "All Colleges")} />
-                  <FilterControl label="Program" value={program} onChange={setProgram} options={distinctOptions(users.filter((item) => item.assignedRole === "Student").map((item) => item.program), "All Programs")} />
-                  <FilterControl label="Year Level" value={yearLevel} onChange={setYearLevel} options={distinctOptions(users.filter((item) => item.assignedRole === "Student").map((item) => item.yearLevel), "All Year Levels")} />
-                  <FilterControl label="Enrollment Status" value={enrollmentStatus} onChange={setEnrollmentStatus} options={distinctOptions(users.filter((item) => item.assignedRole === "Student").map((item) => item.enrollmentStatus), "All Enrollment Statuses")} />
+                  <FilterControl
+                    label="College"
+                    value={college}
+                    onChange={setCollege}
+                    options={distinctOptions(studentUsers.map((user) => user.student?.collegeName), "All Colleges")}
+                  />
+                  <FilterControl
+                    label="Program"
+                    value={program}
+                    onChange={setProgram}
+                    options={distinctOptions(studentUsers.map((user) => user.student?.program_code), "All Programs")}
+                  />
+                  <FilterControl
+                    label="Year Level"
+                    value={yearLevel}
+                    onChange={setYearLevel}
+                    options={distinctOptions(studentUsers.map((user) => user.student?.year_level), "All Year Levels")}
+                  />
+                  <FilterControl
+                    label="Student Status"
+                    value={studentStatus}
+                    onChange={setStudentStatus}
+                    options={distinctOptions(studentUsers.map((user) => user.student?.student_status), "All Student Statuses")}
+                  />
                 </div>
               ) : null}
 
-              {roleFilter === "Registrar" ? (
+              {["registrar", "academic-coordinator", "system-administrator"].includes(roleFilter) ? (
                 <div className="toolbar">
-                  <FilterControl label="Registrar Office" value={office} onChange={setOffice} options={distinctOptions(users.filter((item) => item.assignedRole === "Registrar").map((item) => item.office), "All Offices")} />
-                </div>
-              ) : null}
-
-              {["Academic Coordinator", "System Administrator"].includes(roleFilter) ? (
-                <div className="toolbar">
-                  <FilterControl label="Department" value={department} onChange={setDepartment} options={distinctOptions(users.filter((item) => item.assignedRole === roleFilter).map((item) => item.department), "All Departments")} />
-                  <FilterControl label="Position" value={position} onChange={setPosition} options={distinctOptions(users.filter((item) => item.assignedRole === roleFilter).map((item) => item.position), "All Positions")} />
+                  <FilterControl
+                    label="Organization"
+                    value={organization}
+                    onChange={setOrganization}
+                    options={distinctOptions(
+                      users.filter((user) => user.roleCode === roleFilter).map((user) => user.staff?.organizationName),
+                      "All Organizations",
+                    )}
+                  />
+                  <FilterControl
+                    label="Position"
+                    value={position}
+                    onChange={setPosition}
+                    options={distinctOptions(
+                      users.filter((user) => user.roleCode === roleFilter).map((user) => user.staff?.position_title),
+                      "All Positions",
+                    )}
+                  />
                 </div>
               ) : null}
             </div>
 
             <DataTable
-              columns={userColumns}
               rows={filteredUsers}
-              rowKey="userId"
-              onRowClick={setSelectedRecord}
+              rowKey="id"
+              onRowClick={setSelectedUser}
               getRowAriaLabel={(row) => `View ${row.fullName} account details`}
-              emptyMessage="No users match the selected filters."
+              emptyMessage="No accounts match the selected filters."
+              columns={[
+                { key: "account", label: "Account", render: (row) => (
+                  <div>
+                    <strong>{row.fullName}</strong>
+                    <div className="table-subtext">{row.username}</div>
+                  </div>
+                ) },
+                { key: "roleName", label: "Role" },
+                { key: "organization", label: "College / Office / Department", render: (row) => row.student?.collegeName || row.staff?.organizationName || "Not assigned" },
+                { key: "accountStatus", label: "Account Status", render: (row) => <StatusBadge value={row.accountStatus} label={row.accountStatus} /> },
+                { key: "authLinked", label: "Auth", render: (row) => <StatusBadge value={row.authLinked ? "ACTIVE" : "INACTIVE"} label={row.authLinked ? "Linked" : "Not linked"} /> },
+                { key: "lastLoginLabel", label: "Last Login" },
+              ]}
             />
           </>
         ) : null}
 
-        {activeTab === "Roles" ? (
+        {tab === "roles" ? (
           <DataTable
+            rows={roles}
+            rowKey="code"
+            onRowClick={(row) => {
+              setSelectedRole(row);
+              setRoleDescription(row.description || "");
+            }}
+            getRowAriaLabel={(row) => `View ${row.name} role`}
             columns={[
-              { key: "roleName", label: "Role" },
-              { key: "users", label: "Directory Records" },
-              { key: "status", label: "Status", render: (row) => <StatusBadge value="ACTIVE" label={row.status} /> },
-            ]}
-            rows={roleRows}
-            rowKey="id"
-            onRowClick={setSelectedRole}
-            getRowAriaLabel={(row) => `View ${row.roleName} role details`}
-          />
-        ) : null}
-
-        {activeTab === "Permissions" ? (
-          <DataTable
-            rowKey="module"
-            rows={PERMISSION_ROWS}
-            onRowClick={setSelectedPermission}
-            getRowAriaLabel={(row) => `View permissions for ${row.module}`}
-            columns={[
-              { key: "module", label: "Module" },
-              { key: "student", label: "Student" },
-              { key: "registrar", label: "Registrar" },
-              { key: "coordinator", label: "Academic Coordinator" },
-              { key: "administrator", label: "System Administrator" },
+              { key: "name", label: "Role" },
+              { key: "userCount", label: "Users" },
+              { key: "is_active", label: "Status", render: (row) => <StatusBadge value={row.is_active ? "ACTIVE" : "INACTIVE"} label={row.is_active ? "Active" : "Inactive"} /> },
+              { key: "description", label: "Description" },
             ]}
           />
         ) : null}
 
-        {activeTab === "Access Activity" ? (
+        {tab === "permissions" ? (
+          <>
+            <div className="notice" style={{ marginBottom: 12 }}>
+              Permission assignments are persisted in <code>role_permissions</code>. Role definitions remain limited to the four approved PLP roles.
+            </div>
+            <DataTable
+              rows={permissions}
+              rowKey="code"
+              onRowClick={setSelectedPermission}
+              getRowAriaLabel={(row) => `View permission ${row.name}`}
+              columns={[
+                { key: "name", label: "Permission" },
+                { key: "code", label: "Permission Code" },
+                { key: "assignedRoles", label: "Assigned Roles", render: (row) => row.assignedRoles.length
+                  ? row.assignedRoles.map((code) => roles.find((role) => role.code === code)?.name || code).join(", ")
+                  : "None" },
+              ]}
+            />
+          </>
+        ) : null}
+
+        {tab === "activity" ? (
           <>
             <div className="toolbar">
               <SearchControl
                 value={search}
                 onChange={setSearch}
                 label="Search access activity"
-                placeholder="Search user, role, result, or account change"
+                placeholder="Search actor, action, entity, result, or reason"
               />
               <FilterControl
-                label="Role"
+                label="Actor Role"
                 value={roleFilter}
-                onChange={resetRoleSpecificFilters}
-                options={[
-                  { value: ALL, label: "All Roles" },
-                  ...[...new Set(ACCESS_ACTIVITY.map((item) => item.role))]
-                    .map((value) => ({ value, label: value })),
-                ]}
+                onChange={setRoleFilter}
+                options={approvedRoleOptions}
               />
             </div>
             <DataTable
-              columns={[
-                { key: "user", label: "User" },
-                { key: "role", label: "Role" },
-                { key: "lastLogin", label: "Last Login" },
-                { key: "recentLoginResult", label: "Login Result", render: (row) => <StatusBadge value={row.recentLoginResult === "Successful" ? "COMPLETED" : "FAILED"} label={row.recentLoginResult} /> },
-                { key: "accountStatus", label: "Account Status", render: (row) => <StatusBadge value={row.accountStatus} label={row.accountStatus} /> },
-              ]}
-              rows={ACCESS_ACTIVITY.filter((item) =>
-                `${item.user} ${item.role} ${item.recentLoginResult} ${item.recentAccountChange}`.toLowerCase().includes(search.toLowerCase()) &&
-                (roleFilter === ALL || item.role === roleFilter)
-              )}
+              rows={filteredActivity}
               rowKey="id"
               onRowClick={setSelectedActivity}
-              getRowAriaLabel={(row) => `View access activity for ${row.user}`}
+              getRowAriaLabel={(row) => `View access event ${row.id}`}
+              emptyMessage="No access events match the selected filters."
+              columns={[
+                { key: "occurredAtLabel", label: "Date & Time" },
+                { key: "actor_label", label: "Actor" },
+                { key: "action", label: "Action" },
+                { key: "module", label: "Module" },
+                { key: "result", label: "Result", render: (row) => <StatusBadge value={row.result} label={row.result || "Not recorded"} /> },
+              ]}
             />
           </>
         ) : null}
       </Tabs>
 
       <Modal
-        open={Boolean(selectedRecord)}
-        title={selectedRecord ? `${selectedRecord.fullName} · ${selectedRecord.assignedRole}` : "User Details"}
-        onClose={() => setSelectedRecord(null)}
+        open={Boolean(selectedUser)}
+        title={selectedUser ? `${selectedUser.fullName} · ${selectedUser.roleName}` : "Account Details"}
+        onClose={() => setSelectedUser(null)}
         className="system-admin-detail-modal"
-        footer={
-          selectedRecord ? (
-            <>
-              <Button variant="ghost" onClick={() => setSelectedRecord(null)}>Close</Button>
-              <Button variant="secondary" onClick={() => {
-                setMessage(`Reset password prepared for ${selectedRecord.fullName} in mock mode.`);
-                setSelectedRecord(null);
-              }}>Reset Password</Button>
-              <Button variant="secondary" onClick={() => {
-                setMessage(`Role change prepared for ${selectedRecord.fullName} in mock mode.`);
-                setSelectedRecord(null);
-              }}>Change Role</Button>
-              <Button onClick={() => {
-                setMessage(`${selectedRecord.accountStatus === "Active" ? "Deactivate" : "Activate"} prepared for ${selectedRecord.fullName} in mock mode.`);
-                setSelectedRecord(null);
-              }}>
-                {selectedRecord.accountStatus === "Active" ? "Deactivate" : "Activate"}
-              </Button>
-            </>
-          ) : null
-        }
+        footer={selectedUser ? (
+          <>
+            <Button variant="ghost" onClick={() => setSelectedUser(null)}>Close</Button>
+            <Button variant="secondary" onClick={() => openEdit(selectedUser)}>Edit Account</Button>
+            {selectedUser.authLinked ? (
+              <Button variant="secondary" onClick={() => openPassword(selectedUser)}>Reset Password</Button>
+            ) : null}
+            {["registrar", "academic-coordinator", "system-administrator"].includes(selectedUser.roleCode) ? (
+              <Button variant="secondary" onClick={() => openRoleChange(selectedUser)}>Change Role</Button>
+            ) : null}
+            <Button
+              variant={selectedUser.accountStatus === "Active" ? "danger" : "primary"}
+              disabled={isPending}
+              onClick={() => run(async () => {
+                const result = await setUserAccessState({
+                  userId: selectedUser.id,
+                  active: selectedUser.accountStatus !== "Active",
+                });
+                if (result?.ok) setSelectedUser(null);
+                return result;
+              })}
+            >
+              {selectedUser.accountStatus === "Active" ? "Deactivate" : "Activate"}
+            </Button>
+          </>
+        ) : null}
       >
-        {selectedRecord ? (
+        {selectedUser ? (
           <>
             <div className="info-grid">
-              <Info label="User / Account ID" value={selectedRecord.userId} />
-              <Info label="Full Name" value={selectedRecord.fullName} />
-              <Info label="Role" value={selectedRecord.assignedRole} />
-              <div className="info-item"><span>Account Status</span><strong><StatusBadge value={selectedRecord.accountStatus === "Active" ? "ACTIVE" : "INACTIVE"} label={selectedRecord.accountStatus} /></strong></div>
-              <Info label="Username" value={selectedRecord.username} />
-              <Info label="Email" value={selectedRecord.email} />
-              <Info label="Organization" value={selectedRecord.organization} />
-              <Info label="Last Login" value={selectedRecord.lastLogin} />
+              <Info label="Account ID" value={selectedUser.id} />
+              <Info label="Full Name" value={selectedUser.fullName} />
+              <Info label="Registered Email" value={selectedUser.email} />
+              <Info label="Username / Identifier" value={selectedUser.username} />
+              <Info label="Role" value={selectedUser.roleName} />
+              <Info label="Last Login" value={selectedUser.lastLoginLabel} />
+              <div className="info-item"><span>Account Status</span><strong><StatusBadge value={selectedUser.accountStatus} label={selectedUser.accountStatus} /></strong></div>
+              <div className="info-item"><span>Supabase Auth</span><strong><StatusBadge value={selectedUser.authLinked ? "ACTIVE" : "INACTIVE"} label={selectedUser.authLinked ? "Linked" : "Not linked"} /></strong></div>
             </div>
 
-            {selectedRecord.assignedRole === "Student" ? (
+            {selectedUser.student ? (
               <div style={{ marginTop: 14 }}>
-                <Details
-                  items={[
-                    ["College", selectedRecord.college],
-                    ["Program", selectedRecord.program],
-                    ["Year Level", selectedRecord.yearLevel],
-                    ["Student Type", selectedRecord.studentType],
-                    ["Academic Classification", selectedRecord.academicClassification],
-                    ["Student Status", selectedRecord.studentStatus],
-                    ["Enrollment Status", selectedRecord.enrollmentStatus],
-                    ["Academic Term", selectedRecord.academicTerm],
-                  ]}
-                />
+                <Details items={[
+                  ["Student Number", selectedUser.student.student_number],
+                  ["College", selectedUser.student.collegeName],
+                  ["Program", `${selectedUser.student.program_code} · ${selectedUser.student.programName}`],
+                  ["Year Level", selectedUser.student.year_level],
+                  ["Student Type", selectedUser.student.student_type],
+                  ["Student Status", selectedUser.student.student_status],
+                  ["Academic Classification", selectedUser.student.academic_classification],
+                  ["Progression Status", selectedUser.student.progression_status],
+                ]} />
               </div>
             ) : null}
 
-            {selectedRecord.assignedRole === "Registrar" ? (
+            {selectedUser.staff ? (
               <div style={{ marginTop: 14 }}>
-                <Details items={[["Office", selectedRecord.office]]} />
+                <Details items={[
+                  ["Employee ID", selectedUser.staff.employee_id],
+                  ["Organization", selectedUser.staff.organizationName],
+                  ["Position", selectedUser.staff.position_title],
+                  ["Office", selectedUser.staff.office_name],
+                ]} />
               </div>
             ) : null}
 
-            {["Academic Coordinator", "System Administrator"].includes(selectedRecord.assignedRole) ? (
-              <div style={{ marginTop: 14 }}>
-                <Details
-                  items={[
-                    ["Employee ID", selectedRecord.employeeId],
-                    ["Department", selectedRecord.department],
-                    ["Position", selectedRecord.position],
-                    ["Date Created", selectedRecord.dateCreated],
-                  ]}
-                />
+            {!selectedUser.authLinked ? (
+              <div className="notice warning" style={{ marginTop: 14 }}>
+                This application record is not yet linked to Supabase Auth. Use Create User Account and choose Existing Application User to provision login access.
               </div>
             ) : null}
-
-            <div className="notice" style={{ marginTop: 14 }}>
-              Account actions never edit Student academic records, Registrar enrollment decisions, or Academic Coordinator academic configuration.
-            </div>
           </>
-        ) : null}
-      </Modal>
-
-      <Modal
-        open={Boolean(selectedRole)}
-        title={selectedRole ? `${selectedRole.roleName} Role` : "Role Details"}
-        onClose={() => setSelectedRole(null)}
-        className="system-admin-detail-modal"
-        footer={<Button onClick={() => setSelectedRole(null)}>Close</Button>}
-      >
-        {selectedRole ? (
-          <>
-            <Details
-              items={[
-                ["Role Name", selectedRole.roleName],
-                ["Directory Records", selectedRole.users],
-                ["Role Status", selectedRole.status],
-                ["Description", selectedRole.description],
-              ]}
-            />
-            <div className="notice" style={{ marginTop: 14 }}>
-              Role boundaries remain predefined. Permission changes must later be enforced by trusted backend rules, not only frontend visibility.
-            </div>
-          </>
-        ) : null}
-      </Modal>
-
-      <Modal
-        open={Boolean(selectedPermission)}
-        title={selectedPermission ? `${selectedPermission.module} Permissions` : "Permission Details"}
-        onClose={() => setSelectedPermission(null)}
-        className="system-admin-detail-modal"
-        footer={<Button onClick={() => setSelectedPermission(null)}>Close</Button>}
-      >
-        {selectedPermission ? (
-          <Details
-            items={[
-              ["Student", selectedPermission.student],
-              ["Registrar", selectedPermission.registrar],
-              ["Academic Coordinator", selectedPermission.coordinator],
-              ["System Administrator", selectedPermission.administrator],
-            ]}
-          />
-        ) : null}
-      </Modal>
-
-      <Modal
-        open={Boolean(selectedActivity)}
-        title={selectedActivity ? `${selectedActivity.user} · Access Activity` : "Access Activity"}
-        onClose={() => setSelectedActivity(null)}
-        className="system-admin-detail-modal"
-        footer={<Button onClick={() => setSelectedActivity(null)}>Close</Button>}
-      >
-        {selectedActivity ? (
-          <Details
-            items={[
-              ["User", selectedActivity.user],
-              ["Role", selectedActivity.role],
-              ["Last Login", selectedActivity.lastLogin],
-              ["Account Status", selectedActivity.accountStatus],
-              ["Recent Login Result", selectedActivity.recentLoginResult],
-              ["Recent Account Change", selectedActivity.recentAccountChange],
-              ["Source", selectedActivity.source],
-            ]}
-          />
         ) : null}
       </Modal>
 
@@ -523,25 +573,339 @@ export default function SystemAdministratorUsersAccess() {
         open={createOpen}
         title="Create User Account"
         onClose={() => setCreateOpen(false)}
+        className="system-admin-detail-modal"
         footer={
           <>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={() => { setCreateOpen(false); setMessage("Mock user account created. Persistent account creation will move to Supabase when connected."); }}>Create Account</Button>
+            <Button
+              disabled={isPending}
+              onClick={() => run(async () => {
+                const result = createMode === "existing"
+                  ? await provisionExistingApplicationUser({
+                      userId: createForm.existingUserId,
+                      accountStatus: createForm.accountStatus,
+                      temporaryPassword: createForm.temporaryPassword,
+                    })
+                  : await createStaffUserAccount(createForm);
+                if (result?.ok) setCreateOpen(false);
+                return result;
+              })}
+            >
+              {createMode === "existing" ? "Provision Auth Account" : "Create Staff Account"}
+            </Button>
           </>
         }
       >
         <div className="form-grid">
-          <label className="field"><span>Full Name</span><input placeholder="Enter full name" /></label>
-          <label className="field"><span>Username or Account ID</span><input placeholder="Enter username or ID" /></label>
-          <label className="field">
-            <span>Assigned Role</span>
-            <select defaultValue="Student">
-              {Object.keys(ROLE_DESCRIPTIONS).map((role) => <option key={role}>{role}</option>)}
+          <label className="field full">
+            Account Creation Mode
+            <select value={createMode} onChange={(event) => setCreateMode(event.target.value)}>
+              <option value="existing">Existing Application User</option>
+              <option value="new-staff">New Staff Account</option>
             </select>
           </label>
-          <label className="field"><span>Initial Account Status</span><select defaultValue="Active"><option>Active</option><option>Inactive</option></select></label>
-          <label className="field full"><span>Password Setup Method</span><input defaultValue="Temporary password to be changed by user" /></label>
+
+          {createMode === "existing" ? (
+            <label className="field full">
+              Existing User Without Supabase Auth
+              <select
+                value={createForm.existingUserId}
+                onChange={(event) => setCreateForm({ ...createForm, existingUserId: event.target.value })}
+              >
+                <option value="">Select application user</option>
+                {unlinkedUsers.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.fullName} · {user.roleName} · {user.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <label className="field">Full Name<input value={createForm.fullName} onChange={(event) => setCreateForm({ ...createForm, fullName: event.target.value })} /></label>
+              <label className="field">Registered Email<input type="email" value={createForm.email} onChange={(event) => setCreateForm({ ...createForm, email: event.target.value })} /></label>
+              <label className="field">Username<input value={createForm.username} onChange={(event) => setCreateForm({ ...createForm, username: event.target.value })} /></label>
+              <label className="field">Employee ID<input value={createForm.employeeId} onChange={(event) => setCreateForm({ ...createForm, employeeId: event.target.value })} /></label>
+              <label className="field">Role<select value={createForm.roleCode} onChange={(event) => setCreateForm({ ...createForm, roleCode: event.target.value })}>{staffRoleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label>
+              <label className="field">Organization<select value={createForm.organizationalUnitCode} onChange={(event) => setCreateForm({ ...createForm, organizationalUnitCode: event.target.value })}><option value="">No organizational unit</option>{organizationalUnits.map((unit) => <option key={unit.code} value={unit.code}>{unit.name}</option>)}</select></label>
+              <label className="field">Position<input value={createForm.positionTitle} onChange={(event) => setCreateForm({ ...createForm, positionTitle: event.target.value })} /></label>
+              <label className="field">Office<input value={createForm.officeName} onChange={(event) => setCreateForm({ ...createForm, officeName: event.target.value })} /></label>
+            </>
+          )}
+
+          <label className="field">
+            Initial Account Status
+            <select value={createForm.accountStatus} onChange={(event) => setCreateForm({ ...createForm, accountStatus: event.target.value })}>
+              <option>Active</option>
+              <option>Inactive</option>
+            </select>
+          </label>
+          <label className="field">
+            Temporary Password
+            <input
+              type="password"
+              minLength={12}
+              autoComplete="new-password"
+              value={createForm.temporaryPassword}
+              onChange={(event) => setCreateForm({ ...createForm, temporaryPassword: event.target.value })}
+            />
+          </label>
         </div>
+        <div className="notice" style={{ marginTop: 12 }}>
+          Passwords are sent directly to Supabase Auth and are never written to application tables. New Student academic records are not created from this technical module.
+        </div>
+      </Modal>
+
+      <Modal
+        open={editOpen}
+        title="Edit Account"
+        onClose={() => setEditOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button disabled={isPending} onClick={() => run(async () => {
+              const result = await updateUserAccount(editForm);
+              if (result?.ok) {
+                setEditOpen(false);
+                setSelectedUser(null);
+              }
+              return result;
+            })}>Save Account</Button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <label className="field">Full Name<input value={editForm.fullName} onChange={(event) => setEditForm({ ...editForm, fullName: event.target.value })} /></label>
+          <label className="field">Email<input type="email" value={editForm.email} onChange={(event) => setEditForm({ ...editForm, email: event.target.value })} /></label>
+          <label className="field">Username<input value={editForm.username} onChange={(event) => setEditForm({ ...editForm, username: event.target.value })} /></label>
+          {selectedUser?.staff ? (
+            <>
+              <label className="field">Employee ID<input value={editForm.employeeId} onChange={(event) => setEditForm({ ...editForm, employeeId: event.target.value })} /></label>
+              <label className="field">Organization<select value={editForm.organizationalUnitCode} onChange={(event) => setEditForm({ ...editForm, organizationalUnitCode: event.target.value })}><option value="">No organizational unit</option>{organizationalUnits.map((unit) => <option key={unit.code} value={unit.code}>{unit.name}</option>)}</select></label>
+              <label className="field">Position<input value={editForm.positionTitle} onChange={(event) => setEditForm({ ...editForm, positionTitle: event.target.value })} /></label>
+              <label className="field full">Office<input value={editForm.officeName} onChange={(event) => setEditForm({ ...editForm, officeName: event.target.value })} /></label>
+            </>
+          ) : null}
+        </div>
+        {selectedUser?.student ? (
+          <div className="notice" style={{ marginTop: 12 }}>
+            Student academic fields are intentionally read only here. Registrar and Academic Coordinator business data is outside System Administrator account editing.
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={passwordOpen}
+        title="Reset Password"
+        onClose={() => setPasswordOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPasswordOpen(false)}>Cancel</Button>
+            <Button disabled={isPending} onClick={() => run(async () => {
+              const result = await resetUserPassword({
+                userId: selectedUser?.id,
+                temporaryPassword: passwordForm.temporaryPassword,
+              });
+              if (result?.ok) {
+                setPasswordOpen(false);
+                setSelectedUser(null);
+              }
+              return result;
+            })}>Set Temporary Password</Button>
+          </>
+        }
+      >
+        <label className="field full">
+          New Temporary Password
+          <input type="password" minLength={12} autoComplete="new-password" value={passwordForm.temporaryPassword} onChange={(event) => setPasswordForm({ temporaryPassword: event.target.value })} />
+        </label>
+        <div className="notice" style={{ marginTop: 12 }}>
+          The new password is written only to Supabase Auth. Communicate it to the user through an approved secure channel.
+        </div>
+      </Modal>
+
+      <Modal
+        open={roleChangeOpen}
+        title="Change Staff Role"
+        onClose={() => setRoleChangeOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRoleChangeOpen(false)}>Cancel</Button>
+            <Button disabled={isPending} onClick={() => run(async () => {
+              const result = await changeUserRole({
+                userId: selectedUser?.id,
+                roleCode: roleChangeCode,
+              });
+              if (result?.ok) {
+                setRoleChangeOpen(false);
+                setSelectedUser(null);
+              }
+              return result;
+            })}>Save Role</Button>
+          </>
+        }
+      >
+        <label className="field full">
+          Assigned Staff Role
+          <select value={roleChangeCode} onChange={(event) => setRoleChangeCode(event.target.value)}>
+            {staffRoleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+          </select>
+        </label>
+        <div className="notice" style={{ marginTop: 12 }}>
+          Student accounts are not converted to staff roles here because that would cross the technical and academic record boundary.
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedRole)}
+        title={selectedRole ? `${selectedRole.name} Role` : "Role Details"}
+        onClose={() => setSelectedRole(null)}
+        footer={selectedRole ? (
+          <>
+            <Button variant="ghost" onClick={() => setSelectedRole(null)}>Close</Button>
+            <Button variant="secondary" onClick={() => setRoleDescriptionOpen(true)}>Edit Description</Button>
+          </>
+        ) : null}
+      >
+        {selectedRole ? (
+          <Details items={[
+            ["Role Code", selectedRole.code],
+            ["Role Name", selectedRole.name],
+            ["Default Redirect", selectedRole.default_redirect_path],
+            ["Users", selectedRole.userCount],
+            ["Status", selectedRole.is_active ? "Active" : "Inactive"],
+            ["Description", selectedRole.description],
+          ]} />
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={roleDescriptionOpen}
+        title="Edit Role Description"
+        onClose={() => setRoleDescriptionOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRoleDescriptionOpen(false)}>Cancel</Button>
+            <Button disabled={isPending} onClick={() => run(async () => {
+              const result = await updateRoleDescription({
+                roleCode: selectedRole?.code,
+                description: roleDescription,
+              });
+              if (result?.ok) {
+                setRoleDescriptionOpen(false);
+                setSelectedRole(null);
+              }
+              return result;
+            })}>Save Description</Button>
+          </>
+        }
+      >
+        <label className="field full">
+          Description
+          <textarea value={roleDescription} onChange={(event) => setRoleDescription(event.target.value)} />
+        </label>
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedPermission)}
+        title={selectedPermission ? selectedPermission.name : "Permission Details"}
+        onClose={() => setSelectedPermission(null)}
+        className="system-admin-detail-modal"
+        footer={<Button onClick={() => setSelectedPermission(null)}>Close</Button>}
+      >
+        {selectedPermission ? (
+          <>
+            <Details items={[
+              ["Permission Code", selectedPermission.code],
+              ["Description", selectedPermission.description],
+            ]} />
+            <div className="list-stack" style={{ marginTop: 14 }}>
+              {roles.map((role) => {
+                const assigned = rolePermissions.some(
+                  (item) =>
+                    item.role_code === role.code &&
+                    item.permission_code === selectedPermission.code,
+                );
+                const authorized =
+                  AUTHORIZED_ROLE_PERMISSIONS[role.code]?.has(
+                    selectedPermission.code,
+                  ) ?? false;
+                const recoveryProtected =
+                  role.code === "system-administrator" &&
+                  selectedPermission.code === "system.permissions_manage" &&
+                  assigned;
+
+                return (
+                  <div className="list-item" key={role.code}>
+                    <div className="list-item-header">
+                      <div>
+                        <strong>{role.name}</strong>
+                        <p>
+                          {!authorized
+                            ? "Not authorized for this role"
+                            : assigned
+                              ? "Permission enabled"
+                              : "Permission disabled"}
+                        </p>
+                      </div>
+                      <Button
+                        variant={assigned ? "danger" : "secondary"}
+                        disabled={
+                          isPending ||
+                          !authorized ||
+                          recoveryProtected
+                        }
+                        title={
+                          recoveryProtected
+                            ? "This capability is protected to preserve permission recovery."
+                            : !authorized
+                              ? "This permission is outside the approved role boundary."
+                              : undefined
+                        }
+                        onClick={() => run(async () => {
+                          const result = await setRolePermission({
+                            roleCode: role.code,
+                            permissionCode: selectedPermission.code,
+                            enabled: !assigned,
+                          });
+                          if (result?.ok) setSelectedPermission(null);
+                          return result;
+                        })}
+                      >
+                        {assigned ? "Disable" : "Enable"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedActivity)}
+        title="Access Activity Details"
+        onClose={() => setSelectedActivity(null)}
+        className="system-admin-detail-modal"
+        footer={<Button onClick={() => setSelectedActivity(null)}>Close</Button>}
+      >
+        {selectedActivity ? (
+          <Details items={[
+            ["Audit ID", selectedActivity.id],
+            ["Date and Time", selectedActivity.occurredAtLabel],
+            ["Actor", selectedActivity.actor_label || "System"],
+            ["Module", selectedActivity.module],
+            ["Action", selectedActivity.action],
+            ["Entity Type", selectedActivity.entity_type],
+            ["Entity Key", selectedActivity.entity_key],
+            ["Previous Value", selectedActivity.previous_value],
+            ["New Value", selectedActivity.new_value],
+            ["Result", selectedActivity.result],
+            ["Reason", selectedActivity.reason],
+            ["IP Address", selectedActivity.ip_address],
+          ]} />
+        ) : null}
       </Modal>
     </>
   );

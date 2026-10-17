@@ -1,7 +1,9 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+
 import {
   Button,
   DataTable,
@@ -12,329 +14,446 @@ import {
   StatusBadge,
 } from "@/components/ui/PortalUI";
 import { Details, Feedback, Info, Metric, Tabs } from "@/components/registrar/RegistrarShared";
+import {
+  queueSynchronizationRetry,
+  testIntegrationConnection,
+  updateIntegrationConfiguration,
+} from "@/features/system-administration/system-admin-actions";
 
 const TABS = [
-  { value: "Integration Overview", label: "Overview" },
-  { value: "API Status", label: "API Status" },
-  { value: "API Requests", label: "API Requests" },
-  { value: "Synchronization", label: "Synchronization" },
-  { value: "Failed Requests", label: "Failed Requests" },
-  { value: "Imported Records", label: "Imported Records" },
-  { value: "Integration Settings", label: "Settings" },
+  { value: "overview", label: "Overview" },
+  { value: "status", label: "API Status" },
+  { value: "requests", label: "API Requests" },
+  { value: "synchronization", label: "Synchronization" },
+  { value: "failed", label: "Failed Requests" },
+  { value: "imports", label: "Imported Records" },
+  { value: "settings", label: "Settings" },
 ];
 
-const REQUESTS = [
-  { requestId: "API-REQ-1042", requestType: "Accepted Applicant Import", source: "Admission System", endpoint: "/api/admissions/accepted", timestamp: "Oct 7, 2026 · 5:42 PM", responseCode: "200", status: "Successful", processingTime: "184 ms", requestSummary: "Accepted applicant APP-2026-0149", responseSummary: "Student record created after duplicate check." },
-  { requestId: "API-REQ-1041", requestType: "Accepted Applicant Import", source: "Admission System", endpoint: "/api/admissions/accepted", timestamp: "Oct 7, 2026 · 4:18 PM", responseCode: "422", status: "Failed", processingTime: "96 ms", requestSummary: "Accepted applicant APP-2026-0148", responseSummary: "Validation failed because approved program was missing." },
-];
+export default function SystemAdministratorIntegration({ integrationData }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const { configurations, requests, synchronizations, handoffs } = integrationData;
 
-const SYNCHRONIZATIONS = [
-  { reference: "SYNC-2026-0342", applicantReference: "APP-2026-0149", direction: "Admission → Enrollment", currentStatus: "Successful", lastAttempt: "Oct 7 · 5:42 PM", result: "Created Student Record", relatedRequest: "API-REQ-1042" },
-  { reference: "SYNC-2026-0341", applicantReference: "APP-2026-0148", direction: "Admission → Enrollment", currentStatus: "Failed", lastAttempt: "Oct 7 · 4:18 PM", result: "Missing Approved Program", relatedRequest: "API-REQ-1041" },
-  { reference: "SYNC-2026-0340", applicantReference: "APP-2026-0144", direction: "Admission → Enrollment", currentStatus: "Successful", lastAttempt: "Oct 7 · 3:40 PM", result: "Updated Existing Record", relatedRequest: "API-REQ-1039" },
-  { reference: "SYNC-2026-0339", applicantReference: "APP-2026-0144", direction: "Admission → Enrollment", currentStatus: "Successful", lastAttempt: "Oct 7 · 3:32 PM", result: "Duplicate Detected · Existing Record Reused", relatedRequest: "API-REQ-1038" },
-];
-
-const FAILED = [
-  { requestId: "API-REQ-1041", applicantReference: "APP-2026-0148", errorType: "Validation Error", errorMessage: "Approved program is required.", attemptCount: 2, lastAttempt: "Oct 7 · 4:18 PM", timestamp: "Oct 7, 2026 · 4:18 PM", responseCode: "422" },
-];
-
-const IMPORTED = [
-  { applicantReference: "APP-2026-0149", receivedDate: "Oct 7, 2026 · 5:42 PM", approvedProgram: "BS Information Technology", admissionStatus: "COMPLETED", apiRequestReference: "API-REQ-1042", synchronizationStatus: "Successful", payloadSummary: "Applicant identity, approved program, admission completion status, and source reference received." },
-  { applicantReference: "APP-2026-0144", receivedDate: "Oct 7, 2026 · 3:40 PM", approvedProgram: "BS Computer Science", admissionStatus: "COMPLETED", apiRequestReference: "API-REQ-1039", synchronizationStatus: "Updated Existing Record", payloadSummary: "Existing student linkage reused after duplicate applicant reference check." },
-];
-
-const INITIAL_SETTINGS = {
-  endpoint: "https://admission.plp.local/api/accepted-applicants",
-  authentication: "Configured · secret hidden",
-  timeout: "15 seconds",
-  integrationStatus: "Enabled",
-};
-
-export default function SystemAdministratorIntegration() {
-  const [activeTab, setActiveTab] = useState("Integration Overview");
-  const [message, setMessage] = useState("");
+  const [tab, setTab] = useState("overview");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("ALL");
-  const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedType, setSelectedType] = useState("");
+  const [selectedRecord, setSelectedRecord] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState(INITIAL_SETTINGS);
-  const [draftSettings, setDraftSettings] = useState(INITIAL_SETTINGS);
+  const [message, setMessage] = useState("");
+  const [warning, setWarning] = useState(false);
 
-  const rows = useMemo(() => {
-    if (activeTab === "API Requests") return REQUESTS;
-    if (activeTab === "Synchronization") return SYNCHRONIZATIONS;
-    if (activeTab === "Failed Requests") return FAILED;
-    if (activeTab === "Imported Records") return IMPORTED;
-    return [];
-  }, [activeTab]);
-
-  const filteredRows = rows.filter((row) => {
-    if (!JSON.stringify(row).toLowerCase().includes(search.toLowerCase())) return false;
-    if (status === "ALL") return true;
-    const recordStatus = row.status || row.currentStatus || row.synchronizationStatus || row.errorType;
-    return recordStatus === status;
+  const primaryConfiguration = configurations[0] || null;
+  const [settingsForm, setSettingsForm] = useState({
+    id: primaryConfiguration?.id || "",
+    endpointUrl: primaryConfiguration?.endpoint_url || "",
+    authenticationMethod: primaryConfiguration?.authentication_method || "",
+    timeoutSeconds: primaryConfiguration?.timeout_seconds || 15,
+    isEnabled: Boolean(primaryConfiguration?.is_enabled),
   });
 
-  const statusOptions = [
-    { value: "ALL", label: "All Statuses" },
-    ...[...new Set(rows.map((row) => row.status || row.currentStatus || row.synchronizationStatus || row.errorType).filter(Boolean))]
-      .map((value) => ({ value, label: value })),
-  ];
+  const failedRequests = requests.filter((item) =>
+    /fail|error/i.test(item.status || ""),
+  );
+  const successfulSyncs = synchronizations.filter((item) =>
+    /success/i.test(item.status || ""),
+  );
+  const pendingSyncs = synchronizations.filter((item) =>
+    /pending|queue|process/i.test(item.status || ""),
+  );
+
+  function run(action) {
+    startTransition(async () => {
+      const result = await action();
+      setMessage(result?.message || (result?.ok ? "Action completed." : "Action failed."));
+      setWarning(!result?.ok);
+      if (result?.ok) router.refresh();
+    });
+  }
 
   function openDetails(type, row) {
     setSelectedType(type);
     setSelectedRecord(row);
   }
 
-  function changeTab(next) {
-    setActiveTab(next);
-    setSearch("");
-    setStatus("ALL");
-    setMessage("");
-    setSelectedRecord(null);
-  }
+  const sourceRows = useMemo(() => {
+    if (tab === "requests") return requests;
+    if (tab === "synchronization") return synchronizations;
+    if (tab === "failed") return failedRequests;
+    if (tab === "imports") return handoffs;
+    return [];
+  }, [tab, requests, synchronizations, failedRequests, handoffs]);
+
+  const statusOptions = [
+    { value: "ALL", label: "All Statuses" },
+    ...[...new Set(
+      sourceRows
+        .map((row) => row.status || row.synchronization_status || row.admission_status)
+        .filter(Boolean),
+    )].map((value) => ({ value, label: value })),
+  ];
+
+  const visibleRows = sourceRows.filter((row) => {
+    if (!JSON.stringify(row).toLowerCase().includes(search.toLowerCase())) return false;
+    if (status === "ALL") return true;
+    return [row.status, row.synchronization_status, row.admission_status].includes(status);
+  });
 
   return (
     <>
       <PageHeader
         title="System Integration"
-        description="REST API health, requests, synchronization, imports, failures, and protected integration configuration."
-        actions={<Button variant="secondary" onClick={() => setMessage("Integration status refreshed in the current frontend session.")}>Refresh Status</Button>}
+        description="Live Supabase integration configuration, API request history, synchronization attempts, failures, and imported Admission handoffs."
+        actions={
+          <Button variant="secondary" onClick={() => router.refresh()}>
+            Refresh
+          </Button>
+        }
       />
 
       <Tabs
         items={TABS}
-        selected={activeTab}
-        onSelect={changeTab}
+        selected={tab}
+        onSelect={(next) => {
+          setTab(next);
+          setSearch("");
+          setStatus("ALL");
+          setMessage("");
+          setSelectedRecord(null);
+        }}
         label="System integration sections"
         title="Integration Workspace"
-        subtitle="Open a table row for complete technical details instead of expanding the table with repeated action buttons."
+        subtitle="Select a row to inspect the complete stored request, synchronization, or imported handoff record."
       >
-        <Feedback message={message} warning={message.toLowerCase().includes("failed")} />
+        <Feedback message={message} warning={warning} />
 
-        {activeTab === "Integration Overview" ? (
+        {tab === "overview" ? (
           <>
             <div className="stats-grid" style={{ marginBottom: 14 }}>
-              <Metric label="Admission System" value="Connected" hint="Authenticated connection" />
-              <Metric label="Successful Transfers" value="42" hint="Current enrollment period" />
-              <Metric label="Failed Transfers" value="2" hint="Require technical review" />
-              <Metric label="Pending Transfers" value="1" hint="Awaiting retry or correction" />
+              <Metric
+                label="Integration Status"
+                value={primaryConfiguration?.is_enabled ? "Enabled" : "Disabled"}
+                hint={primaryConfiguration?.name || "No configuration"}
+              />
+              <Metric
+                label="Recorded Requests"
+                value={requests.length}
+                hint="Latest query window"
+              />
+              <Metric
+                label="Failed Requests"
+                value={failedRequests.length}
+                hint="Recorded failures"
+              />
+              <Metric
+                label="Successful Synchronizations"
+                value={successfulSyncs.length}
+                hint="Recorded successful attempts"
+              />
+              <Metric
+                label="Pending Synchronizations"
+                value={pendingSyncs.length}
+                hint="Queued or pending attempts"
+              />
+              <Metric
+                label="Imported Applicant Records"
+                value={handoffs.length}
+                hint="Admission handoff records"
+              />
             </div>
-            <div className="info-grid">
-              <Info label="API Endpoint Status" value="Available" />
-              <Info label="Last Successful Request" value="Oct 7, 2026 · 5:42 PM" />
-              <Info label="Last Failed Request" value="Oct 7, 2026 · 4:18 PM" />
-              <Info label="Average Response Time" value="143 ms" />
-            </div>
-            <div className="notice" style={{ marginTop: 14 }}>
-              Navigation between request types is handled by the tabs above. Only actual operations remain as buttons.
-            </div>
+
+            {primaryConfiguration ? (
+              <div className="info-grid">
+                <Info label="Configuration" value={primaryConfiguration.name} />
+                <Info label="Endpoint" value={primaryConfiguration.endpoint_url || "Not configured"} />
+                <Info label="Authentication Method" value={primaryConfiguration.authentication_method || "Not configured"} />
+                <Info label="Timeout" value={primaryConfiguration.timeout_seconds ? `${primaryConfiguration.timeout_seconds} seconds` : "Not configured"} />
+                <div className="info-item">
+                  <span>Enabled</span>
+                  <strong>
+                    <StatusBadge
+                      value={primaryConfiguration.is_enabled ? "ACTIVE" : "INACTIVE"}
+                      label={primaryConfiguration.is_enabled ? "Enabled" : "Disabled"}
+                    />
+                  </strong>
+                </div>
+                <Info label="Last Configuration Update" value={primaryConfiguration.updatedAtLabel} />
+              </div>
+            ) : (
+              <div className="notice warning">No integration configuration exists in the database.</div>
+            )}
           </>
         ) : null}
 
-        {activeTab === "API Status" ? (
+        {tab === "status" ? (
           <>
-            <div className="info-grid">
-              <div className="info-item"><span>API Connection Status</span><strong><StatusBadge value="ACTIVE" label="Connected" /></strong></div>
-              <Info label="Endpoint" value={settings.endpoint} />
-              <div className="info-item"><span>Authentication Status</span><strong><StatusBadge value="ACTIVE" label="Authenticated" /></strong></div>
-              <Info label="Last Response" value="Accepted applicant synchronized" />
-              <Info label="Response Code" value="200" />
-              <Info label="Last Successful Connection" value="Oct 7, 2026 · 5:42 PM" />
-            </div>
-            <div className="action-row" style={{ marginTop: 14 }}>
-              <Button onClick={() => setMessage("Mock API connection test succeeded.")}>Test Connection</Button>
-            </div>
+            {primaryConfiguration ? (
+              <>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span>Integration Status</span>
+                    <strong>
+                      <StatusBadge
+                        value={primaryConfiguration.is_enabled ? "ACTIVE" : "INACTIVE"}
+                        label={primaryConfiguration.is_enabled ? "Enabled" : "Disabled"}
+                      />
+                    </strong>
+                  </div>
+                  <Info label="Endpoint" value={primaryConfiguration.endpoint_url || "Not configured"} />
+                  <Info label="Authentication Method" value={primaryConfiguration.authentication_method || "Not configured"} />
+                  <Info label="Connection Timeout" value={`${primaryConfiguration.timeout_seconds || 0} seconds`} />
+                  <Info label="Last Updated" value={primaryConfiguration.updatedAtLabel} />
+                </div>
+                <div className="action-row" style={{ marginTop: 14 }}>
+                  <Button
+                    disabled={isPending}
+                    onClick={() => run(() => testIntegrationConnection({
+                      configurationId: primaryConfiguration.id,
+                    }))}
+                  >
+                    Test Connection
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="notice warning">Create an integration configuration before testing the endpoint.</div>
+            )}
           </>
         ) : null}
 
-        {["API Requests", "Synchronization", "Failed Requests", "Imported Records"].includes(activeTab) ? (
+        {["requests", "synchronization", "failed", "imports"].includes(tab) ? (
           <>
             <div className="toolbar">
-              <SearchControl value={search} onChange={setSearch} label={`Search ${activeTab}`} placeholder={`Search ${activeTab.toLowerCase()}`} />
-              <FilterControl label="Status / Type" value={status} onChange={setStatus} options={statusOptions} />
-              {(search || status !== "ALL") ? <Button variant="ghost" onClick={() => { setSearch(""); setStatus("ALL"); }}>Clear Filters</Button> : null}
+              <SearchControl
+                value={search}
+                onChange={setSearch}
+                label="Search records"
+                placeholder="Search reference, applicant, type, endpoint, result, or status"
+              />
+              <FilterControl
+                label="Status"
+                value={status}
+                onChange={setStatus}
+                options={statusOptions}
+              />
+              {(search || status !== "ALL") ? (
+                <Button variant="ghost" onClick={() => { setSearch(""); setStatus("ALL"); }}>
+                  Clear Filters
+                </Button>
+              ) : null}
             </div>
 
-            {activeTab === "API Requests" ? (
+            {tab === "requests" ? (
               <DataTable
-                rowKey="requestId"
-                rows={filteredRows}
-                onRowClick={(row) => openDetails("API Request", row)}
-                getRowAriaLabel={(row) => `View API request ${row.requestId}`}
+                rows={visibleRows}
+                rowKey="id"
+                onRowClick={(row) => openDetails("request", row)}
+                getRowAriaLabel={(row) => `View request ${row.request_reference || row.id}`}
+                emptyMessage="No integration requests match the selected filters."
                 columns={[
-                  { key: "requestId", label: "Request ID" },
-                  { key: "requestType", label: "Request Type" },
-                  { key: "timestamp", label: "Timestamp" },
-                  { key: "responseCode", label: "Response" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "Successful" ? "COMPLETED" : "FAILED"} label={row.status} /> },
-                  { key: "processingTime", label: "Processing Time" },
+                  { key: "request_reference", label: "Request" },
+                  { key: "request_type", label: "Type" },
+                  { key: "source_system", label: "Source" },
+                  { key: "requestedAtLabel", label: "Requested" },
+                  { key: "response_code", label: "Response" },
+                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
                 ]}
               />
             ) : null}
 
-            {activeTab === "Synchronization" ? (
-              <>
-                <div className="notice" style={{ marginBottom: 12 }}>
-                  Repeated accepted applicant references must reuse or update the linked student record instead of silently creating duplicates.
-                </div>
-                <DataTable
-                  rowKey="reference"
-                  rows={filteredRows}
-                  onRowClick={(row) => openDetails("Synchronization", row)}
-                  getRowAriaLabel={(row) => `View synchronization ${row.reference}`}
-                  columns={[
-                    { key: "reference", label: "Synchronization" },
-                    { key: "applicantReference", label: "Applicant" },
-                    { key: "direction", label: "Direction" },
-                    { key: "currentStatus", label: "Status", render: (row) => <StatusBadge value={row.currentStatus === "Successful" ? "COMPLETED" : "FAILED"} label={row.currentStatus} /> },
-                    { key: "lastAttempt", label: "Last Attempt" },
-                  ]}
-                />
-              </>
+            {tab === "synchronization" ? (
+              <DataTable
+                rows={visibleRows}
+                rowKey="id"
+                onRowClick={(row) => openDetails("sync", row)}
+                getRowAriaLabel={(row) => `View synchronization ${row.sync_reference || row.id}`}
+                emptyMessage="No synchronization records match the selected filters."
+                columns={[
+                  { key: "sync_reference", label: "Synchronization" },
+                  { key: "applicant_reference", label: "Applicant" },
+                  { key: "direction", label: "Direction" },
+                  { key: "attempt_number", label: "Attempt" },
+                  { key: "attemptedAtLabel", label: "Attempted" },
+                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
+                ]}
+              />
             ) : null}
 
-            {activeTab === "Failed Requests" ? (
-              <>
-                <div className="notice warning" style={{ marginBottom: 12 }}>
-                  Retry only after the underlying technical or data issue is corrected. The same validation and duplicate checks must still apply.
-                </div>
-                <DataTable
-                  rowKey="requestId"
-                  rows={filteredRows}
-                  onRowClick={(row) => openDetails("Failed Request", row)}
-                  getRowAriaLabel={(row) => `View failed request ${row.requestId}`}
-                  columns={[
-                    { key: "requestId", label: "Request ID" },
-                    { key: "applicantReference", label: "Applicant" },
-                    { key: "errorType", label: "Error Type" },
-                    { key: "attemptCount", label: "Attempts" },
-                    { key: "lastAttempt", label: "Last Attempt" },
-                  ]}
-                />
-              </>
+            {tab === "failed" ? (
+              <DataTable
+                rows={visibleRows}
+                rowKey="id"
+                onRowClick={(row) => openDetails("request", row)}
+                getRowAriaLabel={(row) => `View failed request ${row.request_reference || row.id}`}
+                emptyMessage="No failed integration requests are currently recorded."
+                columns={[
+                  { key: "request_reference", label: "Request" },
+                  { key: "request_type", label: "Type" },
+                  { key: "external_reference", label: "External Reference" },
+                  { key: "requestedAtLabel", label: "Requested" },
+                  { key: "response_code", label: "Response" },
+                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
+                ]}
+              />
             ) : null}
 
-            {activeTab === "Imported Records" ? (
-              <>
-                <div className="notice" style={{ marginBottom: 12 }}>
-                  Technical verification only. Official student enrollment records remain under Registrar ownership.
-                </div>
-                <DataTable
-                  rowKey="applicantReference"
-                  rows={filteredRows}
-                  onRowClick={(row) => openDetails("Imported Record", row)}
-                  getRowAriaLabel={(row) => `View imported applicant ${row.applicantReference}`}
-                  columns={[
-                    { key: "applicantReference", label: "Applicant" },
-                    { key: "receivedDate", label: "Received" },
-                    { key: "approvedProgram", label: "Approved Program" },
-                    { key: "admissionStatus", label: "Admission", render: (row) => <StatusBadge value={row.admissionStatus} /> },
-                    { key: "synchronizationStatus", label: "Synchronization", render: (row) => <StatusBadge value={row.synchronizationStatus === "Successful" || row.synchronizationStatus === "Updated Existing Record" ? "COMPLETED" : row.synchronizationStatus} label={row.synchronizationStatus} /> },
-                  ]}
-                />
-              </>
+            {tab === "imports" ? (
+              <DataTable
+                rows={visibleRows}
+                rowKey="id"
+                onRowClick={(row) => openDetails("handoff", row)}
+                getRowAriaLabel={(row) => `View imported applicant ${row.applicant_reference}`}
+                emptyMessage="No imported Admission handoff records match the selected filters."
+                columns={[
+                  { key: "applicant_reference", label: "Applicant" },
+                  { key: "approved_program_code", label: "Approved Program" },
+                  { key: "admission_status", label: "Admission", render: (row) => <StatusBadge value={row.admission_status} label={row.admission_status} /> },
+                  { key: "synchronization_status", label: "Synchronization", render: (row) => <StatusBadge value={row.synchronization_status} label={row.synchronization_status} /> },
+                  { key: "receivedAtLabel", label: "Received" },
+                  { key: "source_name", label: "Source" },
+                ]}
+              />
             ) : null}
           </>
         ) : null}
 
-        {activeTab === "Integration Settings" ? (
+        {tab === "settings" ? (
           <>
-            <div className="info-grid">
-              <Info label="Admission System Endpoint" value={settings.endpoint} />
-              <Info label="API Authentication" value={settings.authentication} />
-              <Info label="Connection Timeout" value={settings.timeout} />
-              <div className="info-item"><span>Integration Status</span><strong><StatusBadge value={settings.integrationStatus === "Enabled" ? "ACTIVE" : "INACTIVE"} label={settings.integrationStatus} /></strong></div>
-            </div>
-            <div className="action-row" style={{ marginTop: 14 }}>
-              <Button onClick={() => { setDraftSettings(settings); setSettingsOpen(true); }}>Edit Configuration</Button>
-              <Button variant="secondary" onClick={() => setMessage("Mock API connection test succeeded with the current configuration.")}>Test Connection</Button>
-            </div>
-            <div className="notice" style={{ marginTop: 14 }}>
-              Authentication secrets remain masked. This UI is structured so the current mock settings can later be replaced by a Supabase backed configuration source without changing the page layout.
-            </div>
+            {primaryConfiguration ? (
+              <>
+                <div className="info-grid">
+                  <Info label="Code" value={primaryConfiguration.code} />
+                  <Info label="Name" value={primaryConfiguration.name} />
+                  <Info label="Endpoint URL" value={primaryConfiguration.endpoint_url || "Not configured"} />
+                  <Info label="Authentication Method" value={primaryConfiguration.authentication_method || "Not configured"} />
+                  <Info label="Timeout" value={`${primaryConfiguration.timeout_seconds || 0} seconds`} />
+                  <div className="info-item"><span>Status</span><strong><StatusBadge value={primaryConfiguration.is_enabled ? "ACTIVE" : "INACTIVE"} label={primaryConfiguration.is_enabled ? "Enabled" : "Disabled"} /></strong></div>
+                </div>
+                <div className="action-row" style={{ marginTop: 14 }}>
+                  <Button
+                    onClick={() => {
+                      setSettingsForm({
+                        id: primaryConfiguration.id,
+                        endpointUrl: primaryConfiguration.endpoint_url || "",
+                        authenticationMethod: primaryConfiguration.authentication_method || "",
+                        timeoutSeconds: primaryConfiguration.timeout_seconds || 15,
+                        isEnabled: Boolean(primaryConfiguration.is_enabled),
+                      });
+                      setSettingsOpen(true);
+                    }}
+                  >
+                    Edit Configuration
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="notice warning">
+                No configuration row exists. The current schema supports configuration updates, but this page does not invent a second integration definition automatically.
+              </div>
+            )}
           </>
         ) : null}
       </Tabs>
 
       <Modal
         open={Boolean(selectedRecord)}
-        title={selectedRecord ? `${selectedType} Details` : "Integration Details"}
+        title={
+          selectedType === "request"
+            ? "API Request Details"
+            : selectedType === "sync"
+              ? "Synchronization Details"
+              : "Imported Applicant Technical View"
+        }
         onClose={() => setSelectedRecord(null)}
         className="system-admin-detail-modal"
         footer={
-          selectedRecord ? (
-            <>
-              <Button variant="ghost" onClick={() => setSelectedRecord(null)}>Close</Button>
-              {selectedType === "Failed Request" ? (
-                <Button onClick={() => {
-                  setMessage(`Retry queued for ${selectedRecord.requestId} in mock mode. Validation and duplicate checks remain required.`);
-                  setSelectedRecord(null);
-                }}>
-                  Retry Synchronization
+          <>
+            <Button variant="ghost" onClick={() => setSelectedRecord(null)}>Close</Button>
+            {selectedType === "sync" && /fail|error/i.test(selectedRecord?.status || "") ? (
+              <Button
+                disabled={isPending}
+                onClick={() => run(async () => {
+                  const result = await queueSynchronizationRetry({ syncId: selectedRecord.id });
+                  if (result?.ok) setSelectedRecord(null);
+                  return result;
+                })}
+              >
+                Queue Retry
+              </Button>
+            ) : null}
+            {selectedType === "request" && /fail|error/i.test(selectedRecord?.status || "") ? (() => {
+              const relatedSync = synchronizations.find(
+                (item) => item.integration_request_id === selectedRecord.id &&
+                  /fail|error/i.test(item.status || ""),
+              );
+
+              return relatedSync ? (
+                <Button
+                  disabled={isPending}
+                  onClick={() => run(async () => {
+                    const result = await queueSynchronizationRetry({ syncId: relatedSync.id });
+                    if (result?.ok) setSelectedRecord(null);
+                    return result;
+                  })}
+                >
+                  Queue Retry
                 </Button>
-              ) : null}
-            </>
-          ) : null
+              ) : null;
+            })() : null}
+          </>
         }
       >
-        {selectedRecord && selectedType === "API Request" ? (
+        {selectedRecord && selectedType === "request" ? (
           <>
             <Details items={[
-              ["Request ID", selectedRecord.requestId],
-              ["Request Type", selectedRecord.requestType],
-              ["Source", selectedRecord.source],
-              ["Endpoint", selectedRecord.endpoint],
-              ["Timestamp", selectedRecord.timestamp],
-              ["Response Code", selectedRecord.responseCode],
+              ["Request Reference", selectedRecord.request_reference],
+              ["Request Type", selectedRecord.request_type],
+              ["Source System", selectedRecord.source_system],
+              ["Endpoint", selectedRecord.endpoint_path],
+              ["External Reference", selectedRecord.external_reference],
+              ["Requested At", selectedRecord.requestedAtLabel],
+              ["Response Code", selectedRecord.response_code],
               ["Status", selectedRecord.status],
-              ["Processing Time", selectedRecord.processingTime],
-              ["Request Summary", selectedRecord.requestSummary],
-              ["Response Summary", selectedRecord.responseSummary],
+              ["Processing Time", selectedRecord.processingTimeLabel],
+              ["Request Summary", selectedRecord.request_summary],
+              ["Response Summary", selectedRecord.response_summary],
             ]} />
-            <div className="notice" style={{ marginTop: 14 }}>Credentials, tokens, and API secrets are intentionally excluded from request details.</div>
+            <div className="notice" style={{ marginTop: 14 }}>
+              API credentials and secret values are never displayed in request details.
+            </div>
           </>
         ) : null}
 
-        {selectedRecord && selectedType === "Synchronization" ? (
+        {selectedRecord && selectedType === "sync" ? (
           <Details items={[
-            ["Synchronization Reference", selectedRecord.reference],
-            ["Applicant Reference", selectedRecord.applicantReference],
+            ["Synchronization Reference", selectedRecord.sync_reference],
+            ["Applicant Reference", selectedRecord.applicant_reference],
             ["Direction", selectedRecord.direction],
-            ["Current Status", selectedRecord.currentStatus],
-            ["Last Attempt", selectedRecord.lastAttempt],
+            ["Status", selectedRecord.status],
             ["Result", selectedRecord.result],
-            ["Related API Request", selectedRecord.relatedRequest],
+            ["Attempt Number", selectedRecord.attempt_number],
+            ["Attempted At", selectedRecord.attemptedAtLabel],
+            ["Related Request ID", selectedRecord.integration_request_id],
           ]} />
         ) : null}
 
-        {selectedRecord && selectedType === "Failed Request" ? (
-          <Details items={[
-            ["Request ID", selectedRecord.requestId],
-            ["Applicant Reference", selectedRecord.applicantReference],
-            ["Error Type", selectedRecord.errorType],
-            ["Error Message", selectedRecord.errorMessage],
-            ["Attempt Count", selectedRecord.attemptCount],
-            ["Response Code", selectedRecord.responseCode],
-            ["Last Attempt", selectedRecord.lastAttempt],
-            ["Timestamp", selectedRecord.timestamp],
-          ]} />
-        ) : null}
-
-        {selectedRecord && selectedType === "Imported Record" ? (
+        {selectedRecord && selectedType === "handoff" ? (
           <>
             <Details items={[
-              ["Applicant Reference", selectedRecord.applicantReference],
-              ["Received Date", selectedRecord.receivedDate],
-              ["Approved Program", selectedRecord.approvedProgram],
-              ["Admission Status", selectedRecord.admissionStatus],
-              ["API Request Reference", selectedRecord.apiRequestReference],
-              ["Synchronization Status", selectedRecord.synchronizationStatus],
-              ["Imported Payload Summary", selectedRecord.payloadSummary],
+              ["Applicant Reference", selectedRecord.applicant_reference],
+              ["Approved Program", selectedRecord.approved_program_code],
+              ["Admission Status", selectedRecord.admission_status],
+              ["Admission Date", selectedRecord.admissionDateLabel],
+              ["Admission Type", selectedRecord.admission_type],
+              ["Synchronization Status", selectedRecord.synchronization_status],
+              ["Received At", selectedRecord.receivedAtLabel],
+              ["Source", selectedRecord.source_name],
+              ["Integration Request ID", selectedRecord.integration_request_id],
             ]} />
-            <div className="notice" style={{ marginTop: 14 }}>This technical view does not allow editing the official student enrollment record.</div>
+            <div className="notice" style={{ marginTop: 14 }}>
+              This is a technical import view only. Official student enrollment records are not editable from System Integration.
+            </div>
           </>
         ) : null}
       </Modal>
@@ -347,21 +466,56 @@ export default function SystemAdministratorIntegration() {
         footer={
           <>
             <Button variant="ghost" onClick={() => setSettingsOpen(false)}>Cancel</Button>
-            <Button onClick={() => {
-              setSettings(draftSettings);
-              setSettingsOpen(false);
-              setMessage("Integration configuration saved in the current frontend session.");
-            }}>
+            <Button
+              disabled={isPending}
+              onClick={() => run(async () => {
+                const result = await updateIntegrationConfiguration(settingsForm);
+                if (result?.ok) setSettingsOpen(false);
+                return result;
+              })}
+            >
               Save Configuration
             </Button>
           </>
         }
       >
         <div className="form-grid">
-          <label className="field full"><span>Admission System Endpoint</span><input value={draftSettings.endpoint} onChange={(event) => setDraftSettings({ ...draftSettings, endpoint: event.target.value })} /></label>
-          <label className="field"><span>API Authentication</span><input value="••••••••••••••••" readOnly /></label>
-          <label className="field"><span>Connection Timeout</span><input value={draftSettings.timeout} onChange={(event) => setDraftSettings({ ...draftSettings, timeout: event.target.value })} /></label>
-          <label className="field"><span>Integration Status</span><select value={draftSettings.integrationStatus} onChange={(event) => setDraftSettings({ ...draftSettings, integrationStatus: event.target.value })}><option>Enabled</option><option>Disabled</option></select></label>
+          <label className="field full">
+            Endpoint URL
+            <input
+              value={settingsForm.endpointUrl}
+              onChange={(event) => setSettingsForm({ ...settingsForm, endpointUrl: event.target.value })}
+            />
+          </label>
+          <label className="field">
+            Authentication Method
+            <input
+              value={settingsForm.authenticationMethod}
+              onChange={(event) => setSettingsForm({ ...settingsForm, authenticationMethod: event.target.value })}
+            />
+          </label>
+          <label className="field">
+            Connection Timeout
+            <input
+              type="number"
+              min="1"
+              value={settingsForm.timeoutSeconds}
+              onChange={(event) => setSettingsForm({ ...settingsForm, timeoutSeconds: Number(event.target.value) })}
+            />
+          </label>
+          <label className="field full">
+            Integration Status
+            <select
+              value={settingsForm.isEnabled ? "Enabled" : "Disabled"}
+              onChange={(event) => setSettingsForm({ ...settingsForm, isEnabled: event.target.value === "Enabled" })}
+            >
+              <option>Enabled</option>
+              <option>Disabled</option>
+            </select>
+          </label>
+        </div>
+        <div className="notice" style={{ marginTop: 14 }}>
+          Store authentication secrets outside exposed application tables. This form edits only the configuration fields defined by the database schema.
         </div>
       </Modal>
     </>

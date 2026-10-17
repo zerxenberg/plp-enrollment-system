@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   Button,
   DataTable,
@@ -11,7 +11,16 @@ import {
   SearchControl,
   StatusBadge,
 } from "@/components/ui/PortalUI";
-import { Details, Feedback, Info, Metric, Tabs } from "@/components/registrar/RegistrarShared";
+import {
+  Details,
+  Feedback,
+  Metric,
+  Tabs,
+} from "@/components/registrar/RegistrarShared";
+import {
+  runSystemHealthCheck,
+  setSystemErrorReviewState,
+} from "@/features/system-administration/system-admin-actions";
 
 const TABS = [
   { value: "Audit Logs", label: "Audit Logs" },
@@ -21,264 +30,598 @@ const TABS = [
   { value: "System Health", label: "System Health" },
 ];
 
-const AUDIT_LOGS = [
-  { id: "AUD-00091", dateTime: "Oct 7, 2026 · 5:42 PM", source: "Integration Service", role: "System", module: "System Integration", action: "Applicant synchronization", relatedRecord: "APP-2026-0149", result: "Successful", ipAddress: "10.0.0.15" },
-  { id: "AUD-00090", dateTime: "Oct 7, 2026 · 5:10 PM", source: "Adrian Reyes", role: "System Administrator", module: "System Integration", action: "API setting changed", relatedRecord: "CFG-API-01", result: "Successful", ipAddress: "10.0.0.27" },
-  { id: "AUD-00089", dateTime: "Oct 7, 2026 · 4:18 PM", source: "Integration Service", role: "System", module: "System Integration", action: "Applicant synchronization", relatedRecord: "APP-2026-0148", result: "Failed", ipAddress: "10.0.0.15" },
-];
+function distinctOptions(values, allLabel) {
+  return [
+    { value: "ALL", label: allLabel },
+    ...[...new Set(values.filter(Boolean))]
+      .sort((a, b) => String(a).localeCompare(String(b)))
+      .map((value) => ({ value, label: value })),
+  ];
+}
 
-const SECURITY = [
-  { id: "SEC-001", event: "Successful Login", user: "Adrian Reyes", role: "System Administrator", dateTime: "Oct 7, 2026 · 5:52 PM", status: "Successful", ipAddress: "10.0.0.27", relatedAccount: "PLP-SA-001" },
-  { id: "SEC-002", event: "Failed Login", user: "Unknown account", role: "Unknown", dateTime: "Oct 7, 2026 · 5:21 PM", status: "Failed", ipAddress: "10.0.0.44", relatedAccount: "Not resolved" },
-  { id: "SEC-003", event: "Role Change", user: "Karen Mendoza", role: "System Administrator", dateTime: "Oct 6, 2026 · 3:14 PM", status: "Successful", ipAddress: "10.0.0.29", relatedAccount: "USR-REG-001" },
-];
+export default function SystemAdministratorAuditMonitoring({
+  auditData,
+}) {
+  const {
+    auditEvents,
+    securityActivity,
+    administratorActivity,
+    systemErrors,
+    healthSnapshots,
+  } = auditData;
 
-const ADMIN_ACTIVITY = [
-  { id: "ADM-001", administrator: "Adrian Reyes", action: "API setting changed", module: "System Integration", previousConfiguration: "Timeout: 10s", newConfiguration: "Timeout: 15s", dateTime: "Oct 7, 2026 · 5:10 PM" },
-  { id: "ADM-002", administrator: "Adrian Reyes", action: "Backup created", module: "System Administration", previousConfiguration: "No new backup", newConfiguration: "BKP-20261007-01", dateTime: "Oct 7, 2026 · 8:30 AM" },
-];
-
-const ERRORS = [
-  { reference: "ERR-2026-0081", errorType: "Synchronization Error", module: "System Integration", message: "Approved program is required.", timestamp: "Oct 7, 2026 · 4:18 PM", status: "Open", relatedRecord: "APP-2026-0148", severity: "Medium" },
-  { reference: "ERR-2026-0080", errorType: "Authentication Warning", module: "Users & Access", message: "Repeated failed login attempts detected.", timestamp: "Oct 7, 2026 · 3:03 PM", status: "Reviewed", relatedRecord: "SEC-002", severity: "Low" },
-];
-
-export default function SystemAdministratorAuditMonitoring() {
   const [activeTab, setActiveTab] = useState("Audit Logs");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("ALL");
-  const [selected, setSelected] = useState(null);
+  const [moduleFilter, setModuleFilter] = useState("ALL");
+  const [resultFilter, setResultFilter] = useState("ALL");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [errorStatusFilter, setErrorStatusFilter] = useState("ALL");
+  const [selectedRecord, setSelectedRecord] = useState(null);
   const [selectedType, setSelectedType] = useState("");
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [feedbackWarning, setFeedbackWarning] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
-  const rows = useMemo(() => {
-    if (activeTab === "Audit Logs") return AUDIT_LOGS;
-    if (activeTab === "Security Activity") return SECURITY;
-    if (activeTab === "Administrator Activity") return ADMIN_ACTIVITY;
-    if (activeTab === "System Errors") return ERRORS;
-    return [];
-  }, [activeTab]);
+  const latestHealth = healthSnapshots[0] || null;
 
-  const filterValues = useMemo(() => {
-    if (activeTab === "Audit Logs") return rows.map((row) => row.module);
-    if (activeTab === "Security Activity") return rows.map((row) => row.status);
-    if (activeTab === "Administrator Activity") return rows.map((row) => row.module);
-    if (activeTab === "System Errors") return rows.map((row) => row.status);
-    return [];
-  }, [activeTab, rows]);
+  const filteredAudit = useMemo(
+    () =>
+      auditEvents.filter((item) => {
+        const searchable = `${item.id} ${item.actor_label || ""} ${item.actorRole || ""} ${item.module || ""} ${item.action || ""} ${item.entity_key || ""} ${item.result || ""}`.toLowerCase();
+        return (
+          searchable.includes(search.toLowerCase()) &&
+          (moduleFilter === "ALL" || item.module === moduleFilter) &&
+          (resultFilter === "ALL" || item.result === resultFilter) &&
+          (roleFilter === "ALL" || item.actorRole === roleFilter)
+        );
+      }),
+    [
+      auditEvents,
+      moduleFilter,
+      resultFilter,
+      roleFilter,
+      search,
+    ],
+  );
 
-  const filteredRows = rows.filter((row) => {
-    if (!JSON.stringify(row).toLowerCase().includes(search.toLowerCase())) return false;
-    if (filter === "ALL") return true;
-    if (activeTab === "Audit Logs" || activeTab === "Administrator Activity") return row.module === filter;
-    return row.status === filter;
-  });
+  const filteredSecurity = useMemo(
+    () =>
+      securityActivity.filter((item) => {
+        const searchable = `${item.id} ${item.actor_label || ""} ${item.actorRole || ""} ${item.action || ""} ${item.result || ""} ${item.reason || ""}`.toLowerCase();
+        return (
+          searchable.includes(search.toLowerCase()) &&
+          (resultFilter === "ALL" || item.result === resultFilter) &&
+          (roleFilter === "ALL" || item.actorRole === roleFilter)
+        );
+      }),
+    [resultFilter, roleFilter, search, securityActivity],
+  );
 
-  const filterLabel =
-    activeTab === "Audit Logs" || activeTab === "Administrator Activity"
-      ? "Module"
-      : "Status";
+  const filteredAdministrator = useMemo(
+    () =>
+      administratorActivity.filter((item) => {
+        const searchable = `${item.id} ${item.actor_label || ""} ${item.module || ""} ${item.action || ""} ${item.entity_key || ""}`.toLowerCase();
+        return (
+          searchable.includes(search.toLowerCase()) &&
+          (moduleFilter === "ALL" || item.module === moduleFilter)
+        );
+      }),
+    [administratorActivity, moduleFilter, search],
+  );
+
+  const filteredErrors = useMemo(
+    () =>
+      systemErrors.filter((item) => {
+        const searchable = `${item.error_reference} ${item.error_type} ${item.module} ${item.severity} ${item.message} ${item.related_record || ""}`.toLowerCase();
+        return (
+          searchable.includes(search.toLowerCase()) &&
+          (moduleFilter === "ALL" || item.module === moduleFilter) &&
+          (errorStatusFilter === "ALL" ||
+            item.status === errorStatusFilter)
+        );
+      }),
+    [errorStatusFilter, moduleFilter, search, systemErrors],
+  );
+
+  function clearFilters() {
+    setSearch("");
+    setModuleFilter("ALL");
+    setResultFilter("ALL");
+    setRoleFilter("ALL");
+    setErrorStatusFilter("ALL");
+  }
 
   function openDetails(type, row) {
     setSelectedType(type);
-    setSelected(row);
+    setSelectedRecord(row);
   }
 
-  function changeTab(next) {
-    setActiveTab(next);
-    setSearch("");
-    setFilter("ALL");
-    setSelected(null);
-    setMessage("");
+  function updateErrorReview(errorRecord, reviewed) {
+    startTransition(async () => {
+      const result = await setSystemErrorReviewState({
+        errorId: errorRecord.id,
+        reviewed,
+      });
+      setFeedback(result.message);
+      setFeedbackWarning(!result.ok);
+      if (result.ok) {
+        setSelectedRecord(null);
+      }
+    });
+  }
+
+  function runHealthCheck() {
+    startTransition(async () => {
+      const result = await runSystemHealthCheck();
+      setFeedback(result.message);
+      setFeedbackWarning(!result.ok);
+    });
   }
 
   return (
     <>
       <PageHeader
         title="Audit & Monitoring"
-        description="Read only technical activity, security events, administrator actions, system errors, and operational health."
+        description="Live database audit records, security events, administrator changes, technical errors, and recorded health checks."
       />
 
       <Tabs
         items={TABS}
         selected={activeTab}
-        onSelect={changeTab}
+        onSelect={(next) => {
+          setActiveTab(next);
+          clearFilters();
+          setSelectedRecord(null);
+          setFeedback("");
+        }}
         label="Audit and monitoring sections"
         title="Technical Monitoring"
-        subtitle="Rows stay concise. Select a row to inspect the complete event in a modal."
+        subtitle="Audit history is read only. System error review state and health snapshots are the only editable monitoring operations."
       >
-        <Feedback message={message} />
+        <Feedback message={feedback} warning={feedbackWarning} />
 
-        {activeTab !== "System Health" ? (
+        {activeTab === "Audit Logs" ? (
           <>
             <div className="toolbar">
-              <SearchControl value={search} onChange={setSearch} label={`Search ${activeTab}`} placeholder={`Search ${activeTab.toLowerCase()}`} />
-              <FilterControl
-                label={filterLabel}
-                value={filter}
-                onChange={setFilter}
-                options={[
-                  { value: "ALL", label: `All ${filterLabel}s` },
-                  ...[...new Set(filterValues)].map((value) => ({ value, label: value })),
-                ]}
+              <SearchControl
+                value={search}
+                onChange={setSearch}
+                label="Search audit logs"
+                placeholder="Search actor, module, action, record, or result"
               />
-              {(search || filter !== "ALL") ? <Button variant="ghost" onClick={() => { setSearch(""); setFilter("ALL"); }}>Clear Filters</Button> : null}
+              <FilterControl
+                label="Module"
+                value={moduleFilter}
+                onChange={setModuleFilter}
+                options={distinctOptions(
+                  auditEvents.map((item) => item.module),
+                  "All Modules",
+                )}
+              />
+              <FilterControl
+                label="Role"
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={distinctOptions(
+                  auditEvents.map((item) => item.actorRole),
+                  "All Roles",
+                )}
+              />
+              <FilterControl
+                label="Result"
+                value={resultFilter}
+                onChange={setResultFilter}
+                options={distinctOptions(
+                  auditEvents.map((item) => item.result),
+                  "All Results",
+                )}
+              />
+              {(search ||
+                moduleFilter !== "ALL" ||
+                roleFilter !== "ALL" ||
+                resultFilter !== "ALL") ? (
+                <Button variant="ghost" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              ) : null}
             </div>
 
-            {activeTab === "Audit Logs" ? (
+            <DataTable
+              rowKey="id"
+              rows={filteredAudit}
+              onRowClick={(row) => openDetails("Audit Log", row)}
+              getRowAriaLabel={(row) => `View audit event ${row.id}`}
+              emptyMessage="No audit events match the selected filters."
+              columns={[
+                { key: "occurredAtLabel", label: "Date & Time" },
+                { key: "actor_label", label: "Source" },
+                { key: "actorRole", label: "Role" },
+                { key: "module", label: "Module" },
+                { key: "action", label: "Action" },
+                {
+                  key: "result",
+                  label: "Result",
+                  render: (row) => (
+                    <StatusBadge
+                      value={
+                        row.result === "Successful"
+                          ? "COMPLETED"
+                          : row.result === "Failed"
+                            ? "FAILED"
+                            : row.result
+                      }
+                      label={row.result}
+                    />
+                  ),
+                },
+              ]}
+            />
+
+            <div className="notice" style={{ marginTop: 14 }}>
+              Audit records have no ordinary Edit or Delete action. Their purpose
+              is traceability and accountability.
+            </div>
+          </>
+        ) : null}
+
+        {activeTab === "Security Activity" ? (
+          <>
+            <div className="toolbar">
+              <SearchControl
+                value={search}
+                onChange={setSearch}
+                label="Search security activity"
+                placeholder="Search actor, event, result, or reason"
+              />
+              <FilterControl
+                label="Role"
+                value={roleFilter}
+                onChange={setRoleFilter}
+                options={distinctOptions(
+                  securityActivity.map((item) => item.actorRole),
+                  "All Roles",
+                )}
+              />
+              <FilterControl
+                label="Result"
+                value={resultFilter}
+                onChange={setResultFilter}
+                options={distinctOptions(
+                  securityActivity.map((item) => item.result),
+                  "All Results",
+                )}
+              />
+              {(search ||
+                roleFilter !== "ALL" ||
+                resultFilter !== "ALL") ? (
+                <Button variant="ghost" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              ) : null}
+            </div>
+
+            <DataTable
+              rowKey="id"
+              rows={filteredSecurity}
+              onRowClick={(row) =>
+                openDetails("Security Activity", row)
+              }
+              getRowAriaLabel={(row) =>
+                `View security event ${row.id}`
+              }
+              emptyMessage="No security activity matches the selected filters."
+              columns={[
+                { key: "occurredAtLabel", label: "Date & Time" },
+                { key: "actor_label", label: "User or Source" },
+                { key: "actorRole", label: "Role" },
+                { key: "action", label: "Event" },
+                {
+                  key: "result",
+                  label: "Result",
+                  render: (row) => (
+                    <StatusBadge
+                      value={
+                        row.result === "Successful"
+                          ? "COMPLETED"
+                          : row.result === "Failed"
+                            ? "FAILED"
+                            : row.result
+                      }
+                      label={row.result}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </>
+        ) : null}
+
+        {activeTab === "Administrator Activity" ? (
+          <>
+            <div className="toolbar">
+              <SearchControl
+                value={search}
+                onChange={setSearch}
+                label="Search administrator activity"
+                placeholder="Search administrator, module, action, or record"
+              />
+              <FilterControl
+                label="Module"
+                value={moduleFilter}
+                onChange={setModuleFilter}
+                options={distinctOptions(
+                  administratorActivity.map((item) => item.module),
+                  "All Modules",
+                )}
+              />
+              {(search || moduleFilter !== "ALL") ? (
+                <Button variant="ghost" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              ) : null}
+            </div>
+
+            <DataTable
+              rowKey="id"
+              rows={filteredAdministrator}
+              onRowClick={(row) =>
+                openDetails("Administrator Activity", row)
+              }
+              getRowAriaLabel={(row) =>
+                `View administrator activity ${row.id}`
+              }
+              emptyMessage="No administrator activity matches the selected filters."
+              columns={[
+                { key: "occurredAtLabel", label: "Date & Time" },
+                { key: "actor_label", label: "Administrator" },
+                { key: "module", label: "Module" },
+                { key: "action", label: "Action" },
+                { key: "entity_key", label: "Related Record" },
+              ]}
+            />
+          </>
+        ) : null}
+
+        {activeTab === "System Errors" ? (
+          <>
+            <div className="toolbar">
+              <SearchControl
+                value={search}
+                onChange={setSearch}
+                label="Search system errors"
+                placeholder="Search reference, type, module, message, or related record"
+              />
+              <FilterControl
+                label="Module"
+                value={moduleFilter}
+                onChange={setModuleFilter}
+                options={distinctOptions(
+                  systemErrors.map((item) => item.module),
+                  "All Modules",
+                )}
+              />
+              <FilterControl
+                label="Status"
+                value={errorStatusFilter}
+                onChange={setErrorStatusFilter}
+                options={distinctOptions(
+                  systemErrors.map((item) => item.status),
+                  "All Statuses",
+                )}
+              />
+              {(search ||
+                moduleFilter !== "ALL" ||
+                errorStatusFilter !== "ALL") ? (
+                <Button variant="ghost" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              ) : null}
+            </div>
+
+            <DataTable
+              rowKey="id"
+              rows={filteredErrors}
+              onRowClick={(row) => openDetails("System Error", row)}
+              getRowAriaLabel={(row) =>
+                `View system error ${row.error_reference}`
+              }
+              emptyMessage="No system errors match the selected filters."
+              columns={[
+                { key: "error_reference", label: "Error Reference" },
+                { key: "error_type", label: "Error Type" },
+                { key: "module", label: "Module" },
+                { key: "severity", label: "Severity" },
+                { key: "occurredAtLabel", label: "Occurred" },
+                {
+                  key: "status",
+                  label: "Status",
+                  render: (row) => (
+                    <StatusBadge value={row.status} label={row.status} />
+                  ),
+                },
+              ]}
+            />
+          </>
+        ) : null}
+
+        {activeTab === "System Health" ? (
+          <>
+            <div className="action-row" style={{ marginBottom: 14 }}>
+              <Button disabled={isPending} onClick={runHealthCheck}>
+                {isPending ? "Running..." : "Run Health Checks"}
+              </Button>
+            </div>
+
+            {latestHealth ? (
               <>
-                <div className="notice" style={{ marginBottom: 12 }}>
-                  Audit records are read only. Ordinary interfaces intentionally provide no Edit or Delete operation.
+                <div className="stats-grid" style={{ marginBottom: 14 }}>
+                  <Metric
+                    label="Application"
+                    value={latestHealth.application_status}
+                    hint={latestHealth.capturedAtLabel}
+                  />
+                  <Metric
+                    label="Database"
+                    value={latestHealth.database_status}
+                    hint="Live database probe"
+                  />
+                  <Metric
+                    label="Admission API"
+                    value={latestHealth.api_status}
+                    hint="Configured endpoint probe"
+                  />
+                  <Metric
+                    label="Authentication"
+                    value={latestHealth.authentication_status}
+                    hint="Current authenticated administrator"
+                  />
+                  <Metric
+                    label="Backup Registry"
+                    value={latestHealth.backup_status}
+                    hint="Latest recorded backup status"
+                  />
+                  <Metric
+                    label="Open Errors"
+                    value={latestHealth.recent_error_count ?? 0}
+                    hint="At snapshot time"
+                  />
                 </div>
+
                 <DataTable
                   rowKey="id"
-                  rows={filteredRows}
-                  onRowClick={(row) => openDetails("Audit Log", row)}
-                  getRowAriaLabel={(row) => `View audit log ${row.id}`}
+                  rows={healthSnapshots}
+                  onRowClick={(row) =>
+                    openDetails("Health Snapshot", row)
+                  }
+                  getRowAriaLabel={(row) =>
+                    `View system health snapshot ${row.id}`
+                  }
                   columns={[
-                    { key: "dateTime", label: "Date & Time" },
-                    { key: "source", label: "Source" },
-                    { key: "module", label: "Module" },
-                    { key: "action", label: "Action" },
-                    { key: "result", label: "Result", render: (row) => <StatusBadge value={row.result === "Successful" ? "COMPLETED" : "FAILED"} label={row.result} /> },
+                    { key: "capturedAtLabel", label: "Captured" },
+                    { key: "application_status", label: "Application" },
+                    { key: "database_status", label: "Database" },
+                    { key: "api_status", label: "API" },
+                    { key: "authentication_status", label: "Auth" },
+                    { key: "recent_error_count", label: "Open Errors" },
                   ]}
                 />
               </>
-            ) : null}
-
-            {activeTab === "Security Activity" ? (
-              <DataTable
-                rowKey="id"
-                rows={filteredRows}
-                onRowClick={(row) => openDetails("Security Event", row)}
-                getRowAriaLabel={(row) => `View security event ${row.id}`}
-                columns={[
-                  { key: "event", label: "Event" },
-                  { key: "user", label: "User" },
-                  { key: "role", label: "Role" },
-                  { key: "dateTime", label: "Date & Time" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "Successful" ? "COMPLETED" : "FAILED"} label={row.status} /> },
-                ]}
-              />
-            ) : null}
-
-            {activeTab === "Administrator Activity" ? (
-              <DataTable
-                rowKey="id"
-                rows={filteredRows}
-                onRowClick={(row) => openDetails("Administrator Activity", row)}
-                getRowAriaLabel={(row) => `View administrator activity ${row.id}`}
-                columns={[
-                  { key: "administrator", label: "Administrator" },
-                  { key: "action", label: "Action" },
-                  { key: "module", label: "Module" },
-                  { key: "dateTime", label: "Date & Time" },
-                ]}
-              />
-            ) : null}
-
-            {activeTab === "System Errors" ? (
-              <DataTable
-                rowKey="reference"
-                rows={filteredRows}
-                onRowClick={(row) => openDetails("System Error", row)}
-                getRowAriaLabel={(row) => `View system error ${row.reference}`}
-                columns={[
-                  { key: "reference", label: "Error Reference" },
-                  { key: "errorType", label: "Error Type" },
-                  { key: "module", label: "Module" },
-                  { key: "severity", label: "Severity" },
-                  { key: "timestamp", label: "Timestamp" },
-                  { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={row.status} /> },
-                ]}
-              />
-            ) : null}
+            ) : (
+              <div className="notice">
+                No health snapshot exists yet. Run Health Checks to create the
+                first live snapshot.
+              </div>
+            )}
           </>
-        ) : (
-          <>
-            <div className="stats-grid" style={{ marginBottom: 14 }}>
-              <Metric label="Application" value="Healthy" hint="Frontend operating normally" />
-              <Metric label="Database" value="Healthy" hint="Connection available" />
-              <Metric label="Admission API" value="Healthy" hint="Authenticated connection" />
-              <Metric label="Authentication" value="Healthy" hint="Protected sessions available" />
-              <Metric label="Last Backup" value="Successful" hint="Oct 7, 2026" />
-              <Metric label="Recent Errors" value="1" hint="Open technical error" />
-            </div>
-            <div className="info-grid">
-              <div className="info-item"><span>Application Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-              <div className="info-item"><span>Database Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-              <div className="info-item"><span>API Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-              <div className="info-item"><span>Authentication Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-            </div>
-            <div className="action-row" style={{ marginTop: 14 }}>
-              <Button onClick={() => setMessage("System health checks completed in mock mode.")}>Run Health Checks</Button>
-            </div>
-          </>
-        )}
+        ) : null}
       </Tabs>
 
       <Modal
-        open={Boolean(selected)}
-        title={selected ? `${selectedType} Details` : "Technical Event Details"}
-        onClose={() => setSelected(null)}
+        open={Boolean(selectedRecord)}
+        title={selectedRecord ? `${selectedType} Details` : "Details"}
+        onClose={() => setSelectedRecord(null)}
         className="system-admin-detail-modal"
-        footer={<Button onClick={() => setSelected(null)}>Close</Button>}
+        footer={
+          selectedRecord ? (
+            <>
+              <Button
+                variant="ghost"
+                disabled={isPending}
+                onClick={() => setSelectedRecord(null)}
+              >
+                Close
+              </Button>
+              {selectedType === "System Error" ? (
+                <Button
+                  disabled={isPending}
+                  onClick={() =>
+                    updateErrorReview(
+                      selectedRecord,
+                      selectedRecord.status !== "Reviewed",
+                    )
+                  }
+                >
+                  {isPending
+                    ? "Saving..."
+                    : selectedRecord.status === "Reviewed"
+                      ? "Reopen Error"
+                      : "Mark Reviewed"}
+                </Button>
+              ) : null}
+            </>
+          ) : null
+        }
       >
-        {selected && selectedType === "Audit Log" ? (
-          <Details items={[
-            ["Audit ID", selected.id],
-            ["Date and Time", selected.dateTime],
-            ["User or System Source", selected.source],
-            ["Role", selected.role],
-            ["Module", selected.module],
-            ["Action", selected.action],
-            ["Related Record", selected.relatedRecord],
-            ["Result", selected.result],
-            ["IP Address", selected.ipAddress],
-          ]} />
+        {selectedRecord &&
+        ["Audit Log", "Security Activity", "Administrator Activity"].includes(
+          selectedType,
+        ) ? (
+          <Details
+            items={[
+              ["Event ID", selectedRecord.id],
+              ["Date and Time", selectedRecord.occurredAtLabel],
+              ["Actor", selectedRecord.actor_label || "System"],
+              ["Actor Role", selectedRecord.actorRole],
+              ["Module", selectedRecord.module],
+              ["Action", selectedRecord.action],
+              ["Entity Type", selectedRecord.entity_type || "Not recorded"],
+              ["Entity Key", selectedRecord.entity_key || "Not recorded"],
+              ["Result", selectedRecord.result],
+              ["Reason", selectedRecord.reason || "Not recorded"],
+              ["IP Address", selectedRecord.ip_address || "Not recorded"],
+              [
+                "Previous Value",
+                selectedRecord.previous_value || "Not recorded",
+              ],
+              ["New Value", selectedRecord.new_value || "Not recorded"],
+            ]}
+          />
         ) : null}
 
-        {selected && selectedType === "Security Event" ? (
-          <Details items={[
-            ["Security Event", selected.id],
-            ["Event Type", selected.event],
-            ["User", selected.user],
-            ["Role", selected.role],
-            ["Date and Time", selected.dateTime],
-            ["Status", selected.status],
-            ["IP Address", selected.ipAddress],
-            ["Related Account", selected.relatedAccount],
-          ]} />
-        ) : null}
-
-        {selected && selectedType === "Administrator Activity" ? (
-          <Details items={[
-            ["Activity ID", selected.id],
-            ["Administrator", selected.administrator],
-            ["Action", selected.action],
-            ["Module", selected.module],
-            ["Previous Configuration", selected.previousConfiguration],
-            ["New Configuration", selected.newConfiguration],
-            ["Date and Time", selected.dateTime],
-          ]} />
-        ) : null}
-
-        {selected && selectedType === "System Error" ? (
+        {selectedRecord && selectedType === "System Error" ? (
           <>
-            <Details items={[
-              ["Error Reference", selected.reference],
-              ["Error Type", selected.errorType],
-              ["Module", selected.module],
-              ["Severity", selected.severity],
-              ["Timestamp", selected.timestamp],
-              ["Status", selected.status],
-              ["Related Record", selected.relatedRecord],
-              ["Message", selected.message],
-            ]} />
+            <Details
+              items={[
+                ["Error Reference", selectedRecord.error_reference],
+                ["Error Type", selectedRecord.error_type],
+                ["Module", selectedRecord.module],
+                ["Severity", selectedRecord.severity],
+                ["Status", selectedRecord.status],
+                ["Occurred", selectedRecord.occurredAtLabel],
+                [
+                  "Reviewed",
+                  selectedRecord.reviewedAtLabel || "Not reviewed",
+                ],
+                [
+                  "Related Record",
+                  selectedRecord.related_record || "Not recorded",
+                ],
+                ["Message", selectedRecord.message],
+              ]}
+            />
             <div className="notice" style={{ marginTop: 14 }}>
-              Error history remains preserved for troubleshooting. Reviewing an error must not delete the historical record.
+              Marking an error reviewed changes only its review state. The
+              historical error row remains preserved.
             </div>
           </>
+        ) : null}
+
+        {selectedRecord && selectedType === "Health Snapshot" ? (
+          <Details
+            items={[
+              ["Snapshot ID", selectedRecord.id],
+              ["Captured", selectedRecord.capturedAtLabel],
+              ["Application", selectedRecord.application_status],
+              ["Database", selectedRecord.database_status],
+              ["API", selectedRecord.api_status],
+              ["Authentication", selectedRecord.authentication_status],
+              ["Backup", selectedRecord.backup_status],
+              [
+                "Recent Error Count",
+                selectedRecord.recent_error_count ?? 0,
+              ],
+            ]}
+          />
         ) : null}
       </Modal>
     </>

@@ -1,9 +1,12 @@
+
 "use client";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppIcon from "@/components/ui/AppIcon";
-import { authenticateDemoAccount, saveDemoSession } from "@/lib/auth/demo-auth";
+import { PORTAL_META } from "@/config/portal-navigation";
+import { clearDemoSession, saveDemoSession } from "@/lib/auth/demo-auth";
+import { signInPortalUser } from "@/features/auth/auth-actions";
 import styles from "./auth-portal.module.css";
 
 export default function LoginForm({
@@ -19,6 +22,7 @@ export default function LoginForm({
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function clearFieldError(field) {
     setStatus("");
@@ -30,14 +34,16 @@ export default function LoginForm({
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
-    const normalizedIdentity = identity.trim();
+    const email = identity.trim().toLowerCase();
     const nextErrors = {};
 
-    if (!normalizedIdentity) {
-      nextErrors.identity = "Enter your University ID number or registered email.";
+    if (!email) {
+      nextErrors.identity = "Enter your registered email.";
+    } else if (!email.includes("@")) {
+      nextErrors.identity = "Use your registered PLP email for Supabase sign in.";
     }
 
     if (!password) {
@@ -56,36 +62,49 @@ export default function LoginForm({
       return;
     }
 
-    const session = authenticateDemoAccount({ identity: normalizedIdentity, password });
+    setIsSubmitting(true);
+    setStatus("Signing in...");
 
-    if (!session) {
-      setStatus("The ID number, registered email, or password is incorrect for this demo.");
+    const result = await signInPortalUser({
+      email,
+      password,
+    });
+
+    if (!result?.ok || !result.user) {
+      setIsSubmitting(false);
+      setStatus(
+        result?.message || "The registered email or password is incorrect.",
+      );
       return;
     }
 
-
-    if (!saveDemoSession(session)) {
-      setStatus("This demo account could not be signed in. Please try again.");
-      return;
+    // Other portals still use their temporary local compatibility context
+    // until their own database migration is complete. The System Administrator
+    // portal does not receive or consume that context.
+    if (result.user.role === "system-administrator") {
+      clearDemoSession();
+    } else {
+      saveDemoSession({
+        role: result.user.role,
+        name: result.user.name,
+        identifier: result.user.identifier,
+        redirect: result.user.redirect,
+      });
     }
-    const portalLabels = {
-      student: "Student",
-      registrar: "Registrar",
-      "academic-coordinator": "Academic Coordinator",
-      "system-administrator": "System Administrator",
-    };
-    setStatus(`Signed in as ${session.name}. Opening the ${portalLabels[session.role] || "authorized"} Portal.`);
-    router.push(session.redirect);
+
+    setStatus(`Signed in as ${result.user.name}. Opening your portal.`);
+    router.replace(result.user.redirect);
+    router.refresh();
   }
 
   function handleForgotPassword() {
     setStatus(
-      "Password recovery will be connected when Supabase Authentication is configured.",
+      "Contact the System Administrator if you need a password reset.",
     );
   }
 
   return (
-    <form className={styles.loginForm} onSubmit={handleSubmit} autoComplete="off" noValidate>
+    <form className={styles.loginForm} onSubmit={handleSubmit} autoComplete="on" noValidate>
       <div className={styles.fieldGroup}>
         <label className={styles.fieldLabel} htmlFor="login-identity">
           {identityLabel}
@@ -95,9 +114,9 @@ export default function LoginForm({
           <input
             ref={identityRef}
             id="login-identity"
-            name="login-identity"
-            type="text"
-            autoComplete="off"
+            name="email"
+            type="email"
+            autoComplete="email"
             required
             value={identity}
             placeholder={identityPlaceholder}
@@ -127,9 +146,9 @@ export default function LoginForm({
           <input
             ref={passwordRef}
             id="login-password"
-            name="login-password"
+            name="password"
             type={showPassword ? "text" : "password"}
-            autoComplete="off"
+            autoComplete="current-password"
             required
             value={password}
             placeholder="Enter your password"
@@ -163,9 +182,9 @@ export default function LoginForm({
         Forgot Password?
       </button>
 
-      <button className={styles.primaryButton} type="submit">
+      <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
         <AppIcon name="lock" className={styles.buttonIcon} />
-        <span>{submitLabel}</span>
+        <span>{isSubmitting ? "Signing in..." : submitLabel}</span>
       </button>
 
       <p className={styles.formStatus} role="status" aria-live="polite">

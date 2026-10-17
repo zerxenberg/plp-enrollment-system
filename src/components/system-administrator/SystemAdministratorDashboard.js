@@ -1,151 +1,146 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+
 import { Button, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Feedback, LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
+import { LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
 
-export default function SystemAdministratorDashboard() {
+export default function SystemAdministratorDashboard({ dashboardData }) {
   const router = useRouter();
-  const { registrar, systemAdministrators, academicCoordinators, notifications } = useDemoData();
-  const [message, setMessage] = useState("");
-
-  const directory = useMemo(() => {
-    const students = registrar.students.map((item) => ({
-      role: "Student",
-      active: item.studentStatus === "ACTIVE",
-    }));
-    const registrarAccount = [{
-      role: "Registrar",
-      active: registrar.registrar.accountStatus === "Active",
-    }];
-    const coordinators = academicCoordinators.map((item) => ({
-      role: "Academic Coordinator",
-      active: item.accountStatus === "Active",
-    }));
-    const administrators = systemAdministrators.map((item) => ({
-      role: "System Administrator",
-      active: item.accountStatus === "Active",
-    }));
-    return [...students, ...registrarAccount, ...coordinators, ...administrators];
-  }, [academicCoordinators, registrar, systemAdministrators]);
-
-  const activeUsers = directory.filter((item) => item.active).length;
-  const inactiveUsers = directory.length - activeUsers;
-  const technicalAlerts = notifications["system-administrator"] || [];
-  const unreadAlerts = technicalAlerts.filter((item) => !item.read).length;
-
-  function refreshDashboard() {
-    setMessage(`Dashboard refreshed at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
-  }
+  const {
+    activeUsers,
+    inactiveUsers,
+    activeAdministrators,
+    failedRequests,
+    successfulSynchronizations,
+    openErrors,
+    unreadTechnicalAlerts,
+    latestBackup,
+    health,
+    recentActivity,
+  } = dashboardData;
 
   return (
     <>
       <PageHeader
         title="System Administrator Dashboard"
-        description="Technical access, integration, security, backup, audit, and system health overview."
-        actions={<Button variant="secondary" onClick={refreshDashboard}>Refresh Status</Button>}
+        description="Technical access, integration, security, database operations, audit activity, and system health."
+        actions={
+          <Button variant="secondary" onClick={() => router.refresh()}>
+            Refresh Status
+          </Button>
+        }
       />
 
-      <section className="portal-card hero-card system-admin-enter" aria-label="System administration overview">
+      <section
+        className="portal-card hero-card system-admin-enter"
+        aria-label="System administration overview"
+      >
         <h2>Technical operations at a glance</h2>
         <p>
-          Monitor access, integration, security, backups, and system health without taking over
-          Registrar enrollment decisions or Academic Coordinator academic decisions.
+          The dashboard uses live Supabase data. Technical administration remains
+          separate from Registrar enrollment decisions and Academic Coordinator
+          academic decisions.
         </p>
         <div className="hero-meta">
-          <span className="hero-chip">Application Healthy</span>
-          <span className="hero-chip">Database Connected</span>
-          <span className="hero-chip">Admission API Connected</span>
+          <span className="hero-chip">
+            Application: {health?.application_status || "No health snapshot"}
+          </span>
+          <span className="hero-chip">
+            Database: {health?.database_status || "No health snapshot"}
+          </span>
+          <span className="hero-chip">
+            API: {health?.api_status || "No health snapshot"}
+          </span>
         </div>
       </section>
 
-      <Feedback message={message} />
-
       <div className="stats-grid" style={{ margin: "16px 0" }}>
-        <Metric label="Active Users" value={activeUsers} hint={`${directory.length} directory records`} />
-        <Metric label="Inactive Users" value={inactiveUsers} hint="Account review scope" />
-        <Metric label="Active Administrator Sessions" value="3" hint="Protected staff sessions" />
-        <Metric label="API Connection" value="Connected" hint="Admission System reachable" />
-        <Metric label="Successful Synchronizations" value="42" hint="Current enrollment period" />
-        <Metric label="Failed API Requests" value="2" hint="Require technical review" />
-        <Metric label="Unread Technical Alerts" value={unreadAlerts} hint="Notification center" />
-        <Metric label="Recent System Errors" value="1" hint="Open technical error" />
+        <Metric label="Active Users" value={activeUsers} hint="Enabled application accounts" />
+        <Metric label="Inactive Users" value={inactiveUsers} hint="Access disabled" />
+        <Metric label="System Administrators" value={activeAdministrators} hint="Active administrator accounts" />
+        <Metric label="Failed API Requests" value={failedRequests} hint="Recorded integration failures" />
+        <Metric label="Successful Synchronizations" value={successfulSynchronizations} hint="Recorded successful sync events" />
+        <Metric label="Unread Technical Alerts" value={unreadTechnicalAlerts} hint="Your notification queue" />
+        <Metric label="Open System Errors" value={openErrors} hint="Require technical review" />
+        <Metric label="Latest Backup Record" value={latestBackup?.status || "No record"} hint={latestBackup?.startedAtLabel || "No backup record"} />
       </div>
 
       <div className="content-grid">
         <Panel
-          title="Integration Summary"
-          subtitle="Admission System connection and synchronization condition."
+          title="System Health"
+          subtitle={health ? `Captured ${health.capturedAtLabel}` : "No health snapshot has been recorded yet."}
           className="span-6"
-          actions={<LinkButton href="/system-administrator/system-integration">Open Integration</LinkButton>}
+          actions={<LinkButton href="/system-administrator/audit-monitoring">Open Monitoring</LinkButton>}
         >
           <div className="detail-list">
-            <div className="detail-row"><span>Admission System Connection</span><strong><StatusBadge value="ACTIVE" label="Connected" /></strong></div>
-            <div className="detail-row"><span>Last Successful Request</span><strong>Oct 7, 2026 · 5:42 PM</strong></div>
-            <div className="detail-row"><span>Last Failed Request</span><strong>Oct 7, 2026 · 4:18 PM</strong></div>
-            <div className="detail-row"><span>Pending Synchronization</span><strong>1</strong></div>
+            <div className="detail-row">
+              <span>Application</span>
+              <strong><StatusBadge value={health?.application_status || "Unknown"} label={health?.application_status || "Unknown"} /></strong>
+            </div>
+            <div className="detail-row">
+              <span>Database</span>
+              <strong><StatusBadge value={health?.database_status || "Unknown"} label={health?.database_status || "Unknown"} /></strong>
+            </div>
+            <div className="detail-row">
+              <span>Admission API</span>
+              <strong><StatusBadge value={health?.api_status || "Unknown"} label={health?.api_status || "Unknown"} /></strong>
+            </div>
+            <div className="detail-row">
+              <span>Authentication</span>
+              <strong><StatusBadge value={health?.authentication_status || "Unknown"} label={health?.authentication_status || "Unknown"} /></strong>
+            </div>
           </div>
         </Panel>
 
         <Panel
-          title="Security & Access"
-          subtitle="Authentication, account, and permission signals."
+          title="Backup Registry"
+          subtitle="Database backup records stored by the Enrollment System."
           className="span-6"
-          actions={<LinkButton href="/system-administrator/users-access">Open Users & Access</LinkButton>}
+          actions={<LinkButton href="/system-administrator/system-administration">Open Backup & Recovery</LinkButton>}
         >
-          <div className="detail-list">
-            <div className="detail-row"><span>Directory Records</span><strong>{directory.length}</strong></div>
-            <div className="detail-row"><span>Inactive Accounts</span><strong>{inactiveUsers}</strong></div>
-            <div className="detail-row"><span>Failed Logins</span><strong>3</strong></div>
-            <div className="detail-row"><span>Recent Permission Changes</span><strong>1</strong></div>
-          </div>
-        </Panel>
-
-        <Panel title="Backup & Recovery" subtitle="Current recovery readiness." className="span-5">
-          <div className="detail-list">
-            <div className="detail-row"><span>Last Backup Date</span><strong>Oct 7, 2026</strong></div>
-            <div className="detail-row"><span>Last Backup Result</span><strong><StatusBadge value="COMPLETED" label="Successful" /></strong></div>
-            <div className="detail-row"><span>Available Backups</span><strong>6</strong></div>
-            <div className="detail-row"><span>Last Restore Activity</span><strong>Sep 15, 2026</strong></div>
-          </div>
-        </Panel>
-
-        <Panel title="Recent Administrative Activity" subtitle="Recent traceable technical changes." className="span-7">
-          <div className="list-stack">
-            <div className="list-item"><strong>API configuration changed</strong><p>Adrian Reyes · 5:10 PM</p></div>
-            <div className="list-item"><strong>Backup created</strong><p>Adrian Reyes · 8:30 AM</p></div>
-            <div className="list-item"><strong>User role changed</strong><p>Karen Mendoza · Yesterday</p></div>
-          </div>
+          {latestBackup ? (
+            <div className="detail-list">
+              <div className="detail-row"><span>Reference</span><strong>{latestBackup.backup_reference}</strong></div>
+              <div className="detail-row"><span>Status</span><strong><StatusBadge value={latestBackup.status} label={latestBackup.status} /></strong></div>
+              <div className="detail-row"><span>Size</span><strong>{latestBackup.sizeLabel}</strong></div>
+              <div className="detail-row"><span>Integrity</span><strong>{latestBackup.integrity_status || "Not recorded"}</strong></div>
+            </div>
+          ) : (
+            <div className="notice">No backup record is currently stored in the application database.</div>
+          )}
         </Panel>
 
         <Panel
-          title="Technical Alerts"
-          subtitle={`${unreadAlerts} unread technical alert${unreadAlerts === 1 ? "" : "s"}.`}
-          className="span-5"
-          actions={<LinkButton href="/system-administrator/notifications">View All</LinkButton>}
+          title="Recent Administrative Activity"
+          subtitle="Latest persisted audit events."
+          className="span-7"
         >
           <div className="list-stack">
-            {technicalAlerts.slice(0, 4).map((item) => (
+            {recentActivity.length ? recentActivity.map((item) => (
               <div className="list-item" key={item.id}>
-                <div className="list-item-header">
-                  <strong>{item.title}</strong>
-                  <StatusBadge value={item.read ? "READ" : "UNREAD"} label={item.read ? "Read" : "Unread"} />
-                </div>
-                <p>{item.date} · {item.category}</p>
+                <strong>{item.action}</strong>
+                <p>{item.occurredAtLabel} · {item.module} · {item.actor_label || "System"}</p>
               </div>
-            ))}
+            )) : <div className="notice">No audit activity has been recorded.</div>}
           </div>
         </Panel>
 
-        <Panel title="Quick Actions" subtitle="Only high value administrative actions are surfaced here." className="span-7">
+        <Panel title="Quick Actions" subtitle="Open the owning technical module." className="span-5">
           <div className="action-row">
-            <Button onClick={() => router.push("/system-administrator/users-access")}>Create User Account</Button>
-            <Button variant="secondary" onClick={() => router.push("/system-administrator/system-integration")}>Review Failed Requests</Button>
-            <Button variant="secondary" onClick={() => router.push("/system-administrator/system-administration")}>Backup & Recovery</Button>
-            <Button variant="secondary" onClick={() => router.push("/system-administrator/audit-monitoring")}>Audit & System Health</Button>
+            <Button onClick={() => router.push("/system-administrator/users-access")}>
+              Users & Access
+            </Button>
+            <Button variant="secondary" onClick={() => router.push("/system-administrator/system-integration")}>
+              System Integration
+            </Button>
+            <Button variant="secondary" onClick={() => router.push("/system-administrator/system-administration")}>
+              System Administration
+            </Button>
+            <Button variant="secondary" onClick={() => router.push("/system-administrator/audit-monitoring")}>
+              Audit & Monitoring
+            </Button>
           </div>
         </Panel>
       </div>

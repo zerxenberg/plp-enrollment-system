@@ -27,8 +27,8 @@ export default function LoginPortal() {
         </div>
 
         <LoginForm
-          identityLabel="University ID Number or Registered Email"
-          identityPlaceholder="Enter your University ID number or registered email"
+          identityLabel="Registered Email"
+          identityPlaceholder="Enter your registered PLP email"
           submitLabel="Login"
         />
 

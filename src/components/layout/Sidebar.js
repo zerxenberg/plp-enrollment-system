@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import AppIcon from "@/components/ui/AppIcon";
 import NavigationItem from "./NavigationItem";
 import { clearDemoSession } from "@/lib/auth/demo-auth";
+import { createClient } from "@/lib/supabase/client";
 
 export default function Sidebar({ role, meta, user, open, onClose }) {
   const pathname = usePathname();
@@ -39,9 +40,19 @@ export default function Sidebar({ role, meta, user, open, onClose }) {
     return () => document.removeEventListener("keydown", handleKey);
   }, [open, onClose]);
 
-  function logout() {
+  async function logout() {
+    const supabase = createClient();
+
+    // Record the real logout event before ending the authenticated session.
+    await supabase.rpc("record_own_auth_event", { p_event: "LOGOUT" });
+    await supabase.auth.signOut({ scope: "local" });
+
+    // Still required temporarily by the other three role portals while their
+    // domain data remains on the compatibility layer.
     clearDemoSession();
+
     router.replace("/");
+    router.refresh();
   }
 
   return (
