@@ -7,6 +7,7 @@ import {
   SearchControl, StatusBadge, TableActionButton, TableActions,
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
+import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { getTrackCode } from "@/features/block-planning/block-planning-seed";
 import { Details, Feedback, Metric } from "@/components/registrar/RegistrarShared";
 
@@ -43,6 +44,9 @@ function MeetingSubject({ item, classes, subjects }) {
 }
 
 export default function AcademicCoordinatorSectionsSchedules() {
+  const liveData = useLiveAcademicCoordinator();
+  const isLive = Boolean(liveData);
+  const isSyntheticDemo = Boolean(liveData?.isSyntheticDemo);
   const query = useSearchParams();
   const {
     blockPlanning, academicCoordinatorData,
@@ -81,6 +85,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const [professorSearch, setProfessorSearch] = useState("");
   const [transferId, setTransferId] = useState("");
   const [destinationId, setDestinationId] = useState("");
+  const [transferReason, setTransferReason] = useState("");
   const [feedback, setFeedback] = useState(null);
   const [formError, setFormError] = useState("");
 
@@ -115,10 +120,11 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const chosenClasses = classes.filter((item) => item.sectionId === chosen?.id);
   const meetingClass = classes.find((item) => item.id === meetingForm.subjectClassId);
   const qualifiedProfessors = professors.filter((item) => item.status === "ACTIVE" &&
-    item.qualifiedSubjectCodes?.includes(meetingClass?.subjectCode) &&
+    (isLive && !isSyntheticDemo || item.qualifiedSubjectCodes?.includes(meetingClass?.subjectCode)) &&
     item.name.toLowerCase().includes(professorSearch.toLowerCase()));
-  const matchingRooms = rooms.filter((item) => item.status === "AVAILABLE" && item.capacity >= Number(chosen?.capacity || 0)
-    && item.types?.includes(meetingClass?.roomType));
+  const matchingRooms = rooms.filter((item) => item.status === "AVAILABLE" &&
+    (isLive && !isSyntheticDemo || item.capacity >= Number(chosen?.capacity || 0) &&
+    item.types?.includes(meetingClass?.roomType)));
   const chosenMeetings = meetings.filter((item) => chosenClasses.some((entry) => entry.id === item.subjectClassId))
     .sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || String(a.start).localeCompare(String(b.start)));
   const formCurricula = curricula.filter((item) => (item.program || item.programCode) === sectionForm.programCode);
@@ -147,7 +153,8 @@ export default function AcademicCoordinatorSectionsSchedules() {
     && !confirmedRecord(item) && count(item.id) < Number(item.capacity)) : [];
 
   function close() { setDialog(""); setFormError(""); }
-  function result(response, fallback) {
+  async function result(response, fallback) {
+    response = await response;
     const success = Boolean(response?.ok);
     const message = response?.message || (success ? fallback : "Unable to complete this action.");
     setFeedback({ message, warning: !success });
@@ -222,6 +229,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
   function openTransfer(studentId) {
     setTransferId(studentId);
     setDestinationId("");
+    setTransferReason("");
     setFormError("");
     setDialog("transfer");
   }
@@ -231,7 +239,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
     <div className="block-planning">
       <PageHeader title="Sections & Schedules" description="Plan block sections, student assignments, subject classes and weekly meeting times across academic terms." />
       <InternalTabs items={TABS} selected={tab} onSelect={(value) => { setTab(value); close(); setFeedback(null); }} label="Sections and class schedule navigation" panelCard>
-        <p className="portal-demo-caption block-note"><strong>Demo Planning</strong> · Schedules and assignments remain proposals until approved through the official enrollment workflow.</p>
+      <p className="portal-demo-caption block-note"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Planning (Read Only)" : isLive ? "Live Academic Planning" : "Demo Planning"}</strong> · Schedules and proposed assignments are not official until authorized enrollment processing.</p>
         {feedback && <Feedback message={feedback.message} warning={feedback.warning} />}
         <div className="toolbar block-filters">
           <SearchControl value={search} onChange={setSearch} label="Search block sections" placeholder="Search block, program or major" />
@@ -252,13 +260,13 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <Metric label="Block Sections" value={filtered.length} />
             <Metric label="Planned Capacity" value={filtered.reduce((sum, item) => sum + Number(item.capacity), 0)} />
             <Metric label="Proposed Assignments" value={filtered.reduce((sum, item) => sum + countStatus(item.id, "PROPOSED"), 0)} />
-            <Metric label="Confirmed Assignments" value={filtered.reduce((sum, item) => sum + countStatus(item.id, "CONFIRMED"), 0)} />
+            <Metric label="Confirmed Assignments" value={isLive && !isSyntheticDemo ? "Not verified" : filtered.reduce((sum, item) => sum + countStatus(item.id, "CONFIRMED"), 0)} />
             <Metric label="Available Places" value={filtered.reduce((sum, item) => sum + Math.max(0, Number(item.capacity) - count(item.id)), 0)} />
             <Metric label="Full Sections" value={filtered.filter((item) => occupancyStatus(item) === "FULL").length} />
             <Metric label="Needs Attention" value={filtered.filter((item) => occupancyStatus(item) === "NEAR_FULL").length} hint="At least 90% occupied" />
           </div>
           <div className="section-header block-heading"><h2>Block Section Management</h2>
-            <div className="action-row"><Button variant="secondary" onClick={() => setDialog("reset")}>Reset Demo Planning</Button>
+            <div className="action-row">{!isLive && <Button variant="secondary" onClick={() => setDialog("reset")}>Reset Demo Planning</Button>}
               <Button onClick={() => openSection()}>Create Block Section</Button></div></div>
           <div className="block-section-table">
             <DataTable rowKey="id" rows={filtered} emptyMessage="No block sections match your filters." columns={[
@@ -493,12 +501,13 @@ export default function AcademicCoordinatorSectionsSchedules() {
         footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button type="submit" form="block-transfer-form">Transfer</Button></>}>
         <form id="block-transfer-form" className="form-grid" onSubmit={(event) => {
           event.preventDefault();
-          result(transferBlockStudent({ studentId: transferId, fromSectionId: sectionId, toSectionId: destinationId }), "Proposed transfer saved.");
+          result(transferBlockStudent({ studentId: transferId, fromSectionId: sectionId, toSectionId: destinationId, reason: transferReason }), "Proposed transfer saved.");
         }}>
           <Field label="Student"><SelectField required placeholder="Select student" value={transferId} onChange={setTransferId}
             choices={options(roster, (item) => item.studentId, (item) => nameOf(studentOf(item)) + " · " + studentOf(item)?.studentNumber)} /></Field>
           <Field label="Destination Block"><SelectField required placeholder="Select destination" value={destinationId} onChange={setDestinationId}
             choices={options(destinations, (item) => item.id, (item) => item.code + " · " + (Number(item.capacity) - count(item.id)) + " spaces")} /></Field>
+          {isLive && <Field label="Transfer Reason"><textarea required value={transferReason} onChange={(event) => setTransferReason(event.target.value)} placeholder="Enter the academic or scheduling reason" /></Field>}
           <p className="academic-helper block-form-note">Available destinations share the same program, track, year and academic term, with space for the student.</p>
           {formError && <p className="block-error" role="alert">{formError}</p>}
         </form>

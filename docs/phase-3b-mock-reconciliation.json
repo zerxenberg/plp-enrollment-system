@@ -1,0 +1,168 @@
+{
+  "classification": "SYNTHETIC_DEVELOPMENT_ONLY",
+  "sourceSha256": "579d74f572f45ab77989ddb3f706ff054ec82b60e59c8de88b1e6f437cd94f8c",
+  "sourceTotal": 6530,
+  "groups": {
+    "sourceCatalog.subjects": 7,
+    "sourceCatalog.sections": 9,
+    "sourceCatalog.programs": 4,
+    "academicCoordinatorCatalog.subjects": 403,
+    "academicCoordinatorCatalog.sections": 9,
+    "academicCoordinatorCatalog.programs": 11,
+    "academicCoordinatorCatalog.departments": 7,
+    "academicCoordinatorCurricula": 16,
+    "blockPlanning.terms": 2,
+    "blockPlanning.colleges": 7,
+    "blockPlanning.programs": 11,
+    "blockPlanning.curricula": 16,
+    "blockPlanning.subjects": 403,
+    "blockPlanning.blockSections": 136,
+    "blockPlanning.students": 2128,
+    "blockPlanning.assignments": 2128,
+    "blockPlanning.subjectClasses": 680,
+    "blockPlanning.classMeetings": 342,
+    "blockPlanning.professors": 136,
+    "blockPlanning.rooms": 75,
+    "blockPlanning.history": 0
+  },
+  "relations": [
+    {
+      "group": "blockPlanning.assignments",
+      "field": "studentId",
+      "target": "blockPlanning.students",
+      "total": 2128,
+      "resolved": 2128,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.assignments",
+      "field": "sectionId",
+      "target": "blockPlanning.blockSections",
+      "total": 2128,
+      "resolved": 2128,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.subjectClasses",
+      "field": "sectionId",
+      "target": "blockPlanning.blockSections",
+      "total": 680,
+      "resolved": 680,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.subjectClasses",
+      "field": "subjectCode",
+      "target": "blockPlanning.subjects",
+      "total": 680,
+      "resolved": 680,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.subjectClasses",
+      "field": "professorId",
+      "target": "blockPlanning.professors",
+      "total": 340,
+      "resolved": 340,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.classMeetings",
+      "field": "subjectClassId",
+      "target": "blockPlanning.subjectClasses",
+      "total": 342,
+      "resolved": 342,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.classMeetings",
+      "field": "roomId",
+      "target": "blockPlanning.rooms",
+      "total": 342,
+      "resolved": 342,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.blockSections",
+      "field": "termId",
+      "target": "blockPlanning.terms",
+      "total": 136,
+      "resolved": 136,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.blockSections",
+      "field": "programCode",
+      "target": "blockPlanning.programs",
+      "total": 136,
+      "resolved": 136,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.blockSections",
+      "field": "curriculumId",
+      "target": "blockPlanning.curricula",
+      "total": 136,
+      "resolved": 136,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.students",
+      "field": "programCode",
+      "target": "blockPlanning.programs",
+      "total": 2128,
+      "resolved": 2128,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.students",
+      "field": "curriculumId",
+      "target": "blockPlanning.curricula",
+      "total": 2128,
+      "resolved": 2128,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "blockPlanning.curricula",
+      "field": "program",
+      "target": "blockPlanning.programs",
+      "total": 16,
+      "resolved": 16,
+      "missing": 0,
+      "examples": []
+    },
+    {
+      "group": "academicCoordinatorCurricula",
+      "field": "program",
+      "target": "academicCoordinatorCatalog.programs",
+      "total": 16,
+      "resolved": 16,
+      "missing": 0,
+      "examples": []
+    }
+  ],
+  "missingRelationships": 0,
+  "sourceLimitations": {
+    "blockPlanning.history": "Zero pristine records",
+    "academicCoordinatorActivityExamples": "Two hardcoded academic history examples exist in DemoDataProvider.js, but were not in the Phase 3A archive",
+    "registrarAcademicReviewExample": [
+      {
+        "reference": "ENR-2026-0206",
+        "status": "NEEDS_ACADEMIC_REVIEW"
+      }
+    ],
+    "reportTypes": "Five calculated reports, not independently stored mock report rows"
+  }
+}

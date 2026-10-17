@@ -4,10 +4,13 @@
 import { useRouter } from "next/navigation";
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
+import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
 import { getBlockOccupancy } from "@/features/block-planning/block-planning-service";
 
 export default function AcademicCoordinatorDashboard() {
+  const liveData = useLiveAcademicCoordinator();
+  const isLive = Boolean(liveData);
   const router = useRouter();
   const { catalog, registrar, student, academicCoordinatorData, blockPlanning, notifications } = useDemoData();
 
@@ -16,7 +19,8 @@ export default function AcademicCoordinatorDashboard() {
   const activeSubjects = catalog.subjects.filter((item) => item.status !== "Inactive").length;
   const prerequisiteRules = catalog.subjects.reduce((sum, item) => sum + (item.prerequisites?.length || 0), 0);
   const planningSections = blockPlanning?.blockSections || [];
-  const activePlanningTerm = blockPlanning?.terms?.find((item) => item.status === "CURRENT");
+  const activePlanningTerm = blockPlanning?.terms?.find((item) =>
+    isLive && !liveData?.isSyntheticDemo ? item.status === "Open" : item.status === "CURRENT");
   const currentSections = planningSections.filter((item) => item.termId === activePlanningTerm?.id);
   const fullSections = currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "FULL");
   const nearSections = currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "NEAR_FULL");

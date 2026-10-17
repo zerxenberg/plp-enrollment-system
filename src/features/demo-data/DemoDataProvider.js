@@ -9,6 +9,7 @@ import systemAdministratorSource from "@/data/mock/system-administrators.json";
 import academicCoordinatorSource from "@/data/mock/academic-coordinators.json";
 import { validateStudentEnrollment } from "@/lib/validation/enrollment-validation";
 import { getDemoSession } from "@/lib/auth/demo-auth";
+import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { withRepresentativeDemoStudents } from "@/features/students/mock-student-fixtures";
 import {
   buildMockAcademicReferences, DEFAULT_DEMO_FEE_PER_UNIT,
@@ -1798,6 +1799,7 @@ export function DemoDataProvider({ children }) {
 
 export function useDemoData() {
   const context = useContext(DemoDataContext);
+  const live = useLiveAcademicCoordinator();
   if (!context) throw new Error("useDemoData must be used inside DemoDataProvider.");
-  return context;
+  return live ? { ...context, ...live } : context;
 }

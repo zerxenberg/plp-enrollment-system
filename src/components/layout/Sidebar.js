@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import AppIcon from "@/components/ui/AppIcon";
 import NavigationItem from "./NavigationItem";
-import { clearDemoSession } from "@/lib/auth/demo-auth";
+import { signOutLive } from "@/lib/auth/live-auth";
 
 export default function Sidebar({ role, meta, user, open, onClose }) {
   const pathname = usePathname();
@@ -39,9 +39,13 @@ export default function Sidebar({ role, meta, user, open, onClose }) {
     return () => document.removeEventListener("keydown", handleKey);
   }, [open, onClose]);
 
-  function logout() {
-    clearDemoSession();
-    router.replace("/");
+  async function logout() {
+    try {
+      await signOutLive();
+      router.replace("/");
+    } catch {
+      // Never claim sign-out or redirect while the server session may remain valid.
+    }
   }
 
   return (

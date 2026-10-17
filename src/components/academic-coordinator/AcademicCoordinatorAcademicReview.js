@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/PortalUI";
 import { Tabs, Details, Feedback, Info } from "@/components/registrar/RegistrarShared";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
+import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import {
   ACADEMIC_REVIEW_STATUS,
   canDecideAcademicReview,
@@ -91,6 +92,7 @@ function getStatusDisplay(value) {
 }
 
 export default function AcademicCoordinatorAcademicReview() {
+  const isLive = Boolean(useLiveAcademicCoordinator());
   const { registrar, catalog, decideAcademicReview } = useDemoData();
   const [view, setView] = useState("pending");
   const [search, setSearch] = useState("");
@@ -234,7 +236,7 @@ export default function AcademicCoordinatorAcademicReview() {
     setStep("confirm");
   }
 
-  function confirmDecision() {
+  async function confirmDecision() {
     if (inFlightRef.current) return;
     if (!current || !isEditable || !decision || !reason.trim()) {
       setValidationError("This case is no longer ready for this decision. Review its current status and reason.");
@@ -243,7 +245,7 @@ export default function AcademicCoordinatorAcademicReview() {
     }
 
     inFlightRef.current = true;
-    const result = decideAcademicReview(current.reference, { decision, note: reason.trim() });
+    const result = await decideAcademicReview(current.reference, { decision, note: reason.trim() });
     if (result.ok) {
       setFeedback({
         message: `Decision recorded for ${toCaseReference(current)}. The enrollment is now ${result.nextStatus.replaceAll("_", " ")}; Registrar confirmation remains separate.`,
@@ -270,7 +272,7 @@ export default function AcademicCoordinatorAcademicReview() {
         onSelect={changeView}
         label="Academic review sections"
         title="Academic Review Queue"
-        subtitle="Decisions update this demo session only. Official enrollment confirmation belongs to the Registrar."
+        subtitle={isLive ? "Decisions are recorded in the academic database. Official enrollment confirmation belongs to the Registrar." : "Decisions update this demo session only. Official enrollment confirmation belongs to the Registrar."}
         items={[
           { value: "pending", label: `Pending Reviews (${pendingCases.length})` },
           { value: "resolved", label: `Resolved Reviews (${resolvedCases.length})` },

@@ -1,0 +1,124 @@
+{
+  "classification": "SYNTHETIC DEMONSTRATION ONLY. Never import into official university records.",
+  "source": "src/features/demo-data/DemoDataProvider.js:65-114",
+  "notes": "Fields reproduce default coordinator legacyCurricula, prerequisiteRules, offerings and history; catalog subject names and term/year placements are from src/data/mock/catalog.json. This supplement completes the pristine-code fixture inventory alongside phase-3a-fixture-manifest.json.",
+  "legacyCurricula": [
+    {
+      "id": "CUR-BSBA-2024",
+      "version": "BSBA Curriculum 2024",
+      "program": "BSBA",
+      "effectiveAcademicYear": "2024 to 2025",
+      "status": "Active",
+      "assignedSubjects": 0
+    }
+  ],
+  "prerequisiteRules": [],
+  "offerings": [
+    {
+      "id": "OFF-IT301",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "IT301",
+      "subjectName": "Data Structures and Algorithms",
+      "yearLevel": "3rd Year",
+      "semester": "First Semester",
+      "status": "Active",
+      "plannedSections": 2
+    },
+    {
+      "id": "OFF-IT302",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "IT302",
+      "subjectName": "Web Systems Development",
+      "yearLevel": "3rd Year",
+      "semester": "First Semester",
+      "status": "Active",
+      "plannedSections": 2
+    },
+    {
+      "id": "OFF-IT303",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "IT303",
+      "subjectName": "Database Management Systems",
+      "yearLevel": "3rd Year",
+      "semester": "First Semester",
+      "status": "Active",
+      "plannedSections": 2
+    },
+    {
+      "id": "OFF-IT304",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "IT304",
+      "subjectName": "Networks and Communications",
+      "yearLevel": "3rd Year",
+      "semester": "First Semester",
+      "status": "Active",
+      "plannedSections": 2
+    },
+    {
+      "id": "OFF-IT204",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "IT204",
+      "subjectName": "Object Oriented Programming",
+      "yearLevel": "2nd Year",
+      "semester": "Second Semester",
+      "status": "Active",
+      "plannedSections": 1
+    },
+    {
+      "id": "OFF-GE101",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "GE101",
+      "subjectName": "Purposive Communication",
+      "yearLevel": "1st Year",
+      "semester": "First Semester",
+      "status": "Active",
+      "plannedSections": 1
+    },
+    {
+      "id": "OFF-IT305",
+      "academicTerm": "First Semester 2026 to 2027",
+      "program": "BSIT",
+      "curriculum": "BSIT Curriculum 2024",
+      "subjectCode": "IT305",
+      "subjectName": "Advanced Programming",
+      "yearLevel": "3rd Year",
+      "semester": "First Semester",
+      "status": "Planned",
+      "plannedSections": 1
+    }
+  ],
+  "history": [
+    {
+      "id": "ACH-001",
+      "dateTime": "Oct 7, 2026 · 4:40 PM",
+      "coordinator": "Elena Cruz",
+      "module": "Sections & Schedules",
+      "record": "BSIT-3A",
+      "action": "Section capacity reviewed",
+      "previousValue": "31 confirmed",
+      "newValue": "31 confirmed"
+    },
+    {
+      "id": "ACH-002",
+      "dateTime": "Oct 6, 2026 · 2:15 PM",
+      "coordinator": "Elena Cruz",
+      "module": "Academic Setup",
+      "record": "IT305",
+      "action": "Prerequisite reviewed",
+      "previousValue": "IT204",
+      "newValue": "IT204"
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import { Geist } from "next/font/google";
 import { DemoDataProvider } from "@/features/demo-data/DemoDataProvider";
+import { LiveAcademicCoordinatorProvider } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,7 +20,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" className={geistSans.variable}>
-      <body><DemoDataProvider>{children}</DemoDataProvider></body>
+      <body><DemoDataProvider><LiveAcademicCoordinatorProvider>{children}</LiveAcademicCoordinatorProvider></DemoDataProvider></body>
     </html>
   );
 }

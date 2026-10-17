@@ -7,6 +7,7 @@ import {
   SearchControl, StatusBadge, TableActionButton, TableActions, TablePagination,
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
+import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { Details, Feedback, LinkButton, Metric } from "@/components/registrar/RegistrarShared";
 import {
   ACADEMIC_REPORT_TYPES, buildAcademicReviewSummary, buildCapacityRows,
@@ -27,7 +28,7 @@ const FIELDS = {
   section: "Block Section", academicTerm: "Academic Term", capacity: "Capacity",
   proposed: "Proposed", confirmed: "Confirmed", available: "Available",
   capacityStatus: "Capacity Status", scheduleStatus: "Schedule Status",
-  registrarRequests: "Registrar Requests (Demo)", registrarConfirmed: "Registrar Confirmed (Demo)", sections: "Blocks",
+  registrarRequests: "Registrar Requests", registrarConfirmed: "Registrar Confirmed", sections: "Blocks",
   day: "Day", startTime: "Start", endTime: "End", dayTime: "Day and Time", room: "Room",
   professor: "Professor", conflictStatus: "Conflict Status", conflictDetails: "Conflict Details",
   category: "Exception Category", pending: "Pending", approved: "Approved",
@@ -115,6 +116,9 @@ const historyRow = (row, index, planning = false) => ({
 });
 
 export default function AcademicCoordinatorReports() {
+  const liveData = useLiveAcademicCoordinator();
+  const isLive = Boolean(liveData);
+  const isSyntheticDemo = Boolean(liveData?.isSyntheticDemo);
   const { catalog, registrar, academicCoordinatorData, blockPlanning } = useDemoData();
   const [tab, setTab] = useState("reports");
   const [reportType, setReportType] = useState(ACADEMIC_REPORT_TYPES[0]);
@@ -325,7 +329,7 @@ export default function AcademicCoordinatorReports() {
                   ? " · " + (breakdown === "curriculum" ? "Curriculum Versions" : "Programs")
                   : reportType === ACADEMIC_REPORT_TYPES[2]
                     ? " · " + (breakdown === "section" ? "By Block Section" : "By Subject") : ""}</h2>
-                  <p className="portal-demo-caption"><strong>Demo Data</strong></p>
+          <p className="portal-demo-caption"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Data (Read Only)" : isLive ? "Live Academic Data" : "Demo Data"}</strong></p>
                   <p>Program: {program === "ALL" ? "All Programs" : program}
                     {needsTerm ? " · Term: " + (term === "ALL" ? "All Terms" : terms.find((item) => item.id === term)?.label || term) : ""}
                     {needsSubject && subject !== "ALL" ? " · Subject: " + subject : ""} · {filteredRows.length} records</p></div>
@@ -333,7 +337,7 @@ export default function AcademicCoordinatorReports() {
               {metrics.length > 0 && <div className="stats-grid" style={{ marginBottom: 16 }}>
                 {metrics.map((metric) => <Metric key={metric.label} label={metric.label} value={metric.value} />)}
               </div>}
-              {reportType === ACADEMIC_REPORT_TYPES[2] && <p className="academic-helper">Available seats = planned capacity minus proposed and confirmed block assignments. Registrar requests and confirmed enrollments come from a separate demo enrollment dataset and are not counted as block assignments or tied to the selected planning term.</p>}
+              {reportType === ACADEMIC_REPORT_TYPES[2] && <p className="academic-helper">{isLive ? "Proposed block rosters are separate from official Registrar confirmed subject registrations. Confirmed block membership requires independently verified allocation evidence." : "Available seats = planned capacity minus proposed and confirmed block assignments. Registrar requests and confirmed enrollments come from a separate demo enrollment dataset and are not counted as block assignments or tied to the selected planning term."}</p>}
               {reportType === ACADEMIC_REPORT_TYPES[3] && <p className="academic-helper">Published means the Academic Coordinator published a schedule proposal. Conflicts reflect overlapping room, instructor, or block meetings and recorded resource unavailability.</p>}
               {reportType === ACADEMIC_REPORT_TYPES[4] && <p className="academic-helper">Returned for clarification remains pending until a final academic decision. Returned is included in Pending and is not added again to Total Cases. Applied appears only when explicitly recorded.</p>}
               <DataTable rowKey={(row) => row.id || [row.program, row.curriculum, row.subject, row.section, row.academicTerm, row.category].join(":")}

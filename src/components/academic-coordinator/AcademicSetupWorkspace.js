@@ -6,6 +6,7 @@ import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, Sta
 import AppIcon from "@/components/ui/AppIcon";
 import { Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
+import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { DEPARTMENTS, YEARS, SEMESTERS, MOCK_ACADEMIC_YEARS, formatDemoPeso, summarizeCurriculum, getAcademicSubjectOptions, getPrerequisiteCandidates } from "@/features/academic/academic-reference";
 
 const VIEWS = [
@@ -51,6 +52,9 @@ const CONFIRMABLE_CURRICULUM_ACTIONS = {
 };
 
 export default function AcademicSetupWorkspace() {
+  const liveData = useLiveAcademicCoordinator();
+  const isLive = Boolean(liveData);
+  const isSyntheticDemo = Boolean(liveData?.isSyntheticDemo);
   const params = useSearchParams();
   const {
     catalog, academicCoordinatorData,
@@ -163,7 +167,7 @@ export default function AcademicSetupWorkspace() {
 
   function report(result, successText) {
     const ok = result === true || result?.ok === true;
-    setFeedback({ ok, text: ok ? successText : result?.errors?.length ? result.errors.join(" · ") : result?.message || "The demo operation could not be saved." });
+    setFeedback({ ok, text: ok ? result?.message || successText : result?.errors?.length ? result.errors.join(" · ") : result?.message || "The academic operation could not be saved." });
     return ok;
   }
   function changeDepartment(value) {
@@ -218,25 +222,25 @@ export default function AcademicSetupWorkspace() {
     setCurriculumForm(form); setActiveSemester(semesterSections[0].key);
     setSubjectSearch({}); setChosenSubjects({}); setDialog(readOnly ? "curriculum-view" : "curriculum");
   }
-  function saveProgram(event) {
+  async function saveProgram(event) {
     event.preventDefault();
     const payload = { ...programForm, majors: majorText.split(",").map((item) => item.trim()).filter(Boolean) };
-    const result = selected
+    const result = await (selected
       ? updateAcademicProgram(selected.code, payload)
-      : createAcademicProgram(payload);
-    if (report(result, `Demo program ${selected ? "updated" : "created"} successfully.`)) { setDialog(""); setSelected(null); }
+      : createAcademicProgram(payload));
+    if (report(result, `Program ${selected ? "updated" : "created"} successfully.`)) { setDialog(""); setSelected(null); }
   }
-  function saveSubject(event) {
+  async function saveSubject(event) {
     event.preventDefault();
     const payload = { ...subjectForm, program: subjectForm.programs[0] };
-    const result = selected ? updateAcademicSubject(selected.code, payload) : createAcademicSubject(payload);
+    const result = await (selected ? updateAcademicSubject(selected.code, payload) : createAcademicSubject(payload));
     if (report(result, `Subject ${selected ? "updated" : "created"} successfully.`)) { setDialog(""); setSelected(null); }
   }
-  function saveCurriculum(event) {
+  async function saveCurriculum(event) {
     event.preventDefault();
-    const result = selected
+    const result = await (selected
       ? updateCurriculumVersion(selected.id, curriculumForm)
-      : createCurriculumVersion(curriculumForm);
+      : createCurriculumVersion(curriculumForm));
     if (report(result, "Curriculum Draft saved with its assigned subjects.")) { setDialog(""); setSelected(null); }
   }
   function addSubjects(section) {
@@ -281,7 +285,7 @@ export default function AcademicSetupWorkspace() {
     setVersionConfirmation(null);
     setVersionActionError("");
   }
-  function confirmVersionAction(action, row) {
+  async function confirmVersionAction(action, row) {
     if (versionBusyRef.current) return;
     const latest = curricula.find((entry) => entry.id === row.id);
     const rule = CONFIRMABLE_CURRICULUM_ACTIONS[action];
@@ -290,7 +294,7 @@ export default function AcademicSetupWorkspace() {
       return;
     }
     if (action === "activate") {
-      const validation = validateCurriculumVersion(latest.id);
+      const validation = await validateCurriculumVersion(latest.id);
       if (!validation?.ok) {
         report(validation, "");
         return;
@@ -323,7 +327,7 @@ export default function AcademicSetupWorkspace() {
       const message = {
         duplicate: `A separate Draft copy of ${row.version} was created.`,
         validate: `${row.version} passed curriculum validation.`,
-        activate: `${row.version} is now Active. Any previous Active version for this program and major is now Inactive.`,
+        activate: isLive ? `${row.version} is now Active. Historical curriculum versions remain unchanged.` : `${row.version} is now Active. Any previous Active version for this program and major is now Inactive.`,
         deactivate: `${row.version} is now Inactive. Its historical assignments remain unchanged.`,
         archive: `${row.version} is now Archived and remains available for historical reference.`,
         restore: `${row.version} is now Inactive and may be validated for future activation.`,
@@ -343,10 +347,10 @@ export default function AcademicSetupWorkspace() {
 
   return (
     <>
-      <PageHeader title="Academic Setup" description="Manage programs, shared subjects and complete curriculum versions. Academic records and fees below are illustrative demo data." />
+      <PageHeader title="Academic Setup" description={isLive ? "Manage registered academic programs, subjects and curriculum versions." : "Manage programs, shared subjects and complete curriculum versions. Academic records and fees below are illustrative demo data."} />
       <div className="academic-setup-tabs">
         <Tabs items={VIEWS} selected={view} onSelect={(value) => { setView(value); resetFilters(); setSelected(null); setFeedback(null); }} label="Academic setup sections" title={VIEWS.find((item) => item.value === view)?.label}>
-          <p className="portal-demo-caption"><strong>Demo Data</strong> · Subjects, curriculum examples and the ₱100 per unit default are illustrative, not official academic or tuition policies.</p>
+          <p className="portal-demo-caption"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Data" : isLive ? "Live Academic Data" : "Demo Data"}</strong> · {isSyntheticDemo ? "Original example records stored in Supabase. Read only; never official student, curriculum or enrollment records." : isLive ? "Records are retrieved from Supabase. Tuition estimates are not official." : "Subjects, curriculum examples and the ₱100 per unit default are illustrative, not official academic or tuition policies."}</p>
           {feedback && <Feedback message={feedback.text} warning={!feedback.ok} />}
           <div className="academic-filters">
             <SearchControl label="Search academic records" value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by code, title or version" />
@@ -360,7 +364,7 @@ export default function AcademicSetupWorkspace() {
           </div>
           {view === "programs" && (
             <>
-              <div className="academic-list-heading"><span>{visiblePrograms.length} degree programs</span><Button onClick={() => openProgram()}>Add Demo Program</Button></div>
+              <div className="academic-list-heading"><span>{visiblePrograms.length} degree programs</span><Button onClick={() => openProgram()}>{isLive ? "Add Program" : "Add Demo Program"}</Button></div>
               <DataTable rowKey="code" rows={visiblePrograms} columns={[
                 { key: "department", label: "Department", render: (row) => departments.find((item) => item.id === row.department)?.name || row.department },
                 { key: "code", label: "Code" },
@@ -488,18 +492,18 @@ export default function AcademicSetupWorkspace() {
         </Tabs>
       </div>
 
-      <Modal open={dialog === "program"} title={selected ? "Edit Program" : "Add Demo Program"} onClose={closeDialog} footer={<><Button variant="ghost" onClick={closeDialog}>Cancel</Button><Button type="submit" form="academic-program-form">Save Program</Button></>}>
+      <Modal open={dialog === "program"} title={selected ? "Edit Program" : isLive ? "Add Program" : "Add Demo Program"} onClose={closeDialog} footer={<><Button variant="ghost" onClick={closeDialog}>Cancel</Button><Button type="submit" form="academic-program-form">Save Program</Button></>}>
         <form className="form-grid" id="academic-program-form" onSubmit={saveProgram}>
           <label className="field">College Department<select required value={programForm.department} onChange={(event) => setProgramForm({ ...programForm, department: event.target.value })}>{departments.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
           <label className="field">Program Code<input required disabled={Boolean(selected)} value={programForm.code} onChange={(event) => setProgramForm({ ...programForm, code: event.target.value.toUpperCase() })} /></label>
           <label className="field full">Program Name<input required value={programForm.name} onChange={(event) => setProgramForm({ ...programForm, name: event.target.value })} /></label>
           <label className="field full">Majors or Specializations (comma separated, optional)<input value={majorText} onChange={(event) => setMajorText(event.target.value)} disabled={Boolean(selected?.reference === "Verified Program")} /></label>
           <label className="field">Status<select value={programForm.status} onChange={(event) => setProgramForm({ ...programForm, status: event.target.value })}><option>Active</option><option>Inactive</option></select></label>
-          <p className="notice full">Additional programs created here are demo records. Verified PLP reference programs remain identified in the catalog.</p>
+          <p className="notice full">{isLive ? "Changes require Academic Coordinator authorization and are saved to the academic database." : "Additional programs created here are demo records. Verified PLP reference programs remain identified in the catalog."}</p>
         </form>
       </Modal>
 
-      <Modal open={dialog === "subject"} title={selected ? `Edit Subject · ${selected.code}` : "Add Demo Subject"} onClose={closeDialog} className="academic-setup-wide-modal" footer={<><Button variant="ghost" onClick={closeDialog}>Cancel</Button><Button type="submit" form="academic-subject-form">Save Subject</Button></>}>
+      <Modal open={dialog === "subject"} title={selected ? `Edit Subject · ${selected.code}` : isLive ? "Add Subject" : "Add Demo Subject"} onClose={closeDialog} className="academic-setup-wide-modal" footer={<><Button variant="ghost" onClick={closeDialog}>Cancel</Button><Button type="submit" form="academic-subject-form">Save Subject</Button></>}>
         <form className="academic-editor" id="academic-subject-form" onSubmit={saveSubject}>
           <h3>Subject Information</h3>
           <div className="form-grid">
@@ -528,7 +532,7 @@ export default function AcademicSetupWorkspace() {
           <p className="academic-helper">{subjectForm.prerequisites.length} selected prerequisites: {subjectForm.prerequisites.join(", ") || "None"}. Invalid or circular relationships are checked again when saved.</p>
           <h3>Estimated Tuition From Units</h3>
           <div className="form-grid">
-            <label className="field">Demo Fee Per Unit (₱)<input type="number" min="0" step="0.01" value={subjectForm.feePerUnit} onChange={(event) => setSubjectForm({ ...subjectForm, feePerUnit: Number(event.target.value) })} /></label>
+            <label className="field">{isLive ? "Illustrative Fee Per Unit (₱)" : "Demo Fee Per Unit (₱)"}<input type="number" min="0" step="0.01" disabled={isLive} value={subjectForm.feePerUnit} onChange={(event) => setSubjectForm({ ...subjectForm, feePerUnit: Number(event.target.value) })} /></label>
             <Info label="Calculated Subject Fee" value={formatDemoPeso(Number(subjectForm.units) * Number(subjectForm.feePerUnit))} />
           </div>
         </form>

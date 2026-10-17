@@ -7,7 +7,7 @@ import Sidebar from "./Sidebar";
 import { PortalHeaderContext } from "./PortalHeaderContext";
 import { PORTAL_META } from "@/config/portal-navigation";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { getDemoSession } from "@/lib/auth/demo-auth";
+import { getLiveSession } from "@/lib/auth/live-auth";
 import { LoadingState } from "@/components/ui/PortalUI";
 
 function matchesStaffRecord(record, identifier) {
@@ -31,6 +31,8 @@ export default function PortalLayout({ role, children }) {
   } = useDemoData();
 
   const [ready, setReady] = useState(false);
+  const [authenticatedAccount, setAuthenticatedAccount] = useState(null);
+  const [authError, setAuthError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const meta = PORTAL_META[role];
 
@@ -38,32 +40,31 @@ export default function PortalLayout({ role, children }) {
   const toggleSidebar = useCallback(() => setSidebarOpen((current) => !current), []);
 
   useEffect(() => {
-    const session = getDemoSession();
-
-    if (!session) {
-      router.replace("/");
-      return undefined;
-    }
-
-    if (session.role !== role) {
-      const destination = PORTAL_META[session.role]?.homeHref || "/";
-      router.replace(destination);
-      return undefined;
-    }
-
     let cancelled = false;
-
-    queueMicrotask(() => {
-      if (!cancelled) setReady(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
+    async function verifyPortalAccount() {
+      try {
+        const session = await getLiveSession();
+        if (cancelled) return;
+        if (!session) {
+          router.replace("/");
+          return;
+        }
+        if (session.role !== role) {
+          router.replace(PORTAL_META[session.role]?.homeHref || "/");
+          return;
+        }
+        setAuthenticatedAccount(session);
+        setReady(true);
+      } catch {
+        if (!cancelled) setAuthError("Could not verify this account's portal access.");
+      }
+    }
+    verifyPortalAccount();
+    return () => { cancelled = true; };
   }, [role, router]);
 
   const user = useMemo(() => {
-    const session = getDemoSession();
+    const session = authenticatedAccount;
 
     if (role === "student") {
       return {
@@ -105,7 +106,7 @@ export default function PortalLayout({ role, children }) {
       name: session?.name || "Portal User",
       subtitle: role,
     };
-  }, [academicCoordinators, registrar, role, student, systemAdministrators]);
+  }, [academicCoordinators, authenticatedAccount, registrar, role, student, systemAdministrators]);
 
   if (!meta) {
     return <LoadingState label="Portal configuration is unavailable." />;
@@ -114,7 +115,7 @@ export default function PortalLayout({ role, children }) {
   const term = student.term;
   const roleNotifications = notifications[role] || [];
   if (!ready) {
-    return <LoadingState label="Checking demo session..." />;
+    return <LoadingState label={authError || "Verifying secure portal access..."} />;
   }
 
   return (

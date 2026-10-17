@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppIcon from "@/components/ui/AppIcon";
-import { authenticateDemoAccount, saveDemoSession } from "@/lib/auth/demo-auth";
+import { signInLive } from "@/lib/auth/live-auth";
 import styles from "./auth-portal.module.css";
 
 export default function LoginForm({
@@ -19,6 +19,7 @@ export default function LoginForm({
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   function clearFieldError(field) {
     setStatus("");
@@ -30,7 +31,7 @@ export default function LoginForm({
     });
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const normalizedIdentity = identity.trim();
@@ -56,18 +57,20 @@ export default function LoginForm({
       return;
     }
 
-    const session = authenticateDemoAccount({ identity: normalizedIdentity, password });
-
-    if (!session) {
-      setStatus("The ID number, registered email, or password is incorrect for this demo.");
+    setSubmitting(true);
+    let result;
+    try {
+      result = await signInLive({ identity: normalizedIdentity, password });
+    } catch {
+      result = { ok: false, message: "Authentication is temporarily unavailable." };
+    } finally {
+      setSubmitting(false);
+    }
+    if (!result.ok) {
+      setStatus(result.message);
       return;
     }
-
-
-    if (!saveDemoSession(session)) {
-      setStatus("This demo account could not be signed in. Please try again.");
-      return;
-    }
+    const session = result.session;
     const portalLabels = {
       student: "Student",
       registrar: "Registrar",
@@ -80,12 +83,12 @@ export default function LoginForm({
 
   function handleForgotPassword() {
     setStatus(
-      "Password recovery will be connected when Supabase Authentication is configured.",
+      "Contact the System Administrator for an authorized password recovery request.",
     );
   }
 
   return (
-    <form className={styles.loginForm} onSubmit={handleSubmit} autoComplete="off" noValidate>
+    <form className={styles.loginForm} onSubmit={handleSubmit} autoComplete="on" noValidate>
       <div className={styles.fieldGroup}>
         <label className={styles.fieldLabel} htmlFor="login-identity">
           {identityLabel}
@@ -97,7 +100,7 @@ export default function LoginForm({
             id="login-identity"
             name="login-identity"
             type="text"
-            autoComplete="off"
+            autoComplete="username"
             required
             value={identity}
             placeholder={identityPlaceholder}
@@ -129,7 +132,7 @@ export default function LoginForm({
             id="login-password"
             name="login-password"
             type={showPassword ? "text" : "password"}
-            autoComplete="off"
+            autoComplete="current-password"
             required
             value={password}
             placeholder="Enter your password"
@@ -163,9 +166,9 @@ export default function LoginForm({
         Forgot Password?
       </button>
 
-      <button className={styles.primaryButton} type="submit">
+      <button className={styles.primaryButton} type="submit" disabled={submitting}>
         <AppIcon name="lock" className={styles.buttonIcon} />
-        <span>{submitLabel}</span>
+        <span>{submitting ? "Checking account..." : submitLabel}</span>
       </button>
 
       <p className={styles.formStatus} role="status" aria-live="polite">
