@@ -231,7 +231,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
     <div className="block-planning">
       <PageHeader title="Sections & Schedules" description="Plan block sections, student assignments, subject classes and weekly meeting times across academic terms." />
       <InternalTabs items={TABS} selected={tab} onSelect={(value) => { setTab(value); close(); setFeedback(null); }} label="Sections and class schedule navigation" panelCard>
-        <p className="academic-demo-note block-note">Academic Coordinator demo planning. Assignments and schedules are proposed until processed through their official workflows. Registrar confirmation is the authority for enrolled students.</p>
+        <p className="portal-demo-caption block-note"><strong>Demo Planning</strong> · Schedules and assignments remain proposals until approved through the official enrollment workflow.</p>
         {feedback && <Feedback message={feedback.message} warning={feedback.warning} />}
         <div className="toolbar block-filters">
           <SearchControl value={search} onChange={setSearch} label="Search block sections" placeholder="Search block, program or major" />
@@ -257,32 +257,47 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <Metric label="Full Sections" value={filtered.filter((item) => occupancyStatus(item) === "FULL").length} />
             <Metric label="Needs Attention" value={filtered.filter((item) => occupancyStatus(item) === "NEAR_FULL").length} hint="At least 90% occupied" />
           </div>
-          <div className="section-header block-heading"><div><h2>Block Section Management</h2><p>Review enrollment demand, create blocks and manage proposed rosters.</p></div>
+          <div className="section-header block-heading"><h2>Block Section Management</h2>
             <div className="action-row"><Button variant="secondary" onClick={() => setDialog("reset")}>Reset Demo Planning</Button>
               <Button onClick={() => openSection()}>Create Block Section</Button></div></div>
-          <DataTable rowKey="id" rows={filtered} emptyMessage="No block sections match your filters." columns={[
-            { key: "code", label: "Block Code" },
-            { key: "college", label: "College", render: (item) => colleges.find((record) => record.id === collegeId(item))?.name || collegeId(item) || "Unknown" },
-            { key: "programCode", label: "Program & Track", render: (item) => item.programCode + (item.major ? " · " + item.major : "") },
-            { key: "yearLevel", label: "Year", render: (item) => "Year " + year(item.yearLevel) },
-            { key: "termId", label: "Academic Term", render: termLabel },
-            { key: "curriculum", label: "Curriculum", render: (item) => curriculumOf(item)?.version || curriculumOf(item)?.name || "Not assigned" },
-            { key: "capacity", label: "Capacity" },
-            { key: "assigned", label: "Proposed", render: (item) => countStatus(item.id, "PROPOSED") },
-            { key: "confirmed", label: "Confirmed", render: (item) => countStatus(item.id, "CONFIRMED") },
-            { key: "remaining", label: "Available", render: (item) => Math.max(0, Number(item.capacity) - count(item.id)) },
-            { key: "occupancy", label: "Capacity Status", render: (item) => <StatusBadge value={occupancyStatus(item) === "FULL" ? "FULL" : occupancyStatus(item) === "NEAR_FULL" ? "NEAR_CAPACITY" : "OPEN"}
-              label={occupancyStatus(item) === "FULL" ? "Full" : occupancyStatus(item) === "NEAR_FULL" ? "Near Capacity" : "Available"} /> },
-            { key: "status", label: "Status", render: (item) => <StatusBadge value={item.status} label={item.status === "DRAFT" ? "Draft" : item.status === "PUBLISHED" ? "Published" : item.status} /> },
-            { key: "actions", label: "Actions", render: (item) => <TableActions>
-              <TableActionButton tone="view" onClick={() => showSection(item)}>Details</TableActionButton>
-              <TableActionButton tone="edit" disabled={locked(item)} onClick={() => openSection(item)}>Edit</TableActionButton>
-              <TableActionButton tone="review" disabled={confirmedRecord(item)} onClick={() => showSection(item, "roster")}>Roster</TableActionButton>
-              <TableActionButton tone="review" disabled={confirmedRecord(item) || countStatus(item.id, "PROPOSED") === 0}
-                onClick={() => { setSectionId(item.id); openTransfer(""); }}>Transfer</TableActionButton>
-              <TableActionButton tone="schedule" onClick={() => openSchedule(item)}>Schedule</TableActionButton>
-            </TableActions> },
-          ]} />
+          <div className="block-section-table">
+            <DataTable rowKey="id" rows={filtered} emptyMessage="No block sections match your filters." columns={[
+              { key: "identity", label: "Block Identity", render: (item) => <div className="block-section-identity">
+                <strong className="block-section-code">{item.code}</strong>
+                <div className="block-section-identity-detail">
+                  <span className="block-section-identity-label">College</span>
+                  <span className="block-section-identity-value">{colleges.find((record) => record.id === collegeId(item))?.name || collegeId(item) || "Unknown"}</span>
+                </div>
+                <div className="block-section-identity-detail">
+                  <span className="block-section-identity-label">Program &amp; Track</span>
+                  <span className="block-section-identity-value">{item.programCode + (item.major ? " · " + item.major : "")}</span>
+                </div>
+                <div className="block-section-identity-detail">
+                  <span className="block-section-identity-label">Year Level</span>
+                  <span className="block-section-identity-value">{"Year " + year(item.yearLevel)}</span>
+                </div>
+              </div> },
+              { key: "termId", label: "Academic Term", render: termLabel },
+              { key: "curriculum", label: "Curriculum", render: (item) => curriculumOf(item)?.version || curriculumOf(item)?.name || "Not assigned" },
+              { key: "capacity", label: "Capacity Summary", render: (item) => <dl className="block-section-capacity">
+                <div className="block-section-capacity-item"><dt>Capacity</dt><dd>{item.capacity}</dd></div>
+                <div className="block-section-capacity-item"><dt>Proposed</dt><dd>{countStatus(item.id, "PROPOSED")}</dd></div>
+                <div className="block-section-capacity-item"><dt>Confirmed</dt><dd>{countStatus(item.id, "CONFIRMED")}</dd></div>
+                <div className="block-section-capacity-item"><dt>Available</dt><dd>{Math.max(0, Number(item.capacity) - count(item.id))}</dd></div>
+              </dl> },
+              { key: "occupancy", label: "Capacity Status", render: (item) => <StatusBadge value={occupancyStatus(item) === "FULL" ? "FULL" : occupancyStatus(item) === "NEAR_FULL" ? "NEAR_CAPACITY" : "OPEN"}
+                label={occupancyStatus(item) === "FULL" ? "Full" : occupancyStatus(item) === "NEAR_FULL" ? "Near Capacity" : "Available"} /> },
+              { key: "status", label: "Section Status", render: (item) => <StatusBadge value={item.status} label={item.status === "DRAFT" ? "Draft" : item.status === "PUBLISHED" ? "Published" : item.status} /> },
+              { key: "actions", label: "Actions", render: (item) => <TableActions>
+                <TableActionButton tone="view" onClick={() => showSection(item)}>Details</TableActionButton>
+                <TableActionButton tone="edit" disabled={locked(item)} onClick={() => openSection(item)}>Edit</TableActionButton>
+                <TableActionButton tone="review" disabled={confirmedRecord(item)} onClick={() => showSection(item, "roster")}>Roster</TableActionButton>
+                <TableActionButton tone="review" disabled={confirmedRecord(item) || countStatus(item.id, "PROPOSED") === 0}
+                  onClick={() => { setSectionId(item.id); openTransfer(""); }}>Transfer</TableActionButton>
+                <TableActionButton tone="schedule" onClick={() => openSchedule(item)}>Schedule</TableActionButton>
+              </TableActions> },
+            ]} />
+          </div>
         </> : <>
 
           <div className="section-header block-heading">

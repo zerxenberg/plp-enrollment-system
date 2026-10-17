@@ -21,7 +21,6 @@ export default function RegistrarDashboard() {
       <PageHeader title="Registrar Dashboard" description="Official enrollment operations, student records, validation workload and academic term overview." actions={<LinkButton href="/registrar/enrollment">Open Enrollment Queue</LinkButton>} />
       <section className="portal-card hero-card" aria-label="Current enrollment term">
         <h2>Enrollment operations at a glance</h2>
-        <p>Review submitted records, resolve student corrections and confirm validated enrollments.</p>
         <div className="hero-meta"><span className="hero-chip">{student.term.label}</span><span className="hero-chip">Enrollment period: {student.term.status}</span><span className="hero-chip">{student.term.enrollmentStart} to {student.term.enrollmentEnd}</span></div>
       </section>
       <div className="stats-grid" style={{ margin: "16px 0" }}>
@@ -35,12 +34,12 @@ export default function RegistrarDashboard() {
         <Metric label="Near Capacity" value={near.length} hint="Five or fewer slots remaining" />
       </div>
       <div className="content-grid">
-        <Panel title="Enrollment Status Overview" subtitle="Counts use canonical transaction statuses." className="span-7">
+        <Panel title="Enrollment Status Overview" className="span-7">
           <div className="list-stack">
             {["SUBMITTED", "FOR_VALIDATION", "NEEDS_ACADEMIC_REVIEW", "REQUIRES_CORRECTION", "VALIDATED", "CONFIRMED"].map((status) => <div className="list-item" key={status}><div className="list-item-header"><StatusBadge value={status} /><strong>{count(status)}</strong></div></div>)}
           </div>
         </Panel>
-        <Panel title="Quick Actions" subtitle="Go directly to the owning workflow." className="span-5">
+        <Panel title="Quick Actions" className="span-5">
           <div className="list-stack">
             {[["Find Student", "/registrar/students"], ["Review Pending Enrollment", "/registrar/enrollment"], ["View Requires Correction", "/registrar/enrollment"], ["Generate Enrollment Report", "/registrar/reports-monitoring"]].map(([label, href]) => <Link key={href + label} href={href} className="list-item section-link">{label} <AppIcon name="arrowRight" className="inline-action-icon" /></Link>)}
           </div>

@@ -40,10 +40,6 @@ export default function AcademicCoordinatorDashboard() {
 
       <section className="portal-card hero-card" aria-label="Current academic term">
         <h2>Academic planning at a glance</h2>
-        <p>
-          Maintain academic structures and make defined academic exception decisions while Registrar
-          ownership of official enrollment processing remains unchanged.
-        </p>
         <div className="hero-meta">
           <span className="hero-chip">{student.term.label}</span>
           <span className="hero-chip">Enrollment period: {student.term.status}</span>
@@ -122,7 +118,7 @@ export default function AcademicCoordinatorDashboard() {
           />
         </Panel>
 
-        <Panel title="Quick Actions" subtitle="Each action opens its existing parent module." className="span-8">
+        <Panel title="Quick Actions" className="span-8">
           <div className="action-row">
             <LinkButton href="/academic-coordinator/academic-setup?view=programs">Add Program</LinkButton>
             <LinkButton href="/academic-coordinator/academic-setup?view=curriculum">Create Curriculum Version</LinkButton>

@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions, TablePagination } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
 import { Feedback, Info, Panel, Tabs } from "@/components/registrar/RegistrarShared";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
@@ -345,8 +345,8 @@ export default function AcademicSetupWorkspace() {
     <>
       <PageHeader title="Academic Setup" description="Manage programs, shared subjects and complete curriculum versions. Academic records and fees below are illustrative demo data." />
       <div className="academic-setup-tabs">
-        <Tabs items={VIEWS} selected={view} onSelect={(value) => { setView(value); resetFilters(); setSelected(null); setFeedback(null); }} label="Academic setup sections" title={VIEWS.find((item) => item.value === view)?.label} subtitle="Browse all demo academic records, or narrow them using filters.">
-          <p className="academic-demo-note">Demo Academic Data. Subjects, curriculum checklists and ₱100.00 per unit default are sample values, not official PLP academic or tuition policies.</p>
+        <Tabs items={VIEWS} selected={view} onSelect={(value) => { setView(value); resetFilters(); setSelected(null); setFeedback(null); }} label="Academic setup sections" title={VIEWS.find((item) => item.value === view)?.label}>
+          <p className="portal-demo-caption"><strong>Demo Data</strong> · Subjects, curriculum examples and the ₱100 per unit default are illustrative, not official academic or tuition policies.</p>
           {feedback && <Feedback message={feedback.text} warning={!feedback.ok} />}
           <div className="academic-filters">
             <SearchControl label="Search academic records" value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search by code, title or version" />
@@ -374,7 +374,7 @@ export default function AcademicSetupWorkspace() {
           )}
           {view === "subjects" && (
             <>
-              <div className="academic-list-heading"><span>{visibleSubjects.length} subjects. Page {Math.min(page, subjectPageCount)} of {subjectPageCount}</span><Button onClick={() => openSubject()}>Add Subject</Button></div>
+              <div className="academic-list-heading"><span>{visibleSubjects.length} subjects</span><Button onClick={() => openSubject()}>Add Subject</Button></div>
               <DataTable rowKey="code" rows={shownSubjects} emptyMessage="No subjects match these academic filters." columns={[
                 { key: "code", label: "Subject Code" },
                 { key: "name", label: "Subject Name" },
@@ -387,7 +387,7 @@ export default function AcademicSetupWorkspace() {
                 { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status || "Active"} /> },
                 { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="edit" onClick={() => openSubject(row)}>Edit / Prerequisites</TableActionButton></TableActions> },
               ]} />
-              {subjectPageCount > 1 && <div className="academic-pagination"><Button variant="ghost" disabled={page <= 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><span>{Math.min(page, subjectPageCount)} / {subjectPageCount}</span><Button variant="ghost" disabled={page >= subjectPageCount} onClick={() => setPage((current) => current + 1)}>Next</Button></div>}
+              {subjectPageCount > 1 && <TablePagination page={page} pageSize={20} total={visibleSubjects.length} onPageChange={setPage} label="Academic subject table pagination" />}
             </>
           )}
           {view === "curriculum" && (
@@ -403,11 +403,11 @@ export default function AcademicSetupWorkspace() {
                     <caption className="sr-only">Curriculum versions grouped by year level and semester</caption>
                     <thead><tr>
                       {[
-                        "Curriculum Version", "College Department", "Academic Program", "Major", "Effective Academic Year",
-                        "Year Level", "Semester", "Subjects", "Total Units", "Status", "Actions",
+                        "Curriculum Version", "Program Information", "Effective Academic Year", "Year Level",
+                        "Semester", "Course Load", "Status", "Actions",
                       ].map((heading) => <th key={heading} scope="col">{heading}</th>)}
                     </tr></thead>
-                    {visibleCurricula.length === 0 && <tbody><tr><td className="academic-curriculum-empty" colSpan={11}>No curriculum versions match the selected filters.</td></tr></tbody>}
+                    {visibleCurricula.length === 0 && <tbody><tr><td className="academic-curriculum-empty" colSpan={8}>No curriculum versions match the selected filters.</td></tr></tbody>}
                     {visibleCurricula.map((curriculum) => {
                       const expanded = !collapsedCurricula[curriculum.id];
                       const yearGroups = curriculumYearGroups(curriculum);
@@ -422,11 +422,22 @@ export default function AcademicSetupWorkspace() {
                                 <span className="academic-curriculum-version">{curriculum.version}</span>
                               </button>
                             </th>
-                            <td title={departments.find((item) => item.id === curriculum.department)?.name || curriculum.department}>{departments.find((item) => item.id === curriculum.department)?.name || curriculum.department}</td>
-                            <td>{curriculum.program}</td>
-                            <td title={curriculum.major || "None"}>{curriculum.major || "None"}</td>
+                            <td className="academic-program-info">
+                              <div className="academic-program-info-item academic-program-department">
+                                <span className="academic-program-info-label">Department</span>
+                                <span className="academic-program-info-value" title={departments.find((item) => item.id === curriculum.department)?.name || curriculum.department}>{departments.find((item) => item.id === curriculum.department)?.name || curriculum.department}</span>
+                              </div>
+                              <div className="academic-program-info-item academic-program-code">
+                                <span className="academic-program-info-label">Program</span>
+                                <span className="academic-program-info-value">{curriculum.program}</span>
+                              </div>
+                              <div className="academic-program-info-item academic-program-major">
+                                <span className="academic-program-info-label">Major</span>
+                                <span className="academic-program-info-value" title={curriculum.major || "None"}>{curriculum.major || "None"}</span>
+                              </div>
+                            </td>
                             <td>{curriculum.effectiveAcademicYear}</td>
-                            <td colSpan={4} className="academic-curriculum-parent-space"><span className="sr-only">Year and semester details follow below.</span></td>
+                            <td colSpan={3} className="academic-curriculum-parent-space" aria-label="Year, semester and course load details follow below." />
                             <td><span className={`status-badge academic-curriculum-status academic-curriculum-status-${String(curriculum.status).toLowerCase()}`}>{curriculum.status}</span></td>
                             <td className="academic-actions-cell"><TableActions className="academic-row-actions academic-version-actions">
                               <TableActionButton tone="view" disabled={versionBusy} onClick={() => openCurriculum(curriculum, true)}>View Curriculum</TableActionButton>
@@ -441,18 +452,26 @@ export default function AcademicSetupWorkspace() {
                             </TableActions></td>
                           </tr>
                         </tbody>
-                        {yearGroups.length === 0 && <tbody id={detailsId} className="academic-curriculum-year-group" hidden={!expanded}><tr><td colSpan={11} className="academic-curriculum-empty">No semester assignments have been configured for this curriculum.</td></tr></tbody>}
+                        {yearGroups.length === 0 && <tbody id={detailsId} className="academic-curriculum-year-group" hidden={!expanded}><tr><td colSpan={8} className="academic-curriculum-empty">No semester assignments have been configured for this curriculum.</td></tr></tbody>}
                         {yearGroups.map(({ yearLevel, semesters }, yearIndex) => <tbody key={`${curriculum.id}-${yearLevel}`} id={yearGroupIds[yearIndex]} className="academic-curriculum-year-group" data-curriculum-id={curriculum.id} hidden={!expanded}>
                           {semesters.map((term, termIndex) => {
                             const section = { yearLevel, semester: term };
                             const metrics = summarizeCurriculum(curriculum.assignments || [], subjects, yearLevel, term).selected;
                             return <tr className="academic-semester-row" key={`${curriculum.id}-${yearLevel}-${term}`}>
-                              <td className="academic-curriculum-detail-spacer" colSpan={5}><span className="sr-only">{curriculum.version} semester details</span></td>
+                              <td className="academic-curriculum-detail-spacer" colSpan={3} aria-label={`${curriculum.version} semester details`} />
                               {termIndex === 0 && <th className="academic-year-cell" scope="rowgroup" rowSpan={semesters.length}>{yearLevel}</th>}
                               <th scope="row" className="academic-semester-cell">{term}</th>
-                              <td className="academic-number-cell">{metrics.subjects}</td>
-                              <td className="academic-number-cell">{metrics.units}</td>
-                              <td className="academic-semester-status"><span className="sr-only">Status shown on parent curriculum row.</span></td>
+                              <td className="academic-load-summary">
+                                <span className="academic-load-summary-item">
+                                  <span className="academic-load-summary-label">Subjects</span>
+                                  <span className="academic-load-summary-value academic-number-cell">{metrics.subjects}</span>
+                                </span>
+                                <span className="academic-load-summary-item">
+                                  <span className="academic-load-summary-label">Units</span>
+                                  <span className="academic-load-summary-value academic-number-cell">{metrics.units}</span>
+                                </span>
+                              </td>
+                              <td className="academic-semester-status" aria-label="Status shown on parent curriculum row." />
                               <td className="academic-actions-cell"><TableActions className="academic-row-actions">
                                 <TableActionButton tone="view" onClick={() => setSemesterDetails({ curriculum, section })}>View Subjects</TableActionButton>
                               </TableActions></td>

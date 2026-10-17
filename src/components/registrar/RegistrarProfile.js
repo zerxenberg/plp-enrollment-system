@@ -15,7 +15,7 @@ export default function RegistrarProfile() {
   return (
     <>
       <PageHeader title="Registrar Profile" description="View Registrar account details and demonstration notification preferences." />
-      <Panel title="Account Information" subtitle="Profile and account security are governed by the assigned Registrar permissions.">
+      <Panel title="Account Information">
         <div className="info-grid"><Info label="Registrar Name" value={account.fullName} /><Info label="Registrar Account ID" value={account.accountId} /><Info label="Office" value={account.office} /><Info label="Email" value={account.email} /><Info label="Assigned Role" value={account.role} /><Info label="Account Status" value={account.accountStatus} /></div>
         <p className="notice" style={{marginTop:14}}>Changing account credentials or personal details requires the authentication and authorized profile service. This page displays demo account information.</p>
       </Panel>

@@ -39,7 +39,7 @@ export default function RegistrarNotifications() {
   return (
     <>
       <PageHeader title="Notifications" description="Registrar messages, enrollment queue reminders and official enrollment announcements." />
-      <Tabs selected={view} onSelect={(next)=>{setView(next);setFeedback("");}} label="Notification sections" title="Enrollment Communication" subtitle="Review incoming notices and prepare messages for student groups." items={[{value:"mine",label:`My Notifications (${notifications.registrar.filter((item)=>!item.read).length} unread)`},{value:"announcements",label:"Enrollment Announcements"}]}>
+      <Tabs selected={view} onSelect={(next)=>{setView(next);setFeedback("");}} label="Notification sections" title="Enrollment Communication" items={[{value:"mine",label:`My Notifications (${notifications.registrar.filter((item)=>!item.read).length} unread)`},{value:"announcements",label:"Enrollment Announcements"}]}>
         {view==="mine" ? <>
           <div className="toolbar">
             <SearchControl value={search} onChange={setSearch} label="Search notifications" placeholder="Search titles, messages or categories" />
@@ -66,7 +66,7 @@ export default function RegistrarNotifications() {
           {preview ? <div className="notice" style={{marginTop:12}}><strong>Preview: {title || "Untitled announcement"}</strong><p>{message || "No message entered"}</p><p>Recipients: {group}{group==="Selected Program"?` (${program})`:""} · Term: {term}</p></div> : null}
           <p className="notice" style={{marginTop:12}}>This frontend demo stores announcements only in the current page session. It does not deliver messages to student accounts.</p>
           <section style={{marginTop:16}}>
-            <PanelHeading title="Published Demo Announcements" subtitle="Archive or inspect messages created on this page." />
+            <PanelHeading title="Published Demo Announcements" />
             {announcements.length ? <div className="list-stack">{announcements.map((item)=><article className="list-item" key={item.id}><div className="list-item-header"><strong>{item.title}</strong><StatusBadge value={item.archived?"ARCHIVED":"PUBLISHED"} label={item.archived?"Archived":"Published (Demo)"} /></div><p>{item.message}</p><p>{item.group}{item.program?` (${item.program})`:""} · {item.term} · {item.date}</p><div className="action-row" style={{marginTop:9}}><Button type="button" variant="secondary" disabled={item.archived} onClick={()=>setAnnouncements((current)=>current.map((entry)=>entry.id===item.id?{...entry,archived:true}:entry))}>Archive</Button></div></article>)}</div> : <p className="notice">No demo announcements published yet.</p>}
           </section>
         </> : null}

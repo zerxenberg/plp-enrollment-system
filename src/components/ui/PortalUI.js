@@ -36,14 +36,32 @@ export function StatusBadge({ value, label }) {
   else if (/not_eligible|fail|reject|restrict|error|^full$|^blocked$/.test(normalized)) tone = "danger";
   else if (/^inactive$|cancel|archive|^disabled$/.test(normalized)) tone = "muted";
   else if (/^in_progress$|process|synchroniz|^syncing$/.test(normalized)) tone = "progress";
-  else if (/pending|waiting|^submitted$|^for_validation$|near|incomplete|^uploaded$/.test(normalized)) tone = "warning";
-  else if (/confirm|complet|publish|^graduated$|^credited$/.test(normalized)) tone = "info";
+  else if (/pending|waiting|clarification|^submitted$|^for_validation$|near|incomplete|^uploaded$/.test(normalized)) tone = "warning";
+  else if (/confirm|complet|publish|^applied$|^graduated$|^credited$/.test(normalized)) tone = "info";
   else if (/^active$|^open$|^available$|^approved$|^passed$|^eligible$|^eligible_normal$|^validated$|^connected$|^regular$/.test(normalized)) tone = "positive";
   return <span className={`status-badge status-${tone}`}>{label || getStatusLabel(value)}</span>;
 }
 
 export function Button({ children, variant = "primary", className = "", type = "button", ...props }) {
   return <button type={type} className={`portal-button portal-button-${variant} ${className}`} {...props}>{children}</button>;
+}
+
+// One accessible pagination layout for data tables across all authenticated portals.
+// The owning screen controls page state so its filters can reset pagination.
+export function TablePagination({ page, pageSize, total, onPageChange, label = "Table pagination" }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(Math.max(1, page), totalPages);
+  const start = total ? (currentPage - 1) * pageSize + 1 : 0;
+  const end = Math.min(currentPage * pageSize, total);
+  return (
+    <nav className="portal-table-pagination" aria-label={label}>
+      <Button variant="secondary" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>Previous</Button>
+      <span className="portal-table-pagination-summary" role="status" aria-live="polite">
+        Page {currentPage} of {totalPages} · Showing {start} to {end} of {total}
+      </span>
+      <Button variant="secondary" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>Next</Button>
+    </nav>
+  );
 }
 
 // Shared content tabs for authenticated portals. Workflow steps and filter groups
@@ -233,42 +251,55 @@ export function Modal({ open, title, children, onClose, footer, className = "" }
   const closeRef = useRef(null);
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
+  const titleId = useId();
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return undefined;
     const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     closeRef.current?.focus();
+    const getFocusable = () => dialogRef.current?.querySelectorAll(
+      'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
     const handleKey = (event) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
-      const focusable = dialogRef.current?.querySelectorAll(
-        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
+      const focusable = getFocusable();
       if (!focusable?.length) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (event.shiftKey && (document.activeElement === first || !dialogRef.current?.contains(document.activeElement))) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (document.activeElement === last || !dialogRef.current?.contains(document.activeElement))) {
         event.preventDefault();
         first.focus();
       }
     };
+    const containFocus = (event) => {
+      if (!dialogRef.current?.contains(event.target)) {
+        (getFocusable()?.[0] || dialogRef.current)?.focus();
+      }
+    };
     document.addEventListener("keydown", handleKey);
+    document.addEventListener("focusin", containFocus);
     return () => {
       document.removeEventListener("keydown", handleKey);
+      document.removeEventListener("focusin", containFocus);
+      document.body.style.overflow = previousOverflow;
       previousFocus?.focus?.();
     };
   }, [open]);
   if (!open) return null;
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <section ref={dialogRef} className={`portal-modal ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby="portal-modal-title">
-        <header><h2 id="portal-modal-title">{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><AppIcon name="close" /></button></header>
+      <section ref={dialogRef} className={`portal-modal ${className}`.trim()} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+        <header><h2 id={titleId}>{title}</h2><button ref={closeRef} className="icon-button" type="button" onClick={onClose} aria-label="Close dialog"><AppIcon name="close" /></button></header>
         <div className="modal-body">{children}</div>
         {footer ? <footer className="modal-footer">{footer}</footer> : null}
       </section>
