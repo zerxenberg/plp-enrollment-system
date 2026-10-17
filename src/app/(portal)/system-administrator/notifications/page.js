@@ -1,7 +1,12 @@
-import RoleNotifications from "@/components/shared/RoleNotifications";
+import SystemAdministratorNotifications from "@/components/system-administrator/SystemAdministratorNotifications";
+import { getSystemAdministratorNotificationsData } from "@/features/system-administration/system-admin-queries";
+import { requireRole } from "@/lib/auth/require-role";
 
-export const metadata = { title: "System Administrator Notifications" };
+export const metadata = { title: "Technical Alerts" };
+export const dynamic = "force-dynamic";
 
-export default function SystemAdministratorNotificationsPage() {
-  return <RoleNotifications role="system-administrator" />;
+export default async function SystemAdministratorNotificationsPage() {
+  const authUser = await requireRole("system-administrator");
+  const notifications = await getSystemAdministratorNotificationsData(authUser.id);
+  return <SystemAdministratorNotifications notifications={notifications} />;
 }

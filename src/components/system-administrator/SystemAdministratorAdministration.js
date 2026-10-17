@@ -1,118 +1,653 @@
 
 "use client";
 
-import { useState } from "react";
-import { Button, Card, DataTable, InternalTabs, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { useState, useTransition } from "react";
+import {
+  Button,
+  DataTable,
+  Modal,
+  PageHeader,
+  StatusBadge,
+} from "@/components/ui/PortalUI";
+import {
+  Details,
+  Feedback,
+  Info,
+  Metric,
+  Tabs,
+} from "@/components/registrar/RegistrarShared";
+import {
+  runApprovedDatabaseMaintenance,
+  updateSecuritySettings,
+  updateSystemSettings,
+} from "@/features/system-administration/system-admin-actions";
 
-const TABS = ["System Settings", "Security Settings", "Database Maintenance", "Backup & Recovery"];
-
-const BACKUPS = [
-  { reference: "BKP-20261007-01", date: "Oct 7, 2026", time: "8:30 AM", size: "48.7 MB", status: "Successful", createdBy: "Adrian Reyes" },
-  { reference: "BKP-20261006-01", date: "Oct 6, 2026", time: "8:30 AM", size: "48.1 MB", status: "Successful", createdBy: "Scheduled Job" },
-  { reference: "BKP-20261005-01", date: "Oct 5, 2026", time: "8:30 AM", size: "47.8 MB", status: "Successful", createdBy: "Scheduled Job" },
+const TABS = [
+  { value: "System Settings", label: "System Settings" },
+  { value: "Security Settings", label: "Security Settings" },
+  { value: "Database Maintenance", label: "Database Maintenance" },
+  { value: "Backup & Recovery", label: "Backup & Recovery" },
 ];
 
-export default function SystemAdministratorAdministration() {
+function booleanLabel(value) {
+  return value ? "Enabled" : "Disabled";
+}
+
+export default function SystemAdministratorAdministration({
+  administrationData,
+}) {
+  const {
+    systemSettings,
+    securitySettings,
+    maintenanceEvents,
+    backups,
+    databaseMetrics,
+  } = administrationData;
+
   const [activeTab, setActiveTab] = useState("System Settings");
-  const [message, setMessage] = useState("");
+  const [feedback, setFeedback] = useState("");
+  const [feedbackWarning, setFeedbackWarning] = useState(false);
+  const [systemModalOpen, setSystemModalOpen] = useState(false);
+  const [securityModalOpen, setSecurityModalOpen] = useState(false);
+  const [maintenanceModalOpen, setMaintenanceModalOpen] = useState(false);
+  const [selectedMaintenance, setSelectedMaintenance] = useState(null);
+  const [selectedBackup, setSelectedBackup] = useState(null);
+  const [isPending, startTransition] = useTransition();
+
+  const [systemForm, setSystemForm] = useState({
+    applicationName: systemSettings?.application_name || "",
+    timezoneName: systemSettings?.timezone_name || "Asia/Manila",
+    technicalNotificationsEnabled:
+      systemSettings?.technical_notifications_enabled ?? true,
+    maintenanceMode: systemSettings?.maintenance_mode ?? false,
+    loggingLevel: systemSettings?.logging_level || "Standard",
+  });
+
+  const [securityForm, setSecurityForm] = useState({
+    sessionTimeoutMinutes: securitySettings?.session_timeout_minutes || 30,
+    loginAttemptLimit: securitySettings?.login_attempt_limit || 5,
+    passwordPolicy: securitySettings?.password_policy || "Standard",
+    accountLockoutEnabled:
+      securitySettings?.account_lockout_enabled ?? true,
+  });
+
+  function showResult(result) {
+    setFeedback(result.message);
+    setFeedbackWarning(!result.ok);
+  }
+
+  function saveSystemSettings() {
+    startTransition(async () => {
+      const result = await updateSystemSettings(systemForm);
+      showResult(result);
+      if (result.ok) {
+        setSystemModalOpen(false);
+      }
+    });
+  }
+
+  function saveSecuritySettings() {
+    startTransition(async () => {
+      const result = await updateSecuritySettings(securityForm);
+      showResult(result);
+      if (result.ok) {
+        setSecurityModalOpen(false);
+      }
+    });
+  }
+
+  function runMaintenance() {
+    startTransition(async () => {
+      const result = await runApprovedDatabaseMaintenance();
+      showResult(result);
+      if (result.ok) {
+        setMaintenanceModalOpen(false);
+      }
+    });
+  }
 
   return (
     <>
       <PageHeader
         title="System Administration"
-        description="Technical application settings, security controls, database maintenance, backup, and recovery."
+        description="Technical configuration, database maintenance, security controls, and the Supabase backup registry."
       />
 
-      <InternalTabs items={TABS.map((value) => ({ value, label: value }))} selected={activeTab} onSelect={setActiveTab} label="System administration sections">
+      <Tabs
+        items={TABS}
+        selected={activeTab}
+        onSelect={(next) => {
+          setActiveTab(next);
+          setFeedback("");
+          setSelectedMaintenance(null);
+          setSelectedBackup(null);
+        }}
+        label="System administration sections"
+        title="Technical Administration"
+        subtitle="Live configuration values and maintenance records are read from Supabase. Changes are written through protected server actions."
+      >
+        <Feedback message={feedback} warning={feedbackWarning} />
 
-      {message ? <div className="notice" style={{ marginBottom: 14 }}>{message}</div> : null}
+        {activeTab === "System Settings" ? (
+          <>
+            {systemSettings ? (
+              <div className="info-grid">
+                <Info
+                  label="Application Name"
+                  value={systemSettings.application_name}
+                />
+                <Info
+                  label="Default Timezone"
+                  value={systemSettings.timezone_name}
+                />
+                <Info
+                  label="Technical Notifications"
+                  value={booleanLabel(
+                    systemSettings.technical_notifications_enabled,
+                  )}
+                />
+                <Info
+                  label="Maintenance Mode"
+                  value={systemSettings.maintenance_mode ? "On" : "Off"}
+                />
+                <Info
+                  label="Logging Level"
+                  value={systemSettings.logging_level}
+                />
+                <Info
+                  label="Last Updated"
+                  value={
+                    systemSettings.updated_at
+                      ? new Date(systemSettings.updated_at).toLocaleString()
+                      : "Not recorded"
+                  }
+                />
+              </div>
+            ) : (
+              <div className="notice warning">
+                The singleton system settings row is missing from the database.
+              </div>
+            )}
 
-      {activeTab === "System Settings" ? (
-        <Card className="section-card">
-          <div className="form-grid">
-            <label className="field"><span>Application Name</span><input defaultValue="PLP Enrollment System" /></label>
-            <label className="field"><span>Default System Timezone</span><input defaultValue="Asia/Manila" /></label>
-            <label className="field"><span>Technical Notification Settings</span><select defaultValue="Enabled"><option>Enabled</option><option>Disabled</option></select></label>
-            <label className="field"><span>Maintenance Mode</span><select defaultValue="Off"><option>Off</option><option>On</option></select></label>
-            <label className="field"><span>Logging Level</span><select defaultValue="Standard"><option>Standard</option><option>Detailed</option><option>Minimal</option></select></label>
-          </div>
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button variant="secondary" onClick={() => setMessage("System Settings editing enabled in mock mode.")}>Edit</Button>
-            <Button onClick={() => setMessage("System Settings saved in mock mode.")}>Save Settings</Button>
-            <Button variant="secondary" onClick={() => setMessage("Changes cancelled.")}>Cancel</Button>
-            <Button variant="secondary" onClick={() => setMessage("Project default settings restored in mock mode.")}>Restore Default Project Setting</Button>
-          </div>
-        </Card>
-      ) : null}
+            <div className="action-row" style={{ marginTop: 14 }}>
+              <Button
+                disabled={!systemSettings}
+                onClick={() => {
+                  setSystemForm({
+                    applicationName: systemSettings?.application_name || "",
+                    timezoneName:
+                      systemSettings?.timezone_name || "Asia/Manila",
+                    technicalNotificationsEnabled:
+                      systemSettings?.technical_notifications_enabled ?? true,
+                    maintenanceMode:
+                      systemSettings?.maintenance_mode ?? false,
+                    loggingLevel:
+                      systemSettings?.logging_level || "Standard",
+                  });
+                  setSystemModalOpen(true);
+                }}
+              >
+                Edit System Settings
+              </Button>
+            </div>
+          </>
+        ) : null}
 
-      {activeTab === "Security Settings" ? (
-        <Card className="section-card">
-          <div className="notice" style={{ marginBottom: 12 }}>Password hashes, plain text passwords, API secrets, and database passwords are not displayed in this interface.</div>
-          <div className="info-grid">
-            <div className="info-item"><span>Authentication Method</span><strong>Account Credentials + Role Based Access</strong></div>
-            <div className="info-item"><span>Password Hashing Status</span><strong><StatusBadge value="ACTIVE" label="Configured for backend" /></strong></div>
-            <div className="info-item"><span>API Authentication Status</span><strong><StatusBadge value="ACTIVE" label="Enabled" /></strong></div>
-            <div className="info-item"><span>Administrative Session Controls</span><strong>Enabled</strong></div>
-          </div>
-          <div className="form-grid" style={{ marginTop: 12 }}>
-            <label className="field"><span>Session Timeout</span><input defaultValue="30 minutes" /></label>
-            <label className="field"><span>Login Attempt Limit</span><input defaultValue="5" /></label>
-            <label className="field"><span>Password Policy Settings</span><select defaultValue="Standard"><option>Standard</option><option>Strict</option></select></label>
-            <label className="field"><span>Account Lockout Settings</span><select defaultValue="Enabled"><option>Enabled</option><option>Disabled</option></select></label>
-          </div>
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button variant="secondary" onClick={() => setMessage("Security Settings editing enabled in mock mode.")}>Edit</Button>
-            <Button onClick={() => setMessage("Security Settings saved in mock mode.")}>Save</Button>
-            <Button variant="secondary" onClick={() => setMessage("Changes cancelled.")}>Cancel</Button>
-            <Button variant="secondary" onClick={() => setMessage("Open Audit & Monitoring to review Security Activity.")}>Review Security Activity</Button>
-          </div>
-        </Card>
-      ) : null}
+        {activeTab === "Security Settings" ? (
+          <>
+            {securitySettings ? (
+              <div className="info-grid">
+                <Info
+                  label="Session Timeout"
+                  value={`${securitySettings.session_timeout_minutes} minutes`}
+                />
+                <Info
+                  label="Login Attempt Limit"
+                  value={securitySettings.login_attempt_limit}
+                />
+                <Info
+                  label="Password Policy"
+                  value={securitySettings.password_policy}
+                />
+                <Info
+                  label="Account Lockout"
+                  value={booleanLabel(
+                    securitySettings.account_lockout_enabled,
+                  )}
+                />
+                <div className="info-item">
+                  <span>Supabase Authentication</span>
+                  <strong>
+                    <StatusBadge value="ACTIVE" label="Connected" />
+                  </strong>
+                </div>
+                <Info
+                  label="Last Updated"
+                  value={
+                    securitySettings.updated_at
+                      ? new Date(securitySettings.updated_at).toLocaleString()
+                      : "Not recorded"
+                  }
+                />
+              </div>
+            ) : (
+              <div className="notice warning">
+                The singleton security settings row is missing from the database.
+              </div>
+            )}
 
-      {activeTab === "Database Maintenance" ? (
-        <Card className="section-card">
-          <div className="notice" style={{ marginBottom: 12 }}>Only safe project level maintenance actions are exposed. There is no raw SQL console or unrestricted table editing.</div>
-          <div className="info-grid">
-            <div className="info-item"><span>Database Connection Status</span><strong><StatusBadge value="ACTIVE" label="Connected" /></strong></div>
-            <div className="info-item"><span>Database Size</span><strong>84.2 MB</strong></div>
-            <div className="info-item"><span>Number of Tables</span><strong>18</strong></div>
-            <div className="info-item"><span>Record Count Summary</span><strong>12,486 records</strong></div>
-            <div className="info-item"><span>Last Maintenance Activity</span><strong>Oct 6, 2026 · 9:10 PM</strong></div>
-            <div className="info-item"><span>Data Integrity Status</span><strong><StatusBadge value="ACTIVE" label="Healthy" /></strong></div>
-          </div>
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button onClick={() => setMessage("Database connection check succeeded.")}>Check Database Connection</Button>
-            <Button variant="secondary" onClick={() => setMessage("Table status opened in mock mode.")}>View Table Status</Button>
-            <Button variant="secondary" onClick={() => setMessage("Approved maintenance completed in mock mode.")}>Run Approved Maintenance</Button>
-            <Button variant="secondary" onClick={() => setMessage("Data integrity status opened.")}>View Data Integrity Status</Button>
-            <Button variant="secondary" onClick={() => setMessage("Database statistics refreshed.")}>Refresh Statistics</Button>
-          </div>
-        </Card>
-      ) : null}
+            <div className="notice" style={{ marginTop: 14 }}>
+              Passwords, password hashes, Supabase secret keys, API secrets, and
+              database credentials are never returned to this interface.
+            </div>
 
-      {activeTab === "Backup & Recovery" ? (
-        <Card className="section-card">
-          <DataTable
-            rowKey="reference"
-            rows={BACKUPS}
-            columns={[
-              { key: "reference", label: "Backup Reference" },
-              { key: "date", label: "Date" },
-              { key: "time", label: "Time" },
-              { key: "size", label: "Backup Size" },
-              { key: "status", label: "Status", render: (row) => <StatusBadge value="COMPLETED" label={row.status} /> },
-              { key: "createdBy", label: "Created By" },
+            <div className="action-row" style={{ marginTop: 14 }}>
+              <Button
+                disabled={!securitySettings}
+                onClick={() => {
+                  setSecurityForm({
+                    sessionTimeoutMinutes:
+                      securitySettings?.session_timeout_minutes || 30,
+                    loginAttemptLimit:
+                      securitySettings?.login_attempt_limit || 5,
+                    passwordPolicy:
+                      securitySettings?.password_policy || "Standard",
+                    accountLockoutEnabled:
+                      securitySettings?.account_lockout_enabled ?? true,
+                  });
+                  setSecurityModalOpen(true);
+                }}
+              >
+                Edit Security Settings
+              </Button>
+            </div>
+          </>
+        ) : null}
+
+        {activeTab === "Database Maintenance" ? (
+          <>
+            <div className="stats-grid" style={{ marginBottom: 14 }}>
+              <Metric
+                label="Database Size"
+                value={databaseMetrics.databaseSizeLabel || "Not available"}
+                hint="Current PostgreSQL database"
+              />
+              <Metric
+                label="Public Tables"
+                value={databaseMetrics.public_table_count ?? 0}
+                hint="Application schema tables"
+              />
+              <Metric
+                label="Estimated Records"
+                value={databaseMetrics.estimated_record_count ?? 0}
+                hint="PostgreSQL statistics estimate"
+              />
+              <Metric
+                label="Last Maintenance"
+                value={databaseMetrics.lastMaintenanceLabel || "Not recorded"}
+                hint="Approved maintenance event"
+              />
+            </div>
+
+            <div className="action-row" style={{ marginBottom: 14 }}>
+              <Button onClick={() => setMaintenanceModalOpen(true)}>
+                Run Approved Maintenance
+              </Button>
+            </div>
+
+            <DataTable
+              rowKey="id"
+              rows={maintenanceEvents}
+              onRowClick={setSelectedMaintenance}
+              getRowAriaLabel={(row) =>
+                `View database maintenance event ${row.id}`
+              }
+              emptyMessage="No database maintenance events have been recorded."
+              columns={[
+                { key: "operation", label: "Operation" },
+                {
+                  key: "status",
+                  label: "Status",
+                  render: (row) => (
+                    <StatusBadge
+                      value={
+                        row.status === "Completed"
+                          ? "COMPLETED"
+                          : row.status === "Failed"
+                            ? "FAILED"
+                            : row.status
+                      }
+                      label={row.status}
+                    />
+                  ),
+                },
+                { key: "startedAtLabel", label: "Started" },
+                { key: "completedAtLabel", label: "Completed" },
+              ]}
+            />
+
+            <div className="notice" style={{ marginTop: 14 }}>
+              This portal exposes only the approved maintenance function defined
+              in the database. It does not expose arbitrary SQL execution, table
+              editing, database deletion, or schema destruction.
+            </div>
+          </>
+        ) : null}
+
+        {activeTab === "Backup & Recovery" ? (
+          <>
+            <div className="notice" style={{ marginBottom: 14 }}>
+              This table is the application backup registry stored in Supabase.
+              Physical Supabase project backup creation and point in time restore
+              are platform operations, so this portal does not create a false
+              backup record or claim that a physical restore occurred.
+            </div>
+
+            <DataTable
+              rowKey="id"
+              rows={backups}
+              onRowClick={setSelectedBackup}
+              getRowAriaLabel={(row) =>
+                `View backup record ${row.backup_reference}`
+              }
+              emptyMessage="No backup registry records are stored in the database."
+              columns={[
+                { key: "backup_reference", label: "Backup Reference" },
+                { key: "backup_type", label: "Type" },
+                { key: "startedAtLabel", label: "Started" },
+                { key: "sizeLabel", label: "Size" },
+                {
+                  key: "status",
+                  label: "Status",
+                  render: (row) => (
+                    <StatusBadge
+                      value={
+                        row.status === "Successful"
+                          ? "COMPLETED"
+                          : row.status
+                      }
+                      label={row.status}
+                    />
+                  ),
+                },
+                { key: "integrity_status", label: "Integrity" },
+              ]}
+            />
+          </>
+        ) : null}
+      </Tabs>
+
+      <Modal
+        open={systemModalOpen}
+        title="Edit System Settings"
+        onClose={() => setSystemModalOpen(false)}
+        className="system-admin-detail-modal"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => setSystemModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={isPending} onClick={saveSystemSettings}>
+              {isPending ? "Saving..." : "Save Settings"}
+            </Button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <label className="field">
+            <span>Application Name</span>
+            <input
+              value={systemForm.applicationName}
+              onChange={(event) =>
+                setSystemForm({
+                  ...systemForm,
+                  applicationName: event.target.value,
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Default Timezone</span>
+            <input
+              value={systemForm.timezoneName}
+              onChange={(event) =>
+                setSystemForm({
+                  ...systemForm,
+                  timezoneName: event.target.value,
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Technical Notifications</span>
+            <select
+              value={
+                systemForm.technicalNotificationsEnabled
+                  ? "Enabled"
+                  : "Disabled"
+              }
+              onChange={(event) =>
+                setSystemForm({
+                  ...systemForm,
+                  technicalNotificationsEnabled:
+                    event.target.value === "Enabled",
+                })
+              }
+            >
+              <option>Enabled</option>
+              <option>Disabled</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Maintenance Mode</span>
+            <select
+              value={systemForm.maintenanceMode ? "On" : "Off"}
+              onChange={(event) =>
+                setSystemForm({
+                  ...systemForm,
+                  maintenanceMode: event.target.value === "On",
+                })
+              }
+            >
+              <option>Off</option>
+              <option>On</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Logging Level</span>
+            <select
+              value={systemForm.loggingLevel}
+              onChange={(event) =>
+                setSystemForm({
+                  ...systemForm,
+                  loggingLevel: event.target.value,
+                })
+              }
+            >
+              <option>Minimal</option>
+              <option>Standard</option>
+              <option>Detailed</option>
+            </select>
+          </label>
+        </div>
+      </Modal>
+
+      <Modal
+        open={securityModalOpen}
+        title="Edit Security Settings"
+        onClose={() => setSecurityModalOpen(false)}
+        className="system-admin-detail-modal"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => setSecurityModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={isPending} onClick={saveSecuritySettings}>
+              {isPending ? "Saving..." : "Save Security Settings"}
+            </Button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <label className="field">
+            <span>Session Timeout in Minutes</span>
+            <input
+              type="number"
+              min="1"
+              value={securityForm.sessionTimeoutMinutes}
+              onChange={(event) =>
+                setSecurityForm({
+                  ...securityForm,
+                  sessionTimeoutMinutes: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Login Attempt Limit</span>
+            <input
+              type="number"
+              min="1"
+              value={securityForm.loginAttemptLimit}
+              onChange={(event) =>
+                setSecurityForm({
+                  ...securityForm,
+                  loginAttemptLimit: Number(event.target.value),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Password Policy</span>
+            <select
+              value={securityForm.passwordPolicy}
+              onChange={(event) =>
+                setSecurityForm({
+                  ...securityForm,
+                  passwordPolicy: event.target.value,
+                })
+              }
+            >
+              <option>Standard</option>
+              <option>Strict</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Account Lockout</span>
+            <select
+              value={
+                securityForm.accountLockoutEnabled ? "Enabled" : "Disabled"
+              }
+              onChange={(event) =>
+                setSecurityForm({
+                  ...securityForm,
+                  accountLockoutEnabled: event.target.value === "Enabled",
+                })
+              }
+            >
+              <option>Enabled</option>
+              <option>Disabled</option>
+            </select>
+          </label>
+        </div>
+      </Modal>
+
+      <Modal
+        open={maintenanceModalOpen}
+        title="Run Approved Database Maintenance"
+        onClose={() => setMaintenanceModalOpen(false)}
+        className="system-admin-detail-modal"
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              disabled={isPending}
+              onClick={() => setMaintenanceModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button disabled={isPending} onClick={runMaintenance}>
+              {isPending ? "Running..." : "Run Maintenance"}
+            </Button>
+          </>
+        }
+      >
+        <div className="notice warning">
+          This executes the approved database maintenance function in PostgreSQL.
+          The operation records its start, completion result, responsible
+          administrator, and audit event.
+        </div>
+        <Details
+          items={[
+            ["Scope", "Approved application tables"],
+            ["Operation", "PostgreSQL ANALYZE"],
+            ["Raw SQL Console", "Not exposed"],
+            ["Audit Recording", "Required"],
+          ]}
+        />
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedMaintenance)}
+        title="Database Maintenance Details"
+        onClose={() => setSelectedMaintenance(null)}
+        className="system-admin-detail-modal"
+        footer={
+          <Button onClick={() => setSelectedMaintenance(null)}>Close</Button>
+        }
+      >
+        {selectedMaintenance ? (
+          <Details
+            items={[
+              ["Event ID", selectedMaintenance.id],
+              ["Operation", selectedMaintenance.operation],
+              ["Status", selectedMaintenance.status],
+              ["Details", selectedMaintenance.details],
+              ["Performed By", selectedMaintenance.performed_by],
+              ["Started", selectedMaintenance.startedAtLabel],
+              ["Completed", selectedMaintenance.completedAtLabel],
             ]}
           />
-          <div className="action-row" style={{ marginTop: 12 }}>
-            <Button onClick={() => setMessage("Mock backup created and recorded.")}>Backup Now</Button>
-            <Button variant="secondary" onClick={() => setMessage("Backup history is displayed above.")}>View Backup History</Button>
-            <Button variant="secondary" onClick={() => setMessage("Download remains a mock action until backend storage is connected.")}>Download Backup</Button>
-            <Button variant="danger" onClick={() => setMessage("Restore confirmation simulated. No database changes were made.")}>Restore Backup</Button>
-          </div>
-        </Card>
-      ) : null}
-      </InternalTabs>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(selectedBackup)}
+        title="Backup Registry Details"
+        onClose={() => setSelectedBackup(null)}
+        className="system-admin-detail-modal"
+        footer={<Button onClick={() => setSelectedBackup(null)}>Close</Button>}
+      >
+        {selectedBackup ? (
+          <>
+            <Details
+              items={[
+                ["Backup Reference", selectedBackup.backup_reference],
+                ["Backup Type", selectedBackup.backup_type],
+                ["Storage Path", selectedBackup.storage_path || "Not recorded"],
+                ["Backup Size", selectedBackup.sizeLabel],
+                ["Status", selectedBackup.status],
+                ["Integrity Status", selectedBackup.integrity_status],
+                ["Created By", selectedBackup.created_by || "Not recorded"],
+                ["Started", selectedBackup.startedAtLabel],
+                ["Completed", selectedBackup.completedAtLabel],
+              ]}
+            />
+            <div className="notice" style={{ marginTop: 14 }}>
+              This is a database registry record. Physical backup download and
+              restore are not simulated by this application.
+            </div>
+          </>
+        ) : null}
+      </Modal>
     </>
   );
 }

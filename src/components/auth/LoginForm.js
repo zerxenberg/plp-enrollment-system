@@ -1,8 +1,11 @@
+
 "use client";
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppIcon from "@/components/ui/AppIcon";
+import { clearDemoSession, saveDemoSession } from "@/lib/auth/demo-auth";
+import { signInPortalUser } from "@/features/auth/auth-actions";
 import { signInLive } from "@/lib/auth/live-auth";
 import styles from "./auth-portal.module.css";
 
@@ -19,7 +22,7 @@ export default function LoginForm({
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
   const [status, setStatus] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function clearFieldError(field) {
     setStatus("");
@@ -38,7 +41,7 @@ export default function LoginForm({
     const nextErrors = {};
 
     if (!normalizedIdentity) {
-      nextErrors.identity = "Enter your University ID number or registered email.";
+      nextErrors.identity = "Enter your university ID or registered email.";
     }
 
     if (!password) {
@@ -57,33 +60,63 @@ export default function LoginForm({
       return;
     }
 
-    setSubmitting(true);
+    setIsSubmitting(true);
+    setStatus("Signing in...");
+
     let result;
     try {
-      result = await signInLive({ identity: normalizedIdentity, password });
+      if (normalizedIdentity.includes("@")) {
+        // Keep the existing server-authenticated email sign-in and its audit
+        // event, while retaining University ID support through the protected API.
+        result = await signInPortalUser({
+          email: normalizedIdentity.toLowerCase(),
+          password,
+        });
+      } else {
+        const login = await signInLive({ identity: normalizedIdentity, password });
+        result = login.ok
+          ? { ok: true, user: {
+            role: login.session.role,
+            name: login.session.name,
+            identifier: login.session.identifier,
+            redirect: login.session.redirect,
+          } }
+          : login;
+      }
     } catch {
       result = { ok: false, message: "Authentication is temporarily unavailable." };
-    } finally {
-      setSubmitting(false);
     }
-    if (!result.ok) {
-      setStatus(result.message);
+
+    if (!result?.ok || !result.user) {
+      setIsSubmitting(false);
+      setStatus(
+        result?.message || "The registered email or password is incorrect.",
+      );
       return;
     }
-    const session = result.session;
-    const portalLabels = {
-      student: "Student",
-      registrar: "Registrar",
-      "academic-coordinator": "Academic Coordinator",
-      "system-administrator": "System Administrator",
-    };
-    setStatus(`Signed in as ${session.name}. Opening the ${portalLabels[session.role] || "authorized"} Portal.`);
-    router.push(session.redirect);
+
+    // Other portals still use their temporary local compatibility context
+    // until their own database migration is complete. The System Administrator
+    // portal does not receive or consume that context.
+    if (result.user.role === "system-administrator") {
+      clearDemoSession();
+    } else {
+      saveDemoSession({
+        role: result.user.role,
+        name: result.user.name,
+        identifier: result.user.identifier,
+        redirect: result.user.redirect,
+      });
+    }
+
+    setStatus(`Signed in as ${result.user.name}. Opening your portal.`);
+    router.replace(result.user.redirect);
+    router.refresh();
   }
 
   function handleForgotPassword() {
     setStatus(
-      "Contact the System Administrator for an authorized password recovery request.",
+      "Contact the System Administrator if you need a password reset.",
     );
   }
 
@@ -130,7 +163,7 @@ export default function LoginForm({
           <input
             ref={passwordRef}
             id="login-password"
-            name="login-password"
+            name="password"
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             required
@@ -166,9 +199,9 @@ export default function LoginForm({
         Forgot Password?
       </button>
 
-      <button className={styles.primaryButton} type="submit" disabled={submitting}>
+      <button className={styles.primaryButton} type="submit" disabled={isSubmitting}>
         <AppIcon name="lock" className={styles.buttonIcon} />
-        <span>{submitting ? "Checking account..." : submitLabel}</span>
+        <span>{isSubmitting ? "Signing in..." : submitLabel}</span>
       </button>
 
       <p className={styles.formStatus} role="status" aria-live="polite">

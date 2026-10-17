@@ -12,7 +12,7 @@
     "name": "Katrina Mendoza",
     "identifier": "2026-01896",
     "alternateIdentifier": "katrina.mendoza@student.plp.edu.ph",
-    "password": "Student@123",
+    "password": "Student@12345",
     "redirect": "/student/dashboard"
   },
   {
@@ -20,7 +20,7 @@
     "name": "Dencie Aquino",
     "identifier": "2026-00108",
     "alternateIdentifier": "dencie.aquino@student.plp.edu.ph",
-    "password": "Student@123",
+    "password": "Student@12345",
     "redirect": "/student/dashboard"
   },
   {
@@ -28,7 +28,7 @@
     "name": "Maria Santos",
     "identifier": "registrar.demo",
     "alternateIdentifier": "registrar.demo@plp.edu.ph",
-    "password": "Registrar@123",
+    "password": "Registrar@12345",
     "redirect": "/registrar/dashboard"
   },
   {
@@ -37,7 +37,7 @@
     "identifier": "sysadmin.demo",
     "staffId": "PLP-SA-001",
     "alternateIdentifier": "adrian.reyes@plp.edu.ph",
-    "password": "SysAdmin@123",
+    "password": "SysAdmin@12345",
     "redirect": "/system-administrator/dashboard"
   },
   {
@@ -46,7 +46,7 @@
     "identifier": "academic.coordinator.demo",
     "staffId": "PLP-AC-001",
     "alternateIdentifier": "elena.cruz@plp.edu.ph",
-    "password": "Coordinator@123",
+    "password": "Coordinator@12345",
     "redirect": "/academic-coordinator/dashboard"
   }
 ]

@@ -6,7 +6,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import AppIcon from "@/components/ui/AppIcon";
 import NavigationItem from "./NavigationItem";
-import { signOutLive } from "@/lib/auth/live-auth";
+import { clearDemoSession } from "@/lib/auth/demo-auth";
+import { createClient } from "@/lib/supabase/client";
 
 export default function Sidebar({ role, meta, user, open, onClose }) {
   const pathname = usePathname();
@@ -40,11 +41,22 @@ export default function Sidebar({ role, meta, user, open, onClose }) {
   }, [open, onClose]);
 
   async function logout() {
+    const supabase = createClient();
     try {
-      await signOutLive();
+      // Audit failures must never keep an authenticated user from signing out.
+      // An unavailable audit RPC should never strand the user in a session.
+      try {
+        await supabase.rpc("record_own_auth_event", { p_event: "LOGOUT" });
+      } catch {
+        // Best-effort auditing; the authentication sign-out remains required.
+      }
+      const { error } = await supabase.auth.signOut({ scope: "local" });
+      if (error) return;
+      clearDemoSession();
       router.replace("/");
+      router.refresh();
     } catch {
-      // Never claim sign-out or redirect while the server session may remain valid.
+      // Do not claim success or redirect while an Auth session may remain active.
     }
   }
 

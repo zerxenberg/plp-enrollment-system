@@ -84,7 +84,7 @@ export default function NotificationPopover({
           <div className={styles.heading}>
             <div>
               <h2>Notifications</h2>
-              <p>{unreadCount} unread · Demo data</p>
+              <p>{unreadCount} unread · Recent activity</p>
             </div>
             <button
               type="button"

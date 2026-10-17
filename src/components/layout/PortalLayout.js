@@ -10,36 +10,24 @@ import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { getLiveSession } from "@/lib/auth/live-auth";
 import { LoadingState } from "@/components/ui/PortalUI";
 
-function matchesStaffRecord(record, identifier) {
-  const normalized = String(identifier || "").toLowerCase();
-  return [
-    record?.username,
-    record?.employeeId,
-    record?.email,
-  ].some((value) => String(value || "").toLowerCase() === normalized);
-}
-
-export default function PortalLayout({ role, children }) {
+export default function PortalLayout({ role, authUser, children }) {
   const router = useRouter();
   const {
     student,
-    registrar,
-    systemAdministrators,
-    academicCoordinators,
     notifications,
     markNotification,
   } = useDemoData();
 
-  const [ready, setReady] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [authenticatedAccount, setAuthenticatedAccount] = useState(null);
   const [authError, setAuthError] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const meta = PORTAL_META[role];
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setSidebarOpen((current) => !current), []);
 
   useEffect(() => {
+    if (authUser) return undefined;
     let cancelled = false;
     async function verifyPortalAccount() {
       try {
@@ -47,74 +35,34 @@ export default function PortalLayout({ role, children }) {
         if (cancelled) return;
         if (!session) {
           router.replace("/");
-          return;
-        }
-        if (session.role !== role) {
+        } else if (session.role !== role) {
           router.replace(PORTAL_META[session.role]?.homeHref || "/");
-          return;
+        } else {
+          setAuthenticatedAccount(session);
         }
-        setAuthenticatedAccount(session);
-        setReady(true);
       } catch {
         if (!cancelled) setAuthError("Could not verify this account's portal access.");
       }
     }
     verifyPortalAccount();
     return () => { cancelled = true; };
-  }, [role, router]);
+  }, [authUser, role, router]);
 
-  const user = useMemo(() => {
-    const session = authenticatedAccount;
-
-    if (role === "student") {
-      return {
-        name: student.profile.fullName,
-        subtitle: student.profile.studentNumber,
-      };
-    }
-
-    if (role === "registrar") {
-      return {
-        name: registrar.registrar.fullName,
-        subtitle: registrar.registrar.role,
-      };
-    }
-
-    if (role === "system-administrator") {
-      const record =
-        systemAdministrators.find((item) => matchesStaffRecord(item, session?.identifier)) ||
-        systemAdministrators[0];
-
-      return {
-        name: record?.fullName || session?.name || "System Administrator",
-        subtitle: record?.employeeId || "System Administrator",
-      };
-    }
-
-    if (role === "academic-coordinator") {
-      const record =
-        academicCoordinators.find((item) => matchesStaffRecord(item, session?.identifier)) ||
-        academicCoordinators[0];
-
-      return {
-        name: record?.fullName || session?.name || "Academic Coordinator",
-        subtitle: record?.employeeId || "Academic Coordinator",
-      };
-    }
-
-    return {
-      name: session?.name || "Portal User",
-      subtitle: role,
-    };
-  }, [academicCoordinators, authenticatedAccount, registrar, role, student, systemAdministrators]);
+  const user = useMemo(() => ({
+    name: authUser?.full_name || authenticatedAccount?.name || "Portal User",
+    subtitle:
+      authUser?.source_account_key ||
+      authenticatedAccount?.identifier ||
+      (role === "student" ? student.profile.studentNumber : meta?.portalName || role),
+  }), [authUser, authenticatedAccount, meta?.portalName, role, student.profile.studentNumber]);
 
   if (!meta) {
-    return <LoadingState label="Portal configuration is unavailable." />;
+    return null;
   }
 
   const term = student.term;
   const roleNotifications = notifications[role] || [];
-  if (!ready) {
+  if (!authUser && !authenticatedAccount) {
     return <LoadingState label={authError || "Verifying secure portal access..."} />;
   }
 
@@ -136,7 +84,7 @@ export default function PortalLayout({ role, children }) {
           markNotification,
           notificationHref: meta.notificationHref,
           utilityLabel: meta.topbarUtilityLabel,
-          showTerm: role !== "system-administrator",
+          showTerm: true,
           menuOpen: sidebarOpen,
           onMenu: toggleSidebar,
         }}>
