@@ -82,6 +82,24 @@ test("prerequisite cycles and tuition totals are validated", () => {
   assert.ok(totals.total.tuition > 0);
 });
 
+test("estimated tuition respects curriculum unit and rate overrides without double counting", () => {
+  const assignments = [
+    { subjectCode: "IT001", yearLevel: "1st Year", semester: "First Semester",
+      unitsOverride: 2, feePerUnit: 125 },
+    { subjectCode: "IT002", yearLevel: "1st Year", semester: "Second Semester",
+      feePerUnit: 100 },
+  ];
+  const subjects = [
+    { code: "IT001", units: 3, feePerUnit: 100 },
+    { code: "IT002", units: 3, feePerUnit: 100 },
+  ];
+  const summary = summarizeCurriculum(assignments, subjects, "1st Year", "First Semester");
+  assert.equal(summary.selected.units, 2);
+  assert.equal(summary.selected.tuition, 250);
+  assert.equal(summary.total.units, 5);
+  assert.equal(summary.total.tuition, 550);
+});
+
 test("drafts may be empty, while rules require earlier assigned prerequisites", () => {
   const original = catalog.curricula.find((item) => item.program === "BSIT");
   assert.deepEqual(validateCurriculumRecord({ ...original, status: "Draft", assignments: [] }, catalog), []);

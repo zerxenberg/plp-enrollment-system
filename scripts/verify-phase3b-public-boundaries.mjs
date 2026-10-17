@@ -21,7 +21,11 @@ const client = createClient(url, key, {
 let violations = 0;
 for (const table of ["app_users", "student_profiles", "academic_reviews",
   "programs", "subjects", "academic_change_history",
-  "user_login_identifiers", "auth_identifier_rate_limits"]) {
+  "user_login_identifiers", "auth_identifier_rate_limits",
+  "academic_source_import_ledger", "academic_estimated_subject_prices",
+  "academic_estimated_curriculum_rates", "academic_estimated_semester_tuition",
+  "academic_estimated_curriculum_tuition", "block_subject_sections",
+  "section_instructors"]) {
   const { data, error } = await client.from(table).select("*").limit(1);
   if (error && !["42501", "PGRST301"].includes(error.code)) {
     console.log(`${table}: INCONCLUSIVE: request failed (${error.code || "unknown"})`);

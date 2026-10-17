@@ -225,7 +225,7 @@ export function summarizeCurriculum(assignments = [], subjects = [], yearLevel =
   const totals = (items) => items.reduce((total, item) => {
     const subject = lookup.get(item.subjectCode);
     if (!subject) return total;
-    const units = Number(subject.units) || 0;
+    const units = Number(item.unitsOverride ?? subject.units) || 0;
     const feePerUnit = Number(item.feePerUnit ?? subject.feePerUnit ?? DEFAULT_DEMO_FEE_PER_UNIT);
     return { subjects: total.subjects + 1, units: total.units + units, tuition: total.tuition + units * feePerUnit };
   }, { subjects: 0, units: 0, tuition: 0 });

@@ -17,6 +17,31 @@ function rows(result, table) {
   fatal(result.error, table);
   return result.data || [];
 }
+// PostgREST limits a single response to a maximum page size. Fetch the full
+// authorized dataset before deriving roster occupancy or planning reports.
+async function loadAllRows(table, sortBy = "id", descending = false) {
+  const complete = [];
+  const pageSize = 1000;
+  for (let offset = 0; offset < 20000; offset += pageSize) {
+    let query = supabase.from(table).select("*").order(sortBy, { ascending: !descending });
+    if (sortBy !== "id") query = query.order("id", { ascending: !descending });
+    const page = rows(await query.range(offset, offset + pageSize - 1), table);
+    complete.push(...page);
+    if (page.length < pageSize) return { data: complete, error: null };
+  }
+  throw new Error(`Authorized ${table} query exceeded its supported pagination limit.`);
+}
+async function loadSyntheticStudentLabels() {
+  const complete = [];
+  const pageSize = 1000;
+  for (let offset = 0; offset < 10000; offset += pageSize) {
+    const page = rows(await supabase.rpc("coordinator_synthetic_student_names")
+      .order("id", { ascending: true }).range(offset, offset + pageSize - 1), "synthetic student labels");
+    complete.push(...page);
+    if (page.length < pageSize) return complete;
+  }
+  throw new Error("Synthetic student labels exceeded the supported pagination limit.");
+}
 function yearLabel(value) {
   return Number.isInteger(value) ? `${value}-${value + 1}` : "";
 }
@@ -35,7 +60,8 @@ export async function loadLiveAcademicCoordinator() {
     blocksResult, joinsResult, rosterResult, sectionsResult, meetingsResult,
     instructorsResult, roomsResult, sectionInstructorsResult, historyResult, reviewsResult,
     enrollmentsResult, enrollmentSubjectsResult, notificationsResult,
-    userNotificationsResult,
+    userNotificationsResult,pricesResult,curriculumRatesResult,syntheticNamesResult,
+    curriculumEstimatesResult,
   ] = await Promise.all([
     supabase.from("organizational_units").select("*"),
     supabase.from("programs").select("*"),
@@ -48,18 +74,22 @@ export async function loadLiveAcademicCoordinator() {
     supabase.from("subject_offerings").select("*"),
     supabase.from("block_sections").select("*"),
     supabase.from("block_subject_sections").select("*"),
-    supabase.from("block_student_assignments").select("*"),
+    loadAllRows("block_student_assignments"),
     supabase.from("sections").select("*"),
     supabase.from("section_meetings").select("*"),
     supabase.from("instructors").select("*"),
     supabase.from("rooms").select("*"),
     supabase.from("section_instructors").select("section_id,instructor_id,assignment_role"),
-    supabase.from("academic_change_history").select("*").order("occurred_at", { ascending: false }).limit(200),
+    loadAllRows("academic_change_history", "occurred_at", true),
     supabase.from("academic_reviews").select("*"),
     supabase.from("enrollments").select("*"),
     supabase.from("enrollment_subjects").select("*"),
     supabase.from("notifications").select("*"),
     supabase.from("user_notifications").select("*").eq("user_id", current.id),
+    supabase.from("academic_estimated_subject_prices").select("*"),
+    supabase.from("academic_estimated_curriculum_rates").select("*"),
+    loadSyntheticStudentLabels(),
+    supabase.from("academic_estimated_curriculum_tuition").select("*"),
   ]);
   const organizationalUnits = rows(unitsResult, "organizational unit");
   const programRecords = rows(programsResult, "program");
@@ -91,6 +121,13 @@ export async function loadLiveAcademicCoordinator() {
   const enrollmentSubjects = rows(enrollmentSubjectsResult, "registered subject");
   const notificationRecords = rows(notificationsResult, "notification");
   const userNotificationRecords = rows(userNotificationsResult, "account notification");
+  const priceMap = new Map(rows(pricesResult, "estimated academic price")
+    .map((item) => [item.subject_code, item]));
+  const curriculumRateMap = new Map(rows(curriculumRatesResult, "curriculum estimated rate")
+    .map((item) => [`${item.curriculum_code}:${item.subject_code}`, item.rate_per_unit]));
+  const syntheticNames = new Map(syntheticNamesResult.map((item) => [item.id, item.display_name]));
+  const curriculumEstimateMap = new Map(rows(curriculumEstimatesResult, "curriculum tuition completeness")
+    .map((item) => [item.curriculum_code, item]));
 
   const departments = organizationalUnits.map((unit) => ({
     id: unit.code, code: unit.code, name: unit.name, status: unit.is_active ? "Active" : "Inactive",
@@ -127,7 +164,9 @@ export async function loadLiveAcademicCoordinator() {
         .map((rule) => rule.prerequisite_subject_code))],
       department: programMap.get(applicablePrograms[0])?.department || "",
       departmentId: programMap.get(applicablePrograms[0])?.departmentId || "",
-      reference: "Registered Academic Record", feePerUnit: 0, fee: 0,
+      reference: "Registered Academic Record",
+      feePerUnit: Number(priceMap.get(record.code)?.rate_per_unit ?? 0),
+      fee: Number(record.units || 0) * Number(priceMap.get(record.code)?.rate_per_unit ?? 0),
     };
   });
   const curricula = curriculumRecords.map((record) => {
@@ -135,6 +174,9 @@ export async function loadLiveAcademicCoordinator() {
       .map((placement) => ({
         subjectCode: placement.subject_code, yearLevel: placement.year_level,
         semester: placement.semester, isRequired: placement.is_required,
+        unitsOverride: placement.units_override,
+        feePerUnit: Number(curriculumRateMap.get(`${placement.curriculum_code}:${placement.subject_code}`)
+          ?? priceMap.get(placement.subject_code)?.rate_per_unit ?? 0),
         prerequisites: prerequisites.filter((rule) =>
           rule.curriculum_code === record.code && rule.subject_code === placement.subject_code && rule.is_active)
           .map((rule) => rule.prerequisite_subject_code),
@@ -147,8 +189,11 @@ export async function loadLiveAcademicCoordinator() {
       major: trackRecords.find((track) => track.code === record.program_track_code)?.name || "",
       effectiveAcademicYear: record.effective_academic_year || yearLabel(record.effective_year_start),
       status: titleStatus(record.status), assignments: assigned,
+      estimatedTuitionComplete: curriculumEstimateMap.get(record.code)?.is_complete === true,
+      estimatedTuitionCoverage: curriculumEstimateMap.get(record.code)?.semesters_represented ?? 0,
       assignedSubjects: assigned.length,
-      totalUnits: assigned.reduce((sum, item) => sum + Number(subjectMap.get(item.subjectCode)?.units || 0), 0),
+      totalUnits: assigned.reduce((sum, item) =>
+        sum + Number(item.unitsOverride ?? subjectMap.get(item.subjectCode)?.units ?? 0), 0),
       reference: "Registered Academic Record",
     };
   });
@@ -163,7 +208,8 @@ export async function loadLiveAcademicCoordinator() {
     const program = programMap.get(record.program_code);
     const term = terms.find((item) => item.id === record.term_id);
     return {
-      id: record.id, code: record.code, trackCode: record.code, termId: record.term_id,
+      id: record.id, code: record.code,
+      trackCode: record.program_track_code || record.program_code, termId: record.term_id,
       academicYear: term?.academicYear || "", semester: term?.semester || "",
       collegeId: program?.departmentId || "", programCode: record.program_code,
       programId: program?.id || "", major: trackRecords.find((t) => t.code === record.program_track_code)?.name || "",
@@ -246,7 +292,8 @@ export async function loadLiveAcademicCoordinator() {
     blockPlanning: {
       terms, colleges: departments, programs, curricula, subjects,
       blockSections: blocks, students: studentRecords.map((person) => ({
-        id: person.id, studentNumber: person.student_number, fullName: person.student_number,
+        id: person.id, studentNumber: person.student_number,
+        fullName: syntheticNames.get(person.id) || person.student_number,
         programCode: person.program_code, yearLevel: person.year_level,
         status: person.student_status,
         classification: person.academic_classification || "Not evaluated",
@@ -256,11 +303,16 @@ export async function loadLiveAcademicCoordinator() {
       })),
       assignments: proposals, subjectClasses: classes, classMeetings,
       professors: instructorRecords.map((person) => ({
-        id: person.id, name: person.display_name, status: "ACTIVE",
-        qualifiedSubjectCodes: [],
+        id: person.id, name: person.original_display_name || person.display_name,
+        status: "ACTIVE",
+        qualifiedSubjectCodes: person.synthetic_source_attributes?.qualifiedSubjectCodes || [],
       })),
-      rooms: roomRecords.map((room) => ({ id: room.id, name: room.room_code,
-        building: room.building_name, status: room.is_active ? "AVAILABLE" : "INACTIVE" })),
+      rooms: roomRecords.map((room) => ({ id: room.id,
+        name: room.original_room_name || room.room_code,
+        building: room.building_name,
+        capacity: room.synthetic_source_attributes?.capacity,
+        types: room.synthetic_source_attributes?.types || [],
+        status: room.is_active ? "AVAILABLE" : "INACTIVE" })),
       history: [],
     },
     registrar: {

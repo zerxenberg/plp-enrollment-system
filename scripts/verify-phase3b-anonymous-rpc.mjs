@@ -58,6 +58,7 @@ const checks = [
   ["coordinator_synthetic_supplemental", {
     p_group: "academicCoordinator.history",
   }],
+  ["coordinator_synthetic_student_names", {}],
 ];
 
 let failures = 0;
