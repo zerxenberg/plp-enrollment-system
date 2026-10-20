@@ -33,6 +33,8 @@ Admission records preserve read only handoff data. Enrollment must not rewrite t
 
 ## Authentication and authorization
 
+School-project release policy: Focus database activation readiness on existing PLP tables, project-created tables, their verified `postgres` ownership, current client grants and RLS. Do not make unrelated platform-managed owners' future default privileges a prerequisite for PROJECT_ONLY activation. Preserve role separation, server-side authorization, audit, proper no-email account activation and immutable official academic records. The active decision is documented in `docs/database-normalization/project-auth-deployment/PROJECT_SCOPE_POLICY_CURRENT.md`.
+
 Use Supabase Auth or the project's trusted authentication authority. Link application users through a stable identity.
 
 Preserve one permanent student identity. Do not create a second Enrollment account after Admission.

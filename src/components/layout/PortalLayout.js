@@ -10,7 +10,7 @@ import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { getLiveSession } from "@/lib/auth/live-auth";
 import { LoadingState } from "@/components/ui/PortalUI";
 
-export default function PortalLayout({ role, authUser, children }) {
+export default function PortalLayout({ role, authUser, projectOnly = false, children }) {
   const router = useRouter();
   const {
     student,
@@ -60,8 +60,10 @@ export default function PortalLayout({ role, authUser, children }) {
     return null;
   }
 
-  const term = student.term;
-  const roleNotifications = notifications[role] || [];
+  // Real fictional PROJECT_ONLY students must not inherit another demo
+  // student's term or notification inbox from the shared mock provider.
+  const term = projectOnly ? null : student.term;
+  const roleNotifications = projectOnly ? [] : (notifications[role] || []);
   if (!authUser && !authenticatedAccount) {
     return <LoadingState label={authError || "Verifying secure portal access..."} />;
   }
@@ -84,7 +86,7 @@ export default function PortalLayout({ role, authUser, children }) {
           markNotification,
           notificationHref: meta.notificationHref,
           utilityLabel: meta.topbarUtilityLabel,
-          showTerm: true,
+          showTerm: !projectOnly,
           menuOpen: sidebarOpen,
           onMenu: toggleSidebar,
         }}>

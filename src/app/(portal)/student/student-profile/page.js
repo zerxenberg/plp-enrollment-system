@@ -1,5 +1,7 @@
 import StudentProfile from "@/components/student/StudentProfile";
+import { loadStudentProfileForPage } from "@/features/students/student-profile-server";
 
-export default function StudentProfilePage() {
-  return <StudentProfile />;
+export default async function StudentProfilePage() {
+  const profileView = await loadStudentProfileForPage();
+  return <StudentProfile {...profileView} />;
 }

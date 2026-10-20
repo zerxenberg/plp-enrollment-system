@@ -3,6 +3,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { PORTAL_META } from "@/config/portal-navigation";
+import { allowProjectOnlyLogin } from "@/lib/auth/project-only-login-guard";
+import { requireProjectOnlyInitialPasswordRotation } from "@/lib/auth/project-only-first-login-rotation.mjs";
+import {
+  auditSuccessfulLogin,
+  denySignedInAccount,
+} from "@/lib/auth/sign-in-audit-safety.mjs";
 
 function normalizeEmail(value) {
   return String(value ?? "").trim().toLowerCase();
@@ -45,6 +51,15 @@ export async function signInPortalUser({ email, password }) {
     };
   }
 
+  // The application-account lookup is mandatory after Auth success. Verify
+  // the required trusted backend exists BEFORE accepting a password and
+  // potentially creating an Auth session cookie.
+  let adminClient;
+  try {
+    adminClient = createAdminClient();
+  } catch {
+    return { ok: false, message: "Authentication is temporarily unavailable." };
+  }
   const supabase = await createClient();
 
   const { data: authData, error: authError } =
@@ -54,10 +69,10 @@ export async function signInPortalUser({ email, password }) {
     });
 
   if (authError || !authData.user) {
-    await recordFailedLogin({
+    await auditSuccessfulLogin(() => recordFailedLogin({
       email: normalizedEmail,
       reason: "Supabase Auth rejected the supplied credentials.",
-    });
+    }));
 
     return {
       ok: false,
@@ -65,77 +80,105 @@ export async function signInPortalUser({ email, password }) {
     };
   }
 
-  const adminClient = createAdminClient();
-
-  const { data: appUser, error: appUserError } = await adminClient
-    .from("app_users")
-    .select(`
-      id,
-      source_account_key,
-      role_code,
-      full_name,
-      email,
-      account_status,
-      login_enabled
-    `)
-    .eq("auth_user_id", authData.user.id)
-    .single();
+  let appUser = null;
+  let appUserError = null;
+  try {
+    const result = await adminClient
+      .from("app_users")
+      .select(`
+        id,
+        source_account_key,
+        auth_user_id,
+        role_code,
+        full_name,
+        email,
+        account_status,
+        login_enabled
+      `)
+      .eq("auth_user_id", authData.user.id)
+      .single();
+    appUser = result.data;
+    appUserError = result.error;
+  } catch {
+    appUserError = new Error("Trusted application-account lookup unavailable.");
+  }
 
   if (appUserError || !appUser) {
-    await recordFailedLogin({
-      email: normalizedEmail,
-      actorLabel: authData.user.email || normalizedEmail,
-      reason: "Authenticated Supabase user is not linked to an application account.",
-    });
-
-    await supabase.auth.signOut({ scope: "local" });
-
-    return {
-      ok: false,
+    return denySignedInAccount({
       message:
         "Your Supabase Auth account is not linked to a PLP Enrollment System account.",
-    };
+      signOut: () => supabase.auth.signOut({ scope: "local" }),
+      audit: () => recordFailedLogin({
+        email: normalizedEmail,
+        actorLabel: authData.user.email || normalizedEmail,
+        reason: "Authenticated Supabase user is not linked to an application account.",
+      }),
+    });
   }
 
   if (appUser.account_status !== "Active" || !appUser.login_enabled) {
-    await recordFailedLogin({
-      email: appUser.email,
-      actorUserId: appUser.id,
-      actorLabel: appUser.full_name,
-      reason: "Application account is inactive or login is disabled.",
-    });
-
-    await supabase.auth.signOut({ scope: "local" });
-
-    return {
-      ok: false,
+    return denySignedInAccount({
       message: "This PLP Enrollment System account is not enabled for login.",
-    };
+      signOut: () => supabase.auth.signOut({ scope: "local" }),
+      audit: () => recordFailedLogin({
+        email: appUser.email,
+        actorUserId: appUser.id,
+        actorLabel: appUser.full_name,
+        reason: "Application account is inactive or login is disabled.",
+      }),
+    });
+  }
+
+  if (!(await allowProjectOnlyLogin(adminClient, appUser, authData.user))) {
+    return denySignedInAccount({
+      message: "This PLP Enrollment System account is not enabled for login.",
+      signOut: () => supabase.auth.signOut({ scope: "local" }),
+      audit: () => recordFailedLogin({
+        email: appUser.email,
+        actorUserId: appUser.id,
+        actorLabel: appUser.full_name,
+        reason: "PROJECT_ONLY cohort access or Auth linkage is not active.",
+      }),
+    });
+  }
+
+  let initialPasswordChangeRequired;
+  try {
+    initialPasswordChangeRequired = await requireProjectOnlyInitialPasswordRotation(
+      adminClient, appUser, authData.user,
+    );
+  } catch {
+    return denySignedInAccount({
+      message: "Account security verification is temporarily unavailable.",
+      signOut: () => supabase.auth.signOut({ scope: "local" }),
+      audit: () => recordFailedLogin({
+        email: appUser.email,
+        actorUserId: appUser.id,
+        reason: "PROJECT_ONLY initial password state not verified.",
+      }),
+    });
   }
 
   const redirect = PORTAL_META[appUser.role_code]?.homeHref;
 
   if (!redirect) {
-    await recordFailedLogin({
-      email: appUser.email,
-      actorUserId: appUser.id,
-      actorLabel: appUser.full_name,
-      reason: `Unrecognized portal role: ${appUser.role_code}`,
-    });
-
-    await supabase.auth.signOut({ scope: "local" });
-
-    return {
-      ok: false,
+    return denySignedInAccount({
       message: "This account does not have a recognized portal role.",
-    };
+      signOut: () => supabase.auth.signOut({ scope: "local" }),
+      audit: () => recordFailedLogin({
+        email: appUser.email,
+        actorUserId: appUser.id,
+        actorLabel: appUser.full_name,
+        reason: `Unrecognized portal role: ${appUser.role_code}`,
+      }),
+    });
   }
 
   // Persist successful login activity and last_login_at in PostgreSQL.
   // The login remains valid even if the audit write itself fails.
-  await supabase.rpc("record_own_auth_event", {
+  await auditSuccessfulLogin(() => supabase.rpc("record_own_auth_event", {
     p_event: "LOGIN",
-  });
+  }));
 
   return {
     ok: true,
@@ -144,7 +187,8 @@ export async function signInPortalUser({ email, password }) {
       name: appUser.full_name,
       identifier: appUser.email,
       sourceAccountKey: appUser.source_account_key,
-      redirect,
+      redirect: initialPasswordChangeRequired ? "/student/change-password" : redirect,
+      initialPasswordChangeRequired,
     },
   };
 }

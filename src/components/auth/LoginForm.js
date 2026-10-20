@@ -80,6 +80,7 @@ export default function LoginForm({
             name: login.session.name,
             identifier: login.session.identifier,
             redirect: login.session.redirect,
+            sourceAccountKey: login.session.sourceAccountKey,
           } }
           : login;
       }
@@ -98,7 +99,8 @@ export default function LoginForm({
     // Other portals still use their temporary local compatibility context
     // until their own database migration is complete. The System Administrator
     // portal does not receive or consume that context.
-    if (result.user.role === "system-administrator") {
+    if (result.user.role === "system-administrator" ||
+        String(result.user.sourceAccountKey || "").startsWith("PROJECT_ONLY:")) {
       clearDemoSession();
     } else {
       saveDemoSession({

@@ -40,6 +40,12 @@ Do not hardcode unresolved institutional policy values such as passing threshold
 
 ## 5. Security and data rules
 
+### School-project release scope (current decision, 2026-10-20)
+
+This repository is a **classroom demonstration**, not a deployed university service. For PROJECT_ONLY student-account provisioning, release checks shall cover the privileges, RLS and ownership of **existing PLP tables and new project-owned tables created by the reviewed `postgres` migration actor**. Do not require unrelated platform-managed database owners' future table defaults to be globally zero as a condition of activating these project accounts. Prior reviews that applied such a global release requirement have been superseded by this scoped decision; keep them as historical audit evidence, not ongoing release instructions. Refer to `docs/database-normalization/project-auth-deployment/PROJECT_SCOPE_POLICY_CURRENT.md` for the current testable policy.
+
+Keep actual student/role authorization, RLS, foreign keys, academic immutability, current-table privilege validation, trusted owner, audit, no-email workflow, per-account approval and credential security. Do not claim authenticated application users lack any database API role; they have tightly governed access via the API, even without Dashboard access. Do not reintroduce a blanket platform-admin default-privilege gate in future migration, runner, or test changes. No production migration or account import is implied by this documentation decision.
+
 Enforce authentication and authorization with trusted server side or database controls, not only frontend visibility. Apply least privilege and Supabase RLS by role, identity, record ownership, and finalized entity authority.
 
 Never hardcode or commit passwords, tokens, API keys, service role keys, or other secrets. Use environment variables and keep `.gitignore` protective. Never expose privileged server secrets to browser code.

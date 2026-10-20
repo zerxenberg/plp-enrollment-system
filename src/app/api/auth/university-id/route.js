@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { allowProjectOnlyLogin } from "@/lib/auth/project-only-login-guard";
+import { requireProjectOnlyInitialPasswordRotation } from "@/lib/auth/project-only-first-login-rotation.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +71,7 @@ export async function POST(request) {
     if (owners.size !== 1 || identifiers.data.length >= 100) return reply(FAILURE, 401);
 
     const mapping = await admin.from("app_users")
-      .select("id,email,auth_user_id,role_code,account_status,login_enabled")
+      .select("id,email,auth_user_id,source_account_key,role_code,account_status,login_enabled")
       .eq("id", [...owners][0]).maybeSingle();
     if (mapping.error) return reply("Authentication is temporarily unavailable.", 503);
     const account = mapping.data;
@@ -86,10 +88,17 @@ export async function POST(request) {
         data.user.id !== account.auth_user_id || !data.user.email_confirmed_at) {
       return reply(FAILURE, 401);
     }
+    if (!(await allowProjectOnlyLogin(admin, account, data.user))) {
+      return reply(FAILURE, 401);
+    }
+    const initialPasswordChangeRequired =
+      await requireProjectOnlyInitialPasswordRotation(admin, account, data.user);
     return NextResponse.json({
       ok: true,
       accessToken: data.session.access_token,
       refreshToken: data.session.refresh_token,
+      initialPasswordChangeRequired,
+      projectOnly: String(account.source_account_key || "").startsWith("PROJECT_ONLY:"),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return reply("Authentication is temporarily unavailable.", 503);

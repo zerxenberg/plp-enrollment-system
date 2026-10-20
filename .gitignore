@@ -30,8 +30,17 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env.local
+# Local and deployment environment credentials.
+.env
+.env.*
+!.env.example
+*.vault
+*.vault.*
+*.key
+*.p12
+*.pfx
+*.dump
+*.backup
 
 # Generated synthetic archive SQL batches; source manifest is under docs/
 supabase/seed/.phase3b-archive-batches/
@@ -45,5 +54,14 @@ next-env.d.ts
 
 # typescript
 
-# Sql Queries
+# Keep ad hoc SQL exports and local database dumps out of Git.
 *.sql
+
+# Only reviewed migration sources should be added explicitly.
+!/supabase/migrations/*.sql
+
+# Fictional project cohort and credential handoff exports are operator held.
+/supabase/seed/*.csv
+/scripts/database-normalization/project-auth/*.vault*
+/scripts/database-normalization/project-auth/*handoff*.json
+/scripts/database-normalization/project-auth/*credentials*.csv

@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { PORTAL_META } from "@/config/portal-navigation";
+import { signInPortalUser } from "@/features/auth/auth-actions";
 
 const ACTIVE = new Set(["ACTIVE", "Active"]);
 
@@ -15,6 +16,7 @@ function authorizedProfile(record, user) {
     role: record.role_code,
     name: record.full_name,
     identifier: record.email,
+    sourceAccountKey: record.source_account_key,
     redirect: PORTAL_META[record.role_code].homeHref,
   };
 }
@@ -29,7 +31,7 @@ export async function getLiveSession() {
   if (identityError || !identity?.user) return null;
   const { data: appUser, error } = await supabase
     .from("app_users")
-    .select("id,auth_user_id,role_code,full_name,email,account_status,login_enabled")
+    .select("id,auth_user_id,role_code,full_name,email,account_status,login_enabled,source_account_key")
     .eq("auth_user_id", identity.user.id)
     .maybeSingle();
   if (error) throw new Error("Account permissions could not be verified.");
@@ -59,6 +61,14 @@ export async function signInLive({ identity, password }) {
       refresh_token: result.refreshToken,
     });
     if (sessionError) return { ok: false, message: "Invalid credentials or account access." };
+    if (result.initialPasswordChangeRequired === true && result.projectOnly === true) {
+      // This project student's RLS-protected profile remains locked until
+      // the verified initial password change is completed.
+      return { ok: true, session: {
+        role: "student", name: "Student", identifier: normalized,
+        sourceAccountKey: "PROJECT_ONLY:", redirect: "/student/change-password",
+      } };
+    }
     try {
       const session = await getLiveSession();
       if (session) return { ok: true, session };
@@ -68,21 +78,24 @@ export async function signInLive({ identity, password }) {
     await supabase.auth.signOut();
     return { ok: false, message: "This account is not enabled for the Enrollment System." };
   }
-  const { error } = await supabase.auth.signInWithPassword({
-    email: normalized,
-    password,
-  });
-  if (error) return { ok: false, message: "Invalid credentials or account access." };
+  // Use the same trusted server login gate as the main email form. A
+  // temporary-password PROJECT_ONLY user intentionally has no app_users RLS
+  // self-read before rotation; a browser-only getLiveSession() must not
+  // accidentally log this authorized first-login session back out.
   try {
-    const session = await getLiveSession();
-    if (!session) {
-      await supabase.auth.signOut();
-      return { ok: false, message: "This account is not enabled for the Enrollment System." };
+    const result = await signInPortalUser({ email: normalized, password });
+    if (!result?.ok || !result.user) {
+      return { ok: false, message: result?.message || "Invalid credentials or account access." };
     }
-    return { ok: true, session };
+    return { ok: true, session: {
+      role: result.user.role,
+      name: result.user.name,
+      identifier: result.user.identifier,
+      sourceAccountKey: result.user.sourceAccountKey,
+      redirect: result.user.redirect,
+    } };
   } catch {
-    await supabase.auth.signOut();
-    return { ok: false, message: "Account permissions could not be verified." };
+    return { ok: false, message: "Authentication is temporarily unavailable." };
   }
 }
 
