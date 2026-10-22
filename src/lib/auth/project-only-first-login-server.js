@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { allowProjectOnlyLogin } from "@/lib/auth/project-only-login-guard";
+import { isActiveLegacyStudentAccount } from "@/lib/auth/legacy-student-account-policy.mjs";
 import {
   requireProjectOnlyInitialPasswordRotation,
 } from "@/lib/auth/project-only-first-login-rotation.mjs";
@@ -26,6 +27,12 @@ export async function getProjectOnlyInitialPasswordState() {
     return { kind: "denied", supabase };
   }
   if (!String(account.source_account_key || "").startsWith("PROJECT_ONLY:")) {
+    // A valid, unexpired Auth token must not reopen a Student portal after
+    // an administrator disables the app account. Same identity, current
+    // status and login permission are required for every legacy request.
+    if (!isActiveLegacyStudentAccount(account, identity.user)) {
+      return { kind: "denied", supabase };
+    }
     return { kind: "legacy", supabase, account, user: identity.user };
   }
   if (!(await allowProjectOnlyLogin(admin, account, identity.user))) {
