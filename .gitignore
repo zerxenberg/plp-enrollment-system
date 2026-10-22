@@ -65,3 +65,9 @@ next-env.d.ts
 /scripts/database-normalization/project-auth/*.vault*
 /scripts/database-normalization/project-auth/*handoff*.json
 /scripts/database-normalization/project-auth/*credentials*.csv
+
+# Locally generated fictional Phase 8 cohort identity snapshots and manifests.
+# Keep student UUID data in private local storage, never Git.
+/scripts/database-normalization/academic-phase8/cohort-phase8-payload-*.json
+/scripts/database-normalization/academic-phase8/*-snapshot*.json
+/scripts/database-normalization/academic-phase8/*-manifest*.json
