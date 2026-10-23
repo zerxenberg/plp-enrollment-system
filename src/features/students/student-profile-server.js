@@ -4,29 +4,10 @@ import { getStudentContext } from "./student-context-server";
 import { isOwnStudentPhotoPath } from "./student-profile-photo-path.mjs";
 
 async function loadContactAndPhoto(context) {
-  // The alternate contact column was added by a newer migration. Keep the
-  // profile readable if a local database has not applied it yet, while
-  // retaining the authenticated user's ownership filter.
-  let contactResult = await context.client.from("student_profiles")
-    .select("contact_number,alternate_contact_number,address")
-    .eq("id",context.studentId).eq("user_id",context.appUserId).single();
-
-  if (contactResult.error?.code === "42703") {
-    const fallback = await context.client.from("student_profiles")
-      .select("contact_number,address")
-      .eq("id",context.studentId).eq("user_id",context.appUserId).single();
-    if (!fallback.error && fallback.data) {
-      contactResult = {
-        data: { ...fallback.data, alternate_contact_number: null },
-        error: null,
-      };
-    } else {
-      contactResult = fallback;
-    }
-  }
-
   const [{data:contact,error:contactError},{data:photo,error:photoError}]=await Promise.all([
-    Promise.resolve(contactResult),
+    context.client.from("student_profiles")
+      .select("contact_number,alternate_contact_number,address")
+      .eq("id",context.studentId).eq("user_id",context.appUserId).single(),
     context.admin.from("student_profile_photos")
       .select("object_path").eq("student_id",context.studentId).maybeSingle(),
   ]);
