@@ -29,3 +29,42 @@ export function downloadCsv(rows, filename) {
   anchor.remove();
   URL.revokeObjectURL(url);
 }
+
+
+export function registrarDebug(level, area, message, details = null) {
+  if (typeof window === "undefined") return;
+  const normalizedLevel = String(level || "info").toLowerCase();
+  const method = ["error", "warn", "info", "debug"].includes(normalizedLevel)
+    ? normalizedLevel
+    : "info";
+  const label = `[Registrar][${area || "General"}][${method.toUpperCase()}]`;
+  if (details === null || details === undefined) {
+    console[method](`${label} ${message}`);
+  } else {
+    console[method](`${label} ${message}`, details);
+  }
+}
+
+export function registrarResultDebug(result, area = "Action") {
+  if (typeof window === "undefined" || !result) return;
+  const level = result.ok ? "info" : "error";
+  const label = `[Registrar][${result.debug?.scope || area}][${level.toUpperCase()}]`;
+  console.groupCollapsed(`${label} ${result.message || "Registrar action result"}`);
+  if (result.debug) console[level]("Technical details", result.debug);
+  if (result.data?.blocking_issues || result.data?.blockingIssues) {
+    console.info("Validation details", result.data.blocking_issues || result.data.blockingIssues);
+  }
+  if (result.data?.results) console.info("Batch result details", result.data.results);
+  if (!result.debug && !result.data) console[level](result);
+  console.groupEnd();
+}
+
+export function registrarSafeMessage(message, ok = false) {
+  const value = String(message || "").trim();
+  if (!value) return ok ? "Action completed." : "The action could not be completed.";
+  const technical = /supabase|postgrest|database|schema|rpc|row level|\brls\b|sql|relation|function public\.|jwt|uuid|grade_import_|public\.|service role|backend|project_only|p8f26|checksum|batch id/i;
+  if (!technical.test(value)) return value;
+  return ok
+    ? "Action completed."
+    : "The action could not be completed. Please try again or contact the system administrator if the problem continues.";
+}

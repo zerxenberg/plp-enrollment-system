@@ -90,7 +90,7 @@ export async function performProjectEnrollmentAction(payload) {
     const reason = String(payload?.reason || "").trim();
 
     if (!studentId || !["VALIDATE", "RETURN", "CONFIRM"].includes(action)) {
-      return failure("A supported PROJECT_ONLY enrollment action is required.");
+      return failure("Select a supported demonstration enrollment action.");
     }
 
     if (["RETURN", "CONFIRM"].includes(action) && !reason) {
@@ -248,7 +248,7 @@ export async function validateRegistrarGradeImport(batchId) {
     return success(
       data?.invalid_rows
         ? `Validation completed with ${data.invalid_rows} invalid row${data.invalid_rows === 1 ? "" : "s"}.`
-        : "All staged rows passed technical validation. Official source verification is still required.",
+        : "All grade records passed validation. Verify the official source before publishing.",
       data,
     );
   } catch (error) {
@@ -264,7 +264,7 @@ export async function verifyRegistrarGradeSource(payload) {
     const method = String(payload?.method || "").trim();
 
     if (!batchId || !sourceReference || !checksum || !method) {
-      return failure("Batch, source reference, checksum, and verification method are required.");
+      return failure("Grade source verification information is incomplete.");
     }
 
     const data = await attestOfficialGradeSource(
@@ -276,7 +276,7 @@ export async function verifyRegistrarGradeSource(payload) {
 
     revalidateRegistrar("/registrar/students");
     return success(
-      "Official source verification was recorded. The batch can be published if all protected checks remain valid.",
+      "Official source verification was recorded. The grade file is ready for final publication.",
       data,
     );
   } catch (error) {
@@ -293,7 +293,7 @@ export async function publishRegistrarGradeImport(batchId) {
       "/registrar/reports-monitoring",
     );
     return success(
-      "Official grades were published transactionally to Academic Records.",
+      "Official grades were published successfully.",
       data,
     );
   } catch (error) {
@@ -345,7 +345,7 @@ export async function changeRegistrarPassword(payload) {
     const { error } = await supabase.auth.updateUser({ password });
     if (error) return failure(error.message || "Password could not be changed.");
 
-    return success("Registrar password was changed through Supabase Auth.");
+    return success("Password changed successfully.");
   } catch (error) {
     return failure(messageFromError(error, "Password change failed."));
   }

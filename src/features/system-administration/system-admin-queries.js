@@ -2,7 +2,14 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
-import { loadProjectEnrollmentWindowForStaff } from "@/features/academic/project-enrollment-window-actions";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+const CURRENT_PROJECT_COHORT_ID = "PLP_PROJECT_600_2026_1";
+const CURRENT_TERM_ID = "TERM-2026-1";
+
+function currentAccountScope(query) {
+  return query.or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`);
+}
 
 function assertQuery(error, label) {
   if (error) {
@@ -56,17 +63,14 @@ function formatBytes(value) {
 }
 
 async function getOpenOrLatestTerm(supabase) {
-  const openResult = await supabase
+  const currentResult = await supabase
     .from("academic_terms")
     .select("id,label,short_label,academic_year,semester,enrollment_start,enrollment_end,status")
-    .eq("status", "Open")
-    .order("enrollment_start", { ascending: false })
-    .limit(1)
+    .eq("id", CURRENT_TERM_ID)
     .maybeSingle();
 
-  assertQuery(openResult.error, "Load open academic term");
-
-  if (openResult.data) return openResult.data;
+  assertQuery(currentResult.error, "Load current academic term");
+  if (currentResult.data) return currentResult.data;
 
   const latestResult = await supabase
     .from("academic_terms")
@@ -121,10 +125,9 @@ async function getUserNotifications(supabase, userId, limit = 100) {
 
 export async function getSystemAdministratorShellData(userId) {
   const supabase = await createClient();
-  const [term, notifications, projectWindow] = await Promise.all([
+  const [term, notifications] = await Promise.all([
     getOpenOrLatestTerm(supabase),
     getUserNotifications(supabase, userId, 20),
-    loadProjectEnrollmentWindowForStaff("system-administrator"),
   ]);
 
   return {
@@ -135,12 +138,9 @@ export async function getSystemAdministratorShellData(userId) {
           shortLabel: term.short_label,
           academicYear: term.academic_year,
           semester: term.semester,
-          enrollmentStart: term.id === projectWindow.termId
-            ? formatDate(projectWindow.enrollmentStart) : formatDate(term.enrollment_start),
-          enrollmentEnd: term.id === projectWindow.termId
-            ? formatDate(projectWindow.enrollmentEnd) : formatDate(term.enrollment_end),
-          status: term.id === projectWindow.termId ? projectWindow.status : term.status,
-          isDemonstration: term.id === projectWindow.termId,
+          enrollmentStart: formatDate(term.enrollment_start),
+          enrollmentEnd: formatDate(term.enrollment_end),
+          status: term.status,
         }
       : null,
     notifications,
@@ -154,6 +154,7 @@ export async function getSystemAdministratorDashboardData(userId) {
     activeUsersResult,
     inactiveUsersResult,
     activeAdministratorsResult,
+    projectStudentAccountsResult,
     failedRequestsResult,
     successfulSyncResult,
     latestBackupResult,
@@ -166,16 +167,22 @@ export async function getSystemAdministratorDashboardData(userId) {
       .from("app_users")
       .select("id", { count: "exact", head: true })
       .eq("account_status", "Active")
-      .eq("is_synthetic_demo", false),
+      .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
     supabase
       .from("app_users")
       .select("id", { count: "exact", head: true })
       .eq("account_status", "Inactive")
-      .eq("is_synthetic_demo", false),
+      .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
     supabase
       .from("app_users")
       .select("id", { count: "exact", head: true })
       .eq("role_code", "system-administrator")
+      .eq("account_status", "Active"),
+    supabase
+      .from("app_users")
+      .select("id", { count: "exact", head: true })
+      .eq("role_code", "student")
+      .eq("project_cohort_id", CURRENT_PROJECT_COHORT_ID)
       .eq("account_status", "Active"),
     supabase
       .from("integration_requests")
@@ -217,6 +224,7 @@ export async function getSystemAdministratorDashboardData(userId) {
     ["Count active users", activeUsersResult.error],
     ["Count inactive users", inactiveUsersResult.error],
     ["Count active administrators", activeAdministratorsResult.error],
+    ["Count current project student accounts", projectStudentAccountsResult.error],
     ["Count failed integration requests", failedRequestsResult.error],
     ["Count successful synchronization events", successfulSyncResult.error],
     ["Load latest backup", latestBackupResult.error],
@@ -251,6 +259,7 @@ export async function getSystemAdministratorDashboardData(userId) {
     activeUsers: activeUsersResult.count || 0,
     inactiveUsers: inactiveUsersResult.count || 0,
     activeAdministrators: activeAdministratorsResult.count || 0,
+    currentProjectStudentAccounts: projectStudentAccountsResult.count || 0,
     failedRequests: failedRequestsResult.count || 0,
     successfulSynchronizations: successfulSyncResult.count || 0,
     openErrors: openErrorsResult.count || 0,
@@ -263,12 +272,10 @@ export async function getSystemAdministratorDashboardData(userId) {
 
 export async function getUsersAccessData() {
   const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   const [
     usersResult,
-    identifiersResult,
-    studentProfilesResult,
-    staffProfilesResult,
     rolesResult,
     permissionsResult,
     rolePermissionsResult,
@@ -276,21 +283,11 @@ export async function getUsersAccessData() {
     programsResult,
     activityResult,
   ] = await Promise.all([
-    supabase
-      .from("app_users")
-      .select("id,auth_user_id,source_account_key,role_code,full_name,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at")
-      .eq("is_synthetic_demo", false)
-      .order("full_name"),
-    supabase
-      .from("user_login_identifiers")
-      .select("id,user_id,identifier_type,identifier_value,is_primary")
-      .order("identifier_type"),
-    supabase
-      .from("student_profiles")
-      .select("id,user_id,student_number,program_code,year_level,student_type,student_status,academic_classification,progression_status,current_term_id,current_curriculum_code"),
-    supabase
-      .from("staff_profiles")
-      .select("user_id,employee_id,organizational_unit_code,position_title,office_name"),
+    currentAccountScope(
+      supabase
+        .from("app_users")
+        .select("id,auth_user_id,source_account_key,role_code,full_name,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
+    ).order("full_name"),
     supabase
       .from("roles")
       .select("code,name,default_redirect_path,description,is_active")
@@ -318,10 +315,43 @@ export async function getUsersAccessData() {
       .limit(150),
   ]);
 
+  const currentUserIds = (usersResult.data || []).map((row) => row.id);
+
+  const [
+    identifiersResult,
+    studentProfilesResult,
+    projectPlacementsResult,
+    staffProfilesResult,
+  ] = await Promise.all([
+    currentUserIds.length
+      ? supabase
+          .from("user_login_identifiers")
+          .select("id,user_id,identifier_type,identifier_value,is_primary")
+          .in("user_id", currentUserIds)
+          .order("identifier_type")
+      : Promise.resolve({ data: [], error: null }),
+    adminClient
+      .from("student_profiles")
+      .select("id,user_id,student_number,program_code,year_level,year_level_number,student_type,student_status,academic_classification,progression_status,current_term_id,current_curriculum_code,record_kind,project_cohort_id,is_synthetic_demo")
+      .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
+    adminClient
+      .from("project_student_academic_placements")
+      .select("student_id,project_cohort_id,term_id,program_code,curriculum_code,year_level,academic_classification,progression_status,home_block_id")
+      .eq("project_cohort_id", CURRENT_PROJECT_COHORT_ID)
+      .eq("term_id", CURRENT_TERM_ID),
+    currentUserIds.length
+      ? supabase
+          .from("staff_profiles")
+          .select("user_id,employee_id,organizational_unit_code,position_title,office_name")
+          .in("user_id", currentUserIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
   [
-    ["Load application users", usersResult.error],
+    ["Load current operational application users", usersResult.error],
     ["Load login identifiers", identifiersResult.error],
-    ["Load student profiles", studentProfilesResult.error],
+    ["Load current operational student profiles", studentProfilesResult.error],
+    ["Load current project academic placements", projectPlacementsResult.error],
     ["Load staff profiles", staffProfilesResult.error],
     ["Load roles", rolesResult.error],
     ["Load permissions", permissionsResult.error],
@@ -338,8 +368,29 @@ export async function getUsersAccessData() {
     identifiersByUser.set(row.user_id, list);
   });
 
+  const placementByStudent = new Map(
+    (projectPlacementsResult.data || []).map((row) => [row.student_id, row]),
+  );
+
   const studentByUser = new Map(
-    (studentProfilesResult.data || []).map((row) => [row.user_id, row]),
+    (studentProfilesResult.data || []).map((row) => {
+      const placement = placementByStudent.get(row.id);
+      return [
+        row.user_id,
+        placement
+          ? {
+              ...row,
+              program_code: placement.program_code || row.program_code,
+              current_term_id: placement.term_id || row.current_term_id,
+              current_curriculum_code: placement.curriculum_code || row.current_curriculum_code,
+              year_level: placement.year_level || row.year_level || row.year_level_number,
+              academic_classification: placement.academic_classification || row.academic_classification,
+              progression_status: placement.progression_status || row.progression_status,
+              home_block_id: placement.home_block_id,
+            }
+          : row,
+      ];
+    }),
   );
 
   const staffByUser = new Map(
@@ -370,6 +421,9 @@ export async function getUsersAccessData() {
       identifiers.find((item) => item.is_primary && item.identifier_type !== "EMAIL")?.identifier_value ||
       row.source_account_key ||
       row.email;
+    const isCurrentProjectStudent =
+      row.role_code === "student" &&
+      row.project_cohort_id === CURRENT_PROJECT_COHORT_ID;
 
     return {
       id: row.id,
@@ -388,7 +442,10 @@ export async function getUsersAccessData() {
       createdAtLabel: formatDateTime(row.created_at),
       sourceCreatedOn: row.source_created_on,
       authLinked: Boolean(row.auth_user_id),
-      identifiers,
+      isSyntheticDemo: Boolean(row.is_synthetic_demo),
+      accountKind: row.account_kind,
+      projectCohortId: row.project_cohort_id,
+      recordScope: isCurrentProjectStudent ? "Curriculum Project 2026" : "Institutional",
       student: student
         ? {
             ...student,
@@ -431,6 +488,11 @@ export async function getUsersAccessData() {
     organizationalUnits: unitsResult.data || [],
     programs: programsResult.data || [],
     accessActivity,
+    recordScope: {
+      currentProjectCohortId: CURRENT_PROJECT_COHORT_ID,
+      currentTermId: CURRENT_TERM_ID,
+      retiredSyntheticAccountsExcluded: true,
+    },
   };
 }
 

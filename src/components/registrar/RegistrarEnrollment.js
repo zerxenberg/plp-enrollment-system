@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -24,7 +24,7 @@ import {
   readRegistrarOfficialCOR,
   readRegistrarProjectCOR,
 } from "@/features/registrar/registrar-actions";
-import { titleStatus } from "@/features/registrar/registrar-client-utils";
+import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
 
 const ALL = "ALL";
 const PROJECT = "PROJECT";
@@ -120,7 +120,17 @@ export default function RegistrarEnrollment({ enrollmentData }) {
   const [corProject, setCorProject] = useState(false);
   const [result, setResult] = useState(null);
 
-  const projectGroups = useMemo(() => groupProject(enrollmentData.project), [enrollmentData.project]);
+  useEffect(() => {
+    if (!enrollmentData.capabilities?.enrollmentPeriodMutation) {
+      registrarDebug("info", "Enrollment Period", "Enrollment period mutation is unavailable to the Registrar interface.");
+    }
+    if (!enrollmentData.capabilities?.officialReviewMutation) {
+      registrarDebug("info", "Official Enrollment Review", "Official review/return mutation is unavailable; validated records can still be confirmed.");
+    }
+  }, [enrollmentData.capabilities]);
+
+  const termMap = new Map((enrollmentData.terms || []).map((item) => [item.id, item.label || item.short_label || item.id]));
+    const projectGroups = useMemo(() => groupProject(enrollmentData.project), [enrollmentData.project]);
   const officialGroups = useMemo(() => groupOfficial(enrollmentData.official), [enrollmentData.official]);
   const sourceGroups = recordType === PROJECT ? projectGroups : officialGroups;
 
@@ -286,7 +296,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
     <>
       <PageHeader
         title="Enrollment"
-        description="Real institutional enrollment records and the separate PROJECT_ONLY demonstration workflow."
+        description="Review official enrollment records and demonstration enrollment cases."
       />
 
       <InternalTabs
@@ -302,13 +312,10 @@ export default function RegistrarEnrollment({ enrollmentData }) {
         {tab === "period" ? (
           <Panel
             title="Enrollment Period"
-            subtitle="The configured academic term and institutional enrollment dates are live database values."
+            subtitle="View the academic term and enrollment period currently used for registration."
           >
-            <div className="notice warning" style={{ marginBottom: 14 }}>
-              <strong>Current backend boundary</strong>
-              <p>
-                The Registrar can read academic term and window status, but the current normalized schema does not expose a protected Registrar operation for Start Enrollment, Close Enrollment, or changing the enrollment dates.
-              </p>
+            <div className="notice" style={{ marginBottom: 14 }}>
+              Enrollment period dates are currently view-only.
             </div>
 
             <DataTable
@@ -361,14 +368,11 @@ export default function RegistrarEnrollment({ enrollmentData }) {
 
             {recordType === OFFICIAL ? (
               <div className="notice" style={{ marginBottom: 14 }}>
-                <strong>Official validation boundary</strong>
-                <p>
-                  The current database supports protected final confirmation of VALIDATED enrollment, but it does not expose an atomic Registrar review, validate, or return for correction RPC. Those unsupported mutations are not simulated in this interface.
-                </p>
+                Official records awaiting validation are view-only in this version. Final confirmation is available for validated records.
               </div>
             ) : (
               <div className="notice" style={{ marginBottom: 14 }}>
-                Project grouping is only a navigation aid. Each student transaction is validated and confirmed individually by the protected simulation function.
+                Block grouping is for navigation only. Each student enrollment is reviewed and confirmed individually.
               </div>
             )}
 
@@ -389,11 +393,11 @@ export default function RegistrarEnrollment({ enrollmentData }) {
               columns={[
                 { key: "program", label: "Program" },
                 { key: "block", label: "Block" },
-                { key: "term", label: "Term" },
+                { key: "term", label: "Academic Term", render: (row) => termMap.get(row.term) || row.term },
                 { key: "total", label: "Applications" },
                 { key: "pending", label: "Pending Review" },
                 { key: "validated", label: "Validated" },
-                { key: "confirmed", label: recordType === PROJECT ? "Confirmed Simulation" : "Confirmed" },
+                { key: "confirmed", label: recordType === PROJECT ? "Confirmed (Demonstration)" : "Confirmed" },
               ]}
             />
           </Panel>
@@ -434,12 +438,12 @@ export default function RegistrarEnrollment({ enrollmentData }) {
                 {
                   key: "term",
                   label: "Term",
-                  render: (row) => recordType === PROJECT ? row.current_term_id : row.term_id,
+                  render: (row) => termMap.get(recordType === PROJECT ? row.current_term_id : row.term_id) || (recordType === PROJECT ? row.current_term_id : row.term_id),
                 },
                 {
                   key: "status",
                   label: "Status",
-                  render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed Simulation" : titleStatus(row.status)} />,
+                  render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed (Demonstration)" : titleStatus(row.status)} />,
                 },
                 {
                   key: "confirmed",
@@ -504,7 +508,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
               { key: "studentName", label: "Student Name", render: (row) => recordType === PROJECT ? row.full_name : row.studentName },
               { key: "program_code", label: "Program" },
               { key: "block", label: "Block", render: (row) => recordType === PROJECT ? row.home_block : row.currentBlock },
-              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed Simulation" : titleStatus(row.status)} /> },
+              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed (Demonstration)" : titleStatus(row.status)} /> },
             ]}
           />
         ) : null}
@@ -549,12 +553,12 @@ export default function RegistrarEnrollment({ enrollmentData }) {
           ) : null
         }
       >
-        {caseLoading ? <div className="notice">Loading protected project record...</div> : null}
+        {caseLoading ? <div className="notice">Loading enrollment record...</div> : null}
 
         {selectedCase && !caseLoading && recordType === PROJECT ? (
           <>
             <p style={{ fontSize: ".7rem", color: "#607168", marginBottom: 12 }}>
-              Project demonstration. This record never writes to public.enrollments.
+              Demonstration enrollment record. This is not an official enrollment record.
             </p>
             <Details
               items={[
@@ -567,7 +571,6 @@ export default function RegistrarEnrollment({ enrollmentData }) {
                 ["Progression", titleStatus(projectDetail?.snapshot?.progression_status)],
                 ["Home Block", projectDetail?.snapshot?.home_block || selectedCase.home_block],
                 ["Enrollment Status", titleStatus(selectedCase.status)],
-                ["Simulation ID", selectedCase.project_simulation_id || "Not available"],
               ]}
             />
 
@@ -585,9 +588,6 @@ export default function RegistrarEnrollment({ enrollmentData }) {
               ]}
             />
 
-            <div className="notice" style={{ marginTop: 14 }}>
-              Simulation event history is stored privately by the backend and no Registrar event history reader exists in the current schema.
-            </div>
           </>
         ) : null}
 
@@ -613,7 +613,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
 
             {["FOR_VALIDATION", "REQUIRES_CORRECTION"].includes(selectedCase.status) ? (
               <div className="notice warning" style={{ marginTop: 14 }}>
-                The current backend does not expose an atomic Registrar review, validation, or return operation that also preserves the required correction and status history. No direct status update is performed from this interface.
+                Review and return actions are currently unavailable for this record. Final confirmation remains available after validation.
               </div>
             ) : null}
 
@@ -677,7 +677,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
         {decisionType === "VALIDATE" ? (
           <>
             <div className="notice">
-              The existing PROJECT_ONLY backend performs the authorized simulation transition. It remains separate from official institutional enrollment.
+              This action updates the demonstration enrollment workflow only.
             </div>
             <label className="field full">
               <span>Validation Note</span>
@@ -699,12 +699,12 @@ export default function RegistrarEnrollment({ enrollmentData }) {
               <strong>{recordType === PROJECT ? "Confirm for project demonstration only?" : "Confirm official institutional enrollment?"}</strong>
               <p>
                 {recordType === PROJECT
-                  ? "This affects only the protected PROJECT_ONLY simulation lifecycle and can generate a nonofficial demonstration COR."
-                  : "The existing protected confirmation function rechecks eligibility, finalized schedules, section capacity, and confirmation state before writing CONFIRMED."}
+                  ? "This confirms the demonstration enrollment and allows a demonstration COR to be generated."
+                  : "Final confirmation rechecks enrollment requirements, schedule readiness, and section capacity."}
               </p>
             </div>
             <label className="field full">
-              <span>{recordType === PROJECT ? "Demonstration Confirmation Reference" : "Official Validation Source Reference"}</span>
+              <span>{recordType === PROJECT ? "Confirmation Reference" : "Official Validation Source Reference"}</span>
               <input value={decisionValue} onChange={(event) => setDecisionValue(event.target.value)} />
             </label>
           </>
@@ -727,7 +727,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
         <div className="notice warning">
           <strong>Batch grouping does not waive individual validation.</strong>
           <p>
-            Every selected student is passed independently through the existing protected confirmation function. Invalid members remain unconfirmed.
+            Each selected student is confirmed individually. Students who no longer meet enrollment requirements remain unconfirmed.
           </p>
         </div>
         <label className="field full">

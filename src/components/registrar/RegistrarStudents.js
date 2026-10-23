@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -17,7 +17,7 @@ import { Details, Panel } from "./RegistrarShared";
 import RegistrarGradeImports from "./RegistrarGradeImports";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import { loadRegistrarStudentRecordDetail } from "@/features/registrar/registrar-actions";
-import { titleStatus } from "@/features/registrar/registrar-client-utils";
+import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
 
 const ALL = "ALL";
 
@@ -46,6 +46,12 @@ export default function RegistrarStudents({ studentsData }) {
   const [studentDetail, setStudentDetail] = useState(null);
   const [studentOpen, setStudentOpen] = useState(false);
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    registrarDebug("info", "Students", "Technical record-source fields are intentionally hidden from the Registrar interface.");
+  }, []);
+
+  const termMap = new Map((studentsData.terms || []).map((item) => [item.id, item.label || item.short_label || item.id]));
 
   const filteredGroups = useMemo(
     () =>
@@ -97,7 +103,7 @@ export default function RegistrarStudents({ studentsData }) {
     <>
       <PageHeader
         title="Students"
-        description="Live student records grouped by block section, protected PROJECT_ONLY snapshots, and the existing official grade publication workflow."
+        description="Student records grouped by block section, academic standing, enrollment history, and official grade processing."
       />
 
       <InternalTabs
@@ -113,7 +119,7 @@ export default function RegistrarStudents({ studentsData }) {
         {tab === "blocks" ? (
           <Panel
             title="Block Section Student List"
-            subtitle="Grouping is a navigation aid only. Every student remains an individual protected record."
+            subtitle="Use block sections to locate students and open individual academic records."
           >
             <div className="toolbar">
               <SearchControl value={search} onChange={setSearch} label="Search blocks" placeholder="Search block, program, curriculum, or source" />
@@ -153,9 +159,8 @@ export default function RegistrarStudents({ studentsData }) {
                 { key: "programCode", label: "Program" },
                 { key: "curriculumCode", label: "Curriculum" },
                 { key: "yearLevel", label: "Year" },
-                { key: "termId", label: "Academic Term" },
+                { key: "termId", label: "Academic Term", render: (row) => termMap.get(row.termId) || row.termId },
                 { key: "assignedStudents", label: "Students" },
-                { key: "source", label: "Record Source" },
               ]}
             />
           </Panel>
@@ -180,10 +185,9 @@ export default function RegistrarStudents({ studentsData }) {
                 ["College", selectedGroup.college],
                 ["Program", `${selectedGroup.programCode} · ${selectedGroup.programName}`],
                 ["Curriculum", selectedGroup.curriculumCode],
-                ["Academic Term", selectedGroup.termId],
+                ["Academic Term", termMap.get(selectedGroup.termId) || selectedGroup.termId],
                 ["Year Level", selectedGroup.yearLevel],
                 ["Assigned Students", selectedGroup.assignedStudents],
-                ["Record Source", selectedGroup.source],
               ]}
             />
 
@@ -231,7 +235,7 @@ export default function RegistrarStudents({ studentsData }) {
           </>
         }
       >
-        {isPending && !studentDetail ? <div className="notice">Loading protected student record...</div> : null}
+        {isPending && !studentDetail ? <div className="notice">Loading student record...</div> : null}
 
         {selectedStudent && studentDetail ? (
           <>
@@ -239,10 +243,9 @@ export default function RegistrarStudents({ studentsData }) {
               items={[
                 ["Student ID", selectedStudent.student_number],
                 ["Full Name", selectedStudent.full_name],
-                ["Record Source", selectedStudent.project_only ? "PROJECT_ONLY demonstration" : "Institutional"],
                 ["Program", selectedStudent.program_code],
                 ["Curriculum", selectedStudent.curriculum_code],
-                ["Academic Term", selectedStudent.current_term_id],
+                ["Academic Term", termMap.get(selectedStudent.current_term_id) || selectedStudent.current_term_id],
                 ["Year Level", selectedStudent.year_level],
                 ["Student Type", selectedStudent.student_type],
                 ["Academic Classification", titleStatus(selectedStudent.academic_classification)],
@@ -253,17 +256,17 @@ export default function RegistrarStudents({ studentsData }) {
 
             {!selectedStudent.project_only ? (
               <div className="notice" style={{ marginTop: 14 }}>
-                The current RLS model does not expose other students&apos; application identity rows to the Registrar, so institutional full names remain labeled Not available unless another protected record supplies them.
+                The student name is not available for this institutional record.
               </div>
             ) : null}
 
             {selectedStudent.project_only ? (
               <>
-                <h3 style={{ marginTop: 18 }}>PROJECT_ONLY Academic Snapshot</h3>
+                <h3 style={{ marginTop: 18 }}>Academic Eligibility</h3>
                 <DataTable
                   rowKey="subject_code"
                   rows={studentDetail.snapshot?.subjects || []}
-                  emptyMessage="No project subject eligibility rows are available."
+                  emptyMessage="No subject eligibility records are available."
                   columns={[
                     { key: "subject_code", label: "Subject" },
                     { key: "subject_name", label: "Subject Name" },
@@ -282,11 +285,11 @@ export default function RegistrarStudents({ studentsData }) {
                     { key: "target_subject", label: "Target Subject" },
                     { key: "source_course", label: "Source Course" },
                     { key: "credited_units", label: "Credited Units" },
-                    { key: "project_decision", label: "Project Decision" },
+                    { key: "project_decision", label: "Decision" },
                   ]}
                 />
                 <div className="notice" style={{ marginTop: 14 }}>
-                  Placement and transfer equivalency are read only here. Registrar does not auto allocate or finalize academic placement.
+                  Placement and transfer equivalency are read only in the Registrar portal.
                 </div>
               </>
             ) : (
@@ -298,7 +301,6 @@ export default function RegistrarStudents({ studentsData }) {
                     ["Admission Type", studentDetail.admission?.admission_type || "Not available"],
                     ["Admission Status", studentDetail.admission?.admission_status || "Not available"],
                     ["Approved Program", studentDetail.admission?.approved_program_code || "Not available"],
-                    ["Source", studentDetail.admission?.source_name || "Not available"],
                   ]}
                 />
 
@@ -326,12 +328,11 @@ export default function RegistrarStudents({ studentsData }) {
                     { key: "subject_code", label: "Subject" },
                     { key: "official_grade_value", label: "Official Grade", render: (row) => row.official_grade_value ?? "Not available" },
                     { key: "result_status", label: "Result", render: (row) => <StatusBadge value={row.result_status} /> },
-                    { key: "source_name", label: "Source" },
                   ]}
                 />
 
                 <div className="notice" style={{ marginTop: 14 }}>
-                  Authorized contact correction is not exposed until the backend can record the correction and its immutable audit history atomically.
+                  Student contact correction is currently unavailable from this screen.
                 </div>
               </>
             )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DataTable,
   FilterControl,
@@ -11,7 +11,7 @@ import {
   StatusBadge,
 } from "@/components/ui/PortalUI";
 import { Details, Metric, Panel } from "./RegistrarShared";
-import { titleStatus } from "@/features/registrar/registrar-client-utils";
+import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
 
 const ALL = "ALL";
 
@@ -29,6 +29,13 @@ export default function RegistrarReports({ reportsData }) {
   const [term, setTerm] = useState(ALL);
   const [status, setStatus] = useState(ALL);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const termMap = new Map((reportsData.terms || []).map((item) => [item.id, item.label || item.short_label || item.id]));
+
+  useEffect(() => {
+    if (!reportsData.gradeHistoryAvailable) {
+      registrarDebug("info", "Reports", "Grade import history is not available to the current Registrar report reader.");
+    }
+  }, [reportsData.gradeHistoryAvailable]);
 
   const reportRows = useMemo(() => {
     if (reportType === "students") {
@@ -47,13 +54,6 @@ export default function RegistrarReports({ reportsData }) {
       );
     }
 
-    if (reportType === "quality") {
-      return reportsData.dataQualityIssues.filter((row) =>
-        `${row.issue_type} ${row.record_reference} ${row.notes}`.toLowerCase().includes(search.toLowerCase()) &&
-        (status === ALL || row.status === status)
-      );
-    }
-
     return reportsData.officialEnrollments.filter((row) =>
       `${row.reference} ${row.studentNumber} ${row.studentName} ${row.program_code}`.toLowerCase().includes(search.toLowerCase()) &&
       (term === ALL || row.term_id === term) &&
@@ -66,15 +66,13 @@ export default function RegistrarReports({ reportsData }) {
       ? reportsData.students.map((item) => item.student_status)
       : reportType === "project"
         ? reportsData.projectEnrollments.map((item) => item.status)
-        : reportType === "quality"
-          ? reportsData.dataQualityIssues.map((item) => item.status)
-          : reportsData.officialEnrollments.map((item) => item.status);
+        : reportsData.officialEnrollments.map((item) => item.status);
 
   return (
     <>
       <PageHeader
         title="Reports & Monitoring"
-        description="Live Registrar operational reports and read only Registrar activity history."
+        description="Registrar enrollment reports, student summaries, and activity history."
       />
 
       <InternalTabs
@@ -89,15 +87,14 @@ export default function RegistrarReports({ reportsData }) {
         {tab === "reports" ? (
           <>
             <div className="stats-grid" style={{ marginBottom: 14 }}>
-              <Metric label="Visible Students" value={reportsData.students.length} hint="Institutional plus PROJECT_ONLY operational records" />
-              <Metric label="Official Enrollments" value={reportsData.officialEnrollments.length} hint="public.enrollments" />
-              <Metric label="Project Simulations" value={reportsData.projectEnrollments.length} hint="PROJECT_ONLY queue" />
-              <Metric label="Data Quality Issues" value={reportsData.dataQualityIssues.length} hint="Visible current records" />
+              <Metric label="Visible Students" value={reportsData.students.length} hint="Current student records" />
+              <Metric label="Official Enrollments" value={reportsData.officialEnrollments.length} hint="Official enrollment records" />
+              <Metric label="Demonstration Enrollments" value={reportsData.projectEnrollments.length} hint="Demonstration enrollment records" />
             </div>
 
             <Panel
               title="Registrar Reports"
-              subtitle="Reports are built only from data the authenticated Registrar can currently read."
+              subtitle="Use the available filters to review current Registrar records."
             >
               <div className="toolbar">
                 <FilterControl
@@ -113,11 +110,10 @@ export default function RegistrarReports({ reportsData }) {
                     { value: "enrollment", label: "Official Enrollment Report" },
                     { value: "project", label: "Project Demonstration Enrollment Report" },
                     { value: "students", label: "Student Population Report" },
-                    { value: "quality", label: "Data Quality Report" },
                   ]}
                 />
                 <SearchControl value={search} onChange={setSearch} label="Search report" placeholder="Search current report" />
-                {reportType !== "quality" ? (
+                {(
                   <FilterControl
                     label="Term"
                     value={term}
@@ -131,7 +127,7 @@ export default function RegistrarReports({ reportsData }) {
                       "All Terms",
                     )}
                   />
-                ) : null}
+                )}
                 <FilterControl label="Status" value={status} onChange={setStatus} options={options(statusValues, "All Statuses")} />
               </div>
 
@@ -144,7 +140,7 @@ export default function RegistrarReports({ reportsData }) {
                     { key: "studentNumber", label: "Student ID" },
                     { key: "studentName", label: "Student Name" },
                     { key: "program_code", label: "Program" },
-                    { key: "term_id", label: "Term" },
+                    { key: "term_id", label: "Academic Term", render: (row) => termMap.get(row.term_id) || row.term_id },
                     { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
                     { key: "confirmation_reference", label: "Confirmation Reference", render: (row) => row.confirmation_reference || "Not available" },
                   ]}
@@ -160,7 +156,7 @@ export default function RegistrarReports({ reportsData }) {
                     { key: "full_name", label: "Student Name" },
                     { key: "program_code", label: "Program" },
                     { key: "home_block", label: "Block" },
-                    { key: "current_term_id", label: "Term" },
+                    { key: "current_term_id", label: "Academic Term", render: (row) => termMap.get(row.current_term_id) || row.current_term_id },
                     { key: "status", label: "Simulation Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={titleStatus(row.status)} /> },
                   ]}
                 />
@@ -174,31 +170,17 @@ export default function RegistrarReports({ reportsData }) {
                     { key: "student_number", label: "Student ID" },
                     { key: "full_name", label: "Full Name" },
                     { key: "program_code", label: "Program" },
-                    { key: "current_term_id", label: "Term" },
+                    { key: "current_term_id", label: "Academic Term", render: (row) => termMap.get(row.current_term_id) || row.current_term_id },
                     { key: "home_block", label: "Block" },
                     { key: "student_status", label: "Status", render: (row) => <StatusBadge value={row.student_status} /> },
-                    { key: "recordSource", label: "Source", render: (row) => row.project_only ? "PROJECT_ONLY" : "Institutional" },
-                  ]}
+                                      ]}
                 />
               ) : null}
 
-              {reportType === "quality" ? (
-                <DataTable
-                  rowKey="id"
-                  rows={reportRows}
-                  emptyMessage="No visible data quality issue rows are available."
-                  columns={[
-                    { key: "issue_type", label: "Issue Type" },
-                    { key: "record_reference", label: "Record" },
-                    { key: "severity", label: "Severity" },
-                    { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
-                    { key: "notes", label: "Notes", render: (row) => row.notes || "Not available" },
-                  ]}
-                />
-              ) : null}
+
 
               <div className="notice" style={{ marginTop: 14 }}>
-                Grade Import History is not included because the current database intentionally denies direct Registrar reads of grade_import_batches, grade_import_rows, and academic_result_revisions and exposes no protected history reader.
+                Grade Import History is currently unavailable from this report.
               </div>
             </Panel>
           </>
@@ -207,7 +189,7 @@ export default function RegistrarReports({ reportsData }) {
         {tab === "activity" ? (
           <Panel
             title="Registrar Activity History"
-            subtitle="Read only Registrar business history. This is not the System Administrator security audit console."
+            subtitle="Read-only history of Registrar enrollment and record-processing activity."
           >
             <DataTable
               rowKey="id"
@@ -220,7 +202,6 @@ export default function RegistrarReports({ reportsData }) {
                 { key: "module", label: "Module" },
                 { key: "record_reference", label: "Record" },
                 { key: "action", label: "Action" },
-                { key: "entity_type", label: "Entity Type" },
                 { key: "reason", label: "Reason", render: (row) => row.reason || "Not available" },
               ]}
             />
@@ -241,9 +222,6 @@ export default function RegistrarReports({ reportsData }) {
               ["Module", selectedActivity.module],
               ["Record Reference", selectedActivity.record_reference],
               ["Action", selectedActivity.action],
-              ["Previous Value", selectedActivity.previous_value || "Not available"],
-              ["New Value", selectedActivity.new_value || "Not available"],
-              ["Entity Type", selectedActivity.entity_type || "Not available"],
               ["Reason", selectedActivity.reason || "Not available"],
             ]}
           />

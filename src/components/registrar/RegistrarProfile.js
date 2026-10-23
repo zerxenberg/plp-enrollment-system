@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button, Modal, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { Info, Panel } from "./RegistrarShared";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
+import { registrarDebug } from "@/features/registrar/registrar-client-utils";
 import {
   changeRegistrarPassword,
   updateRegistrarPreferences,
@@ -28,6 +29,12 @@ export default function RegistrarProfile({ profileData }) {
     correction_alerts: prefValue(profileData.preferences, "correction_alerts"),
   });
 
+  useEffect(() => {
+    if (!profileData.capabilities?.editIdentity) {
+      registrarDebug("info", "Profile", "Identity and staff-assignment fields are managed outside the Registrar profile editor.");
+    }
+  }, [profileData.capabilities]);
+
   function run(action, onSuccess) {
     startTransition(async () => {
       const response = await action();
@@ -40,12 +47,12 @@ export default function RegistrarProfile({ profileData }) {
     <>
       <PageHeader
         title="Registrar Profile"
-        description="Live Registrar identity, own password management, and personal notification preferences."
+        description="Registrar account information, password management, and notification preferences."
       />
 
       <Panel
         title="Registrar Information"
-        subtitle="The current access model exposes the Registrar's own account and staff profile as read only."
+        subtitle="Review your Registrar account and staff information."
       >
         <div className="info-grid">
           <Info label="Registrar Name" value={profileData.user.full_name || "Not available"} />
@@ -68,12 +75,12 @@ export default function RegistrarProfile({ profileData }) {
         </div>
 
         <div className="notice" style={{ marginTop: 14 }}>
-          Name, email, employee ID, role, account state, and organizational assignment are not editable by Registrar under the current RLS and staff profile policies. No privileged workaround is used.
+          Name, email, employee ID, role, account status, and organizational assignment are managed by the System Administrator.
         </div>
       </Panel>
 
       <div style={{ marginTop: 16 }}>
-        <Panel title="Notification Preferences" subtitle="Preferences are stored in the existing user_preferences table.">
+        <Panel title="Notification Preferences" subtitle="Choose which Registrar notifications you want to receive.">
           <div className="list-stack">
             {[
               ["enrollment_alerts", "Enrollment processing alerts"],
@@ -144,7 +151,7 @@ export default function RegistrarProfile({ profileData }) {
           </label>
         </div>
         <div className="notice" style={{ marginTop: 14 }}>
-          Passwords are handled by Supabase Auth and are never stored in application tables.
+          Choose a strong password that you do not use for another account.
         </div>
       </Modal>
 
