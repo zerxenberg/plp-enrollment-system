@@ -1,80 +1,254 @@
 "use client";
 
-import { useState } from "react";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
-import { Panel, Tabs, Metric, Feedback } from "./RegistrarShared";
-import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
-import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import { useMemo, useState } from "react";
+import {
+  DataTable,
+  FilterControl,
+  InternalTabs,
+  Modal,
+  PageHeader,
+  SearchControl,
+  StatusBadge,
+} from "@/components/ui/PortalUI";
+import { Details, Metric, Panel } from "./RegistrarShared";
+import { titleStatus } from "@/features/registrar/registrar-client-utils";
 
-const VIEW_OPTIONS = [{value:"reports",label:"Reports"},{value:"statistics",label:"Enrollment Statistics"},{value:"monitoring",label:"Enrollment Monitoring"},{value:"quality",label:"Data Quality Review"},{value:"history",label:"Registrar Transaction History"}];
-const REPORTS = ["Enrollment Report", "Student Enrollment Report", "Enrollment Status Report", "Program Enrollment Report", "Subject Registration Report", "Section Capacity Report", "Academic Term Report"];
+const ALL = "ALL";
 
-function exportCsv(rows, filename) {
-  const headings = Object.keys(rows[0] || {message:"No records"});
-  const escape = (value) => `"${String(value ?? "").replaceAll('"','""')}"`;
-  const csv = [headings.join(","), ...rows.map((row) => headings.map((heading)=>escape(row[heading])).join(","))].join("\r\n");
-  const url = URL.createObjectURL(new Blob(["\uFEFF", csv],{type:"text/csv;charset=utf-8;"}));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+function options(values, allLabel) {
+  return [
+    { value: ALL, label: allLabel },
+    ...[...new Set(values.filter(Boolean))].sort().map((value) => ({ value, label: value })),
+  ];
 }
 
-export default function RegistrarReports() {
-  const { registrar, catalog } = useDemoData();
-  const [view,setView] = useState("reports");
-  const [report,setReport] = useState(REPORTS[0]);
-  const [academicFilters,setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
-  const [status,setStatus] = useState("ALL");
-  const [subject,setSubject] = useState("ALL");
-  const [section,setSection] = useState("ALL");
-  const [preview,setPreview] = useState(false);
-  const [message,setMessage] = useState("");
-  const statusEnrolled = registrar.enrollments.filter((entry) => status === "ALL" || entry.status === status);
-  const enrolled = filterAcademicRecords(statusEnrolled, academicFilters, [], catalog.programs);
-  const reportEnrollments = enrolled.filter((entry) => subject === "ALL" || entry.subjects.some((item)=>item.code===subject));
-  const reportRows = report === "Section Capacity Report" ? registrar.sections.filter((row)=>(section==="ALL" || row.code===section) && (subject==="ALL" || row.subject===subject)).map(({code,subject,capacity,confirmed,status})=>({code,subject,capacity,confirmed,remaining:Math.max(0,capacity-confirmed),status})) :
-    report === "Subject Registration Report" ? reportEnrollments.flatMap((entry)=>entry.subjects.filter((item)=>(subject==="ALL" || item.code===subject) && (academicFilters.section==="ALL" || item.section===academicFilters.section)).map((item)=>({enrollment:entry.reference,student:entry.studentName,program:entry.program,term:entry.term,code:item.code,subject:item.name,section:item.section}))) :
-    report === "Academic Term Report" ? [...new Set(reportEnrollments.map((entry)=>entry.term))].map((academicTerm)=>({term:academicTerm,enrollments:reportEnrollments.filter((entry)=>entry.term===academicTerm).length,confirmed:reportEnrollments.filter((entry)=>entry.term===academicTerm && entry.status==="CONFIRMED").length})) :
-    report === "Program Enrollment Report" ? catalog.programs.filter((item)=>academicFilters.program==="ALL" || academicFilters.program===item.code).map((item)=>({program:item.code,name:item.name,enrollments:reportEnrollments.filter((entry)=>entry.program===item.code).length,confirmed:reportEnrollments.filter((entry)=>entry.program===item.code && entry.status==="CONFIRMED").length})) :
-    reportEnrollments.map(({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference})=>({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference:confirmationReference || ""}));
-  const count = (filter) => enrolled.filter((entry)=>entry.status===filter).length;
-  const reportColumns = Object.keys(reportRows[0] || {}).map((key)=>({key,label:key.replace(/([A-Z])/g," $1").replace(/^./, (letter)=>letter.toUpperCase())}));
-  const choices = (array) => [{value:"ALL",label:"All"},...new Set(array)].map((item)=>typeof item==="string"?{value:item,label:item.replaceAll("_"," ")}:item);
-  const showEnrollmentFilters = view === "statistics" || view === "monitoring" || (view === "reports" && report !== "Section Capacity Report");
-  const changeAcademicFilter = (key, value) => { setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value); setPreview(false); };
+export default function RegistrarReports({ reportsData }) {
+  const [tab, setTab] = useState("reports");
+  const [reportType, setReportType] = useState("enrollment");
+  const [search, setSearch] = useState("");
+  const [term, setTerm] = useState(ALL);
+  const [status, setStatus] = useState(ALL);
+  const [selectedActivity, setSelectedActivity] = useState(null);
+
+  const reportRows = useMemo(() => {
+    if (reportType === "students") {
+      return reportsData.students.filter((row) =>
+        `${row.student_number} ${row.full_name} ${row.program_code} ${row.home_block}`.toLowerCase().includes(search.toLowerCase()) &&
+        (term === ALL || row.current_term_id === term) &&
+        (status === ALL || row.student_status === status)
+      );
+    }
+
+    if (reportType === "project") {
+      return reportsData.projectEnrollments.filter((row) =>
+        `${row.student_number} ${row.full_name} ${row.program_code} ${row.home_block}`.toLowerCase().includes(search.toLowerCase()) &&
+        (term === ALL || row.current_term_id === term) &&
+        (status === ALL || row.status === status)
+      );
+    }
+
+    if (reportType === "quality") {
+      return reportsData.dataQualityIssues.filter((row) =>
+        `${row.issue_type} ${row.record_reference} ${row.notes}`.toLowerCase().includes(search.toLowerCase()) &&
+        (status === ALL || row.status === status)
+      );
+    }
+
+    return reportsData.officialEnrollments.filter((row) =>
+      `${row.reference} ${row.studentNumber} ${row.studentName} ${row.program_code}`.toLowerCase().includes(search.toLowerCase()) &&
+      (term === ALL || row.term_id === term) &&
+      (status === ALL || row.status === status)
+    );
+  }, [reportsData, reportType, search, term, status]);
+
+  const statusValues =
+    reportType === "students"
+      ? reportsData.students.map((item) => item.student_status)
+      : reportType === "project"
+        ? reportsData.projectEnrollments.map((item) => item.status)
+        : reportType === "quality"
+          ? reportsData.dataQualityIssues.map((item) => item.status)
+          : reportsData.officialEnrollments.map((item) => item.status);
 
   return (
     <>
-      <PageHeader title="Reports & Monitoring" description="Generate enrollment summaries, examine workload and review Registrar transaction history." />
-      <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} label="Registrar reporting sections" title="Registrar Reporting">
-        {showEnrollmentFilters ? <div className="toolbar">
-          <FilterControl label="Enrollment Status" value={status} onChange={(next)=>{setStatus(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.status))} />
-        </div> : null}
-        {showEnrollmentFilters ? <AcademicFilterBar records={statusEnrolled} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={enrolled.length} label="Registrar enrollment report academic filters" /> : null}
-        {view==="reports" ? <>
-          <div className="toolbar"><FilterControl label="Report Type" value={report} onChange={(next)=>{setReport(next);setPreview(false);}} options={REPORTS.map((item)=>({value:item,label:item}))} />
-            <FilterControl label="Subject" value={subject} onChange={(next)=>{setSubject(next);setPreview(false);}} options={choices([...registrar.enrollments.flatMap((entry)=>entry.subjects.map((item)=>item.code)),...registrar.sections.map((item)=>item.subject)])} />
-            {report==="Section Capacity Report" ? <FilterControl label="Section" value={section} onChange={(next)=>{setSection(next);setPreview(false);}} options={choices(registrar.sections.map((item)=>item.code))} /> : null}
-            <Button type="button" onClick={()=>{setPreview(true);setMessage(`${report} generated from ${reportRows.length} demo records.`);}}>Generate & Preview</Button>
-            <Button type="button" variant="secondary" onClick={()=>exportCsv(reportRows,`${report.toLowerCase().replaceAll(" ","-")}.csv`)}>Export Spreadsheet (CSV)</Button>
-            <Button type="button" variant="secondary" onClick={()=>window.print()}>Print / Save as PDF</Button>
-          </div>
-          {preview ? <DataTable rowKey={(row)=>Object.values(row).join(":")} rows={reportRows} columns={reportColumns} emptyMessage="No records meet the report filters." /> : <div className="notice">Select a report and click Generate & Preview to inspect the current filtered data.</div>}
-        </> : null}
-        {view==="statistics" ? <>
-          <div className="stats-grid" style={{marginBottom:14}}><Metric label="Enrollment Transactions" value={enrolled.length} /><Metric label="Confirmed" value={count("CONFIRMED")} /><Metric label="Submitted" value={count("SUBMITTED")} /><Metric label="Requires Correction" value={count("REQUIRES_CORRECTION")} /></div>
-          <div className="list-stack">{catalog.programs.map((item)=>{const total=enrolled.filter((entry)=>entry.program===item.code).length;return <div className="chart-row" key={item.code}><span>{item.code} · {total} registrations</span><div className="chart-bar"><span style={{width:`${enrolled.length?100*total/enrolled.length:0}%`}} /></div><strong>{enrolled.length?Math.round(100*total/enrolled.length):0}%</strong></div>;})}</div>
-        </> : null}
-        {view==="monitoring" ? <><div className="stats-grid" style={{marginBottom:14}}><Metric label="For Validation" value={count("FOR_VALIDATION")} /><Metric label="Needs Academic Review" value={count("NEEDS_ACADEMIC_REVIEW")} /><Metric label="Correction Queue" value={count("REQUIRES_CORRECTION")} /><Metric label="Full Sections" value={registrar.sections.filter((item)=>item.confirmed>=item.capacity).length} /></div><DataTable rowKey="reference" rows={enrolled} columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"program",label:"Program"}]} /></> : null}
-        {view==="quality" ? <DataTable rowKey="id" rows={registrar.dataQuality} columns={[{key:"issue",label:"Data Quality Issue"},{key:"record",label:"Related Record"},{key:"severity",label:"Severity",render:(row)=><StatusBadge label={row.severity} value={row.severity==="High"?"REQUIRES_CORRECTION":"REQUIRES_REVIEW"} />}]} /> : null}
-        {view==="history" ? <DataTable rowKey="id" rows={registrar.activity} columns={[{key:"date",label:"Timestamp"},{key:"registrar",label:"Registrar"},{key:"student",label:"Student"},{key:"reference",label:"Record"},{key:"action",label:"Action"},{key:"previousStatus",label:"Previous State"},{key:"newStatus",label:"Resulting State"},{key:"reason",label:"Reason"}]} /> : null}
-        <Feedback message={message} />
-      </Tabs>
+      <PageHeader
+        title="Reports & Monitoring"
+        description="Live Registrar operational reports and read only Registrar activity history."
+      />
+
+      <InternalTabs
+        items={[
+          { value: "reports", label: "Registrar Reports" },
+          { value: "activity", label: "Registrar Activity History" },
+        ]}
+        selected={tab}
+        onSelect={setTab}
+        label="Registrar reports sections"
+      >
+        {tab === "reports" ? (
+          <>
+            <div className="stats-grid" style={{ marginBottom: 14 }}>
+              <Metric label="Visible Students" value={reportsData.students.length} hint="Institutional plus PROJECT_ONLY operational records" />
+              <Metric label="Official Enrollments" value={reportsData.officialEnrollments.length} hint="public.enrollments" />
+              <Metric label="Project Simulations" value={reportsData.projectEnrollments.length} hint="PROJECT_ONLY queue" />
+              <Metric label="Data Quality Issues" value={reportsData.dataQualityIssues.length} hint="Visible current records" />
+            </div>
+
+            <Panel
+              title="Registrar Reports"
+              subtitle="Reports are built only from data the authenticated Registrar can currently read."
+            >
+              <div className="toolbar">
+                <FilterControl
+                  label="Report"
+                  value={reportType}
+                  onChange={(value) => {
+                    setReportType(value);
+                    setSearch("");
+                    setTerm(ALL);
+                    setStatus(ALL);
+                  }}
+                  options={[
+                    { value: "enrollment", label: "Official Enrollment Report" },
+                    { value: "project", label: "Project Demonstration Enrollment Report" },
+                    { value: "students", label: "Student Population Report" },
+                    { value: "quality", label: "Data Quality Report" },
+                  ]}
+                />
+                <SearchControl value={search} onChange={setSearch} label="Search report" placeholder="Search current report" />
+                {reportType !== "quality" ? (
+                  <FilterControl
+                    label="Term"
+                    value={term}
+                    onChange={setTerm}
+                    options={options(
+                      reportType === "students"
+                        ? reportsData.students.map((item) => item.current_term_id)
+                        : reportType === "project"
+                          ? reportsData.projectEnrollments.map((item) => item.current_term_id)
+                          : reportsData.officialEnrollments.map((item) => item.term_id),
+                      "All Terms",
+                    )}
+                  />
+                ) : null}
+                <FilterControl label="Status" value={status} onChange={setStatus} options={options(statusValues, "All Statuses")} />
+              </div>
+
+              {reportType === "enrollment" ? (
+                <DataTable
+                  rowKey="id"
+                  rows={reportRows}
+                  columns={[
+                    { key: "reference", label: "Enrollment Reference" },
+                    { key: "studentNumber", label: "Student ID" },
+                    { key: "studentName", label: "Student Name" },
+                    { key: "program_code", label: "Program" },
+                    { key: "term_id", label: "Term" },
+                    { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "confirmation_reference", label: "Confirmation Reference", render: (row) => row.confirmation_reference || "Not available" },
+                  ]}
+                />
+              ) : null}
+
+              {reportType === "project" ? (
+                <DataTable
+                  rowKey="project_simulation_id"
+                  rows={reportRows}
+                  columns={[
+                    { key: "student_number", label: "Student ID" },
+                    { key: "full_name", label: "Student Name" },
+                    { key: "program_code", label: "Program" },
+                    { key: "home_block", label: "Block" },
+                    { key: "current_term_id", label: "Term" },
+                    { key: "status", label: "Simulation Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={titleStatus(row.status)} /> },
+                  ]}
+                />
+              ) : null}
+
+              {reportType === "students" ? (
+                <DataTable
+                  rowKey="student_id"
+                  rows={reportRows}
+                  columns={[
+                    { key: "student_number", label: "Student ID" },
+                    { key: "full_name", label: "Full Name" },
+                    { key: "program_code", label: "Program" },
+                    { key: "current_term_id", label: "Term" },
+                    { key: "home_block", label: "Block" },
+                    { key: "student_status", label: "Status", render: (row) => <StatusBadge value={row.student_status} /> },
+                    { key: "recordSource", label: "Source", render: (row) => row.project_only ? "PROJECT_ONLY" : "Institutional" },
+                  ]}
+                />
+              ) : null}
+
+              {reportType === "quality" ? (
+                <DataTable
+                  rowKey="id"
+                  rows={reportRows}
+                  emptyMessage="No visible data quality issue rows are available."
+                  columns={[
+                    { key: "issue_type", label: "Issue Type" },
+                    { key: "record_reference", label: "Record" },
+                    { key: "severity", label: "Severity" },
+                    { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "notes", label: "Notes", render: (row) => row.notes || "Not available" },
+                  ]}
+                />
+              ) : null}
+
+              <div className="notice" style={{ marginTop: 14 }}>
+                Grade Import History is not included because the current database intentionally denies direct Registrar reads of grade_import_batches, grade_import_rows, and academic_result_revisions and exposes no protected history reader.
+              </div>
+            </Panel>
+          </>
+        ) : null}
+
+        {tab === "activity" ? (
+          <Panel
+            title="Registrar Activity History"
+            subtitle="Read only Registrar business history. This is not the System Administrator security audit console."
+          >
+            <DataTable
+              rowKey="id"
+              rows={reportsData.activity}
+              onRowClick={setSelectedActivity}
+              getRowAriaLabel={(row) => `View activity ${row.action}`}
+              emptyMessage="No Registrar activity history is visible."
+              columns={[
+                { key: "occurredAtLabel", label: "Date & Time" },
+                { key: "module", label: "Module" },
+                { key: "record_reference", label: "Record" },
+                { key: "action", label: "Action" },
+                { key: "entity_type", label: "Entity Type" },
+                { key: "reason", label: "Reason", render: (row) => row.reason || "Not available" },
+              ]}
+            />
+          </Panel>
+        ) : null}
+      </InternalTabs>
+
+      <Modal
+        open={Boolean(selectedActivity)}
+        title="Registrar Activity Details"
+        onClose={() => setSelectedActivity(null)}
+        footer={<button className="portal-button" type="button" onClick={() => setSelectedActivity(null)}>Close</button>}
+      >
+        {selectedActivity ? (
+          <Details
+            items={[
+              ["Date and Time", selectedActivity.occurredAtLabel],
+              ["Module", selectedActivity.module],
+              ["Record Reference", selectedActivity.record_reference],
+              ["Action", selectedActivity.action],
+              ["Previous Value", selectedActivity.previous_value || "Not available"],
+              ["New Value", selectedActivity.new_value || "Not available"],
+              ["Entity Type", selectedActivity.entity_type || "Not available"],
+              ["Reason", selectedActivity.reason || "Not available"],
+            ]}
+          />
+        ) : null}
+      </Modal>
     </>
   );
 }

@@ -4,9 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import AppIcon from "@/components/ui/AppIcon";
 import { Button, Modal } from "@/components/ui/PortalUI";
-import { GRADE_IMPORT_MAX_FILE_BYTES } from "@/features/grade-import/grade-import-service";
 import styles from "./RegistrarGradeUploadPicker.module.css";
 
+const GRADE_IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024;
 const ACCEPTED_FORMATS = ".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const PERMITTED_MIME_TYPES = new Set([
   "", "application/octet-stream", "application/zip", "application/x-zip-compressed",
@@ -23,7 +23,7 @@ function validateSelection(files) {
   if (!/\.(xlsx|csv)$/i.test(file.name) || (file.type && !PERMITTED_MIME_TYPES.has(file.type.toLowerCase())))
     return "Unsupported file format. Please upload an XLSX or CSV file.";
   if (file.size === 0) return "The selected file is empty. Choose a grade file containing records.";
-  if (file.size > GRADE_IMPORT_MAX_FILE_BYTES) return "The demo grade file limit is 2 MB.";
+  if (file.size > GRADE_IMPORT_MAX_FILE_BYTES) return "The grade file limit is 2 MB.";
   return null;
 }
 
@@ -105,7 +105,7 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
   return (
     <>
       <div className={styles.fileField}>
-        <span className={styles.fieldLabel} id="registrar-grade-file-label">Sample Grade File (XLSX or CSV)</span>
+        <span className={styles.fieldLabel} id="registrar-grade-file-label">Official Grade File (XLSX or CSV)</span>
         <div className={styles.fileRow} aria-labelledby="registrar-grade-file-label">
           <button type="button" className={styles.chooseButton} onClick={openPicker} disabled={disabled} aria-haspopup="dialog">
             Choose File
@@ -118,7 +118,7 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
       {open && createPortal(
         <div className={styles.modalScope}>
           <Modal open={open} title="Upload Grade File" onClose={close} footer={<div className={styles.modalFooter}><Button type="button" variant="secondary" onClick={close}>Cancel</Button></div>}>
-            <p className={styles.description}>Upload an XLSX or CSV file to import student grades.</p>
+            <p className={styles.description}>Upload one XLSX or CSV file for one official subject section. The file will be previewed and validated before publication.</p>
             <div
               className={`${styles.dropZone} ${dragging ? styles.dragging : ""} ${error ? styles.invalid : ""}`}
               onDragEnter={onDragEnter}
@@ -135,7 +135,7 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
                 <AppIcon name="fileUp" size={19} /> Browse Files
               </Button>
               <input hidden tabIndex={-1} aria-hidden="true" ref={pickerRef} type="file" accept={ACCEPTED_FORMATS} onChange={handleBrowse} />
-              <p className={styles.supported}>Supported formats: XLSX, CSV.</p>
+              <p className={styles.supported}>Supported formats: XLSX, CSV. Maximum size: 2 MB. One subject section per file.</p>
             </div>
             {error ? <p role="alert" className={styles.errorMessage}>{error}</p> : null}
           </Modal>

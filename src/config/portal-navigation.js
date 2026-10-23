@@ -15,6 +15,7 @@ export const REGISTRAR_NAVIGATION = [
   { label: "Academic & Scheduling", href: "/registrar/academic-scheduling", icon: "academic" },
   { label: "Reports & Monitoring", href: "/registrar/reports-monitoring", icon: "chart" },
   { label: "Notifications", href: "/registrar/notifications", icon: "bell" },
+  { label: "Profile", href: "/registrar/profile", icon: "user" },
 ];
 
 export const ACADEMIC_COORDINATOR_NAVIGATION = [

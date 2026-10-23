@@ -1,129 +1,126 @@
 "use client";
 
-import { useState } from "react";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { DataTable, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
-import { Panel, Tabs, Info, Details } from "./RegistrarShared";
+import { useMemo, useState } from "react";
 
-const VIEWS = [
-  { value: "term", label: "Academic Term & Enrollment Period" },
-  { value: "programs", label: "Programs" },
-  { value: "curriculum", label: "Curriculum Reference" },
-  { value: "subjects", label: "Subjects & Prerequisites" },
-  { value: "sections", label: "Sections" },
-  { value: "schedules", label: "Class Schedules" },
-  { value: "capacity", label: "Section Capacity" },
-];
+import {
+  Button,
+  DataTable,
+  FilterControl,
+  InternalTabs,
+  Modal,
+  PageHeader,
+  SearchControl,
+  StatusBadge,
+} from "@/components/ui/PortalUI";
+import { Details, Panel } from "./RegistrarShared";
+import { titleStatus } from "@/features/registrar/registrar-client-utils";
 
-export default function RegistrarAcademic() {
-  const { catalog, registrar, student, blockPlanning } = useDemoData();
-  const [view, setView] = useState("term");
+const ALL = "ALL";
+
+function opts(values, label) {
+  return [{ value: ALL, label }, ...[...new Set(values.filter(Boolean))].sort().map((value) => ({ value, label: value }))];
+}
+
+export default function RegistrarAcademic({ academicData }) {
+  const [tab, setTab] = useState("reference");
+  const [referenceType, setReferenceType] = useState("curricula");
   const [search, setSearch] = useState("");
-  const [selectedSection, setSelectedSection] = useState(null);
-  const match = (value) => JSON.stringify(value).toLowerCase().includes(search.trim().toLowerCase());
+  const [program, setProgram] = useState(ALL);
+  const [curriculum, setCurriculum] = useState(ALL);
+  const [term, setTerm] = useState(ALL);
+  const [year, setYear] = useState(ALL);
+  const [status, setStatus] = useState(ALL);
+  const [selected, setSelected] = useState(null);
+  const [selectedKind, setSelectedKind] = useState("");
 
-  // Block plans remain Academic Coordinator proposals. Only confirmed Registrar
-  // transactions count as official registrations, regardless of planning status.
-  const hasPlanning = Boolean(blockPlanning?.blockSections?.length);
-  const sectionRows = hasPlanning ? blockPlanning.blockSections.map((section) => {
-    const proposed = blockPlanning.assignments.filter((item) =>
-      item.sectionId === section.id && item.status === "PROPOSED").length;
-    const confirmed = new Set(registrar.enrollments.filter((enrollment) =>
-      enrollment.status === "CONFIRMED" &&
-      enrollment.program === section.programCode &&
-      enrollment.term === (section.semester === "First Semester" ? "1st Sem " : "2nd Sem ") + section.academicYear.slice(0, 4) &&
-      enrollment.subjects.some((subject) => subject.section === section.code)
-    ).map((enrollment) => enrollment.studentNumber)).size;
-    return {
-      ...section, proposed, confirmed,
-      planStatus: section.status === "PUBLISHED" ? "Published proposal" : "Draft proposal",
-      remaining: Math.max(0, section.capacity - proposed),
-    };
-  }) : registrar.sections.map((section) => ({
-    ...section, id: section.code, proposed: null,
-    planStatus: "Legacy section reference",
-    remaining: Math.max(0, section.capacity - section.confirmed),
-  }));
-  const currentSection = sectionRows.find((section) => section.id === selectedSection);
-  const sections = sectionRows.filter(match);
-  const scheduleRows = hasPlanning ? blockPlanning.subjectClasses.flatMap((subjectClass) => {
-    const section = blockPlanning.blockSections.find((item) => item.id === subjectClass.sectionId);
-    if (!section) return [];
-    const subject = blockPlanning.subjects.find((item) => item.code === subjectClass.subjectCode);
-    const professor = blockPlanning.professors.find((item) => item.id === subjectClass.professorId);
-    const meetings = blockPlanning.classMeetings.filter((item) => item.subjectClassId === subjectClass.id);
-    return (meetings.length ? meetings : [null]).map((meeting) => ({
-      id: meeting?.id || subjectClass.id,
-      sectionId: section.id, code: section.code,
-      term: section.semester + " " + section.academicYear,
-      subject: subject?.name || subjectClass.subjectCode,
-      subjectCode: subjectClass.subjectCode,
-      professor: professor?.name || "Not assigned",
-      schedule: meeting ? `${meeting.day} ${meeting.start} to ${meeting.end}` : "Not scheduled",
-      room: blockPlanning.rooms.find((room) => room.id === meeting?.roomId)?.name || "Not assigned",
-      status: section.status,
-    }));
-  }).filter(match) : sections.map((section) => ({ ...section, sectionId: section.id }));
-  const openDetails = (id) => setSelectedSection(id);
+  const programMap = new Map(academicData.programs.map((item) => [item.code, item]));
+  const subjectMap = new Map(academicData.subjects.map((item) => [item.code, item]));
+
+  const referenceRows = useMemo(() => {
+    if (referenceType === "programs") {
+      return academicData.programs
+        .filter((item) => `${item.code} ${item.name}`.toLowerCase().includes(search.toLowerCase()) && (status === ALL || item.status === status))
+        .map((item) => ({ ...item, rowKind: "Program" }));
+    }
+    if (referenceType === "subjects") {
+      return academicData.curriculumSubjects
+        .filter((item) =>
+          `${item.subject_code} ${subjectMap.get(item.subject_code)?.name || ""}`.toLowerCase().includes(search.toLowerCase()) &&
+          (program === ALL || academicData.curricula.find((c) => c.code === item.curriculum_code)?.program_code === program) &&
+          (curriculum === ALL || item.curriculum_code === curriculum) &&
+          (year === ALL || String(item.year_level) === year))
+        .map((item) => ({
+          ...item,
+          rowKind: "Subject",
+          program_code: academicData.curricula.find((c) => c.code === item.curriculum_code)?.program_code || "Not available",
+          subject_name: subjectMap.get(item.subject_code)?.name || "Not available",
+          units: item.units_override ?? subjectMap.get(item.subject_code)?.units ?? "Not available",
+          subject_status: subjectMap.get(item.subject_code)?.status || "Not available",
+          prerequisites: academicData.prerequisites.filter((rule) => rule.curriculum_code === item.curriculum_code && rule.subject_code === item.subject_code && rule.is_active).map((rule) => rule.prerequisite_subject_code),
+        }));
+    }
+    return academicData.curricula
+      .filter((item) => `${item.code} ${item.name || ""} ${item.program_code}`.toLowerCase().includes(search.toLowerCase()) && (program === ALL || item.program_code === program) && (status === ALL || item.status === status))
+      .map((item) => ({ ...item, rowKind: "Curriculum" }));
+  }, [academicData, referenceType, search, program, curriculum, year, status]);
+
+  const blockRows = academicData.blocks.filter((item) =>
+    `${item.code} ${item.program_code} ${item.curriculum_code}`.toLowerCase().includes(search.toLowerCase()) &&
+    (program === ALL || item.program_code === program) &&
+    (curriculum === ALL || item.curriculum_code === curriculum) &&
+    (term === ALL || item.term_id === term) &&
+    (year === ALL || String(item.year_level) === year) &&
+    (status === ALL || item.planning_status === status));
+
+  function open(row, kind) {
+    setSelected(row);
+    setSelectedKind(kind);
+  }
 
   return (
     <>
-      <PageHeader title="Academic & Scheduling" description="Read only reference for academic terms, curricula, published block proposals, class meetings and capacity." />
-      <Tabs items={VIEWS} selected={view} onSelect={(next) => { setView(next); setSearch(""); setSelectedSection(null); }} label="Academic reference sections" title="Academic Reference" subtitle="The Academic Coordinator publishes academic plans. The Registrar alone confirms official enrollment.">
-        {view !== "term" && view !== "curriculum" ? <div className="toolbar"><SearchControl label={`Search ${view}`} value={search} onChange={setSearch} placeholder={`Search ${view} records`} /></div> : null}
-        {view === "term" ? <>
-          <div className="info-grid"><Info label="Academic Year" value={student.term.academicYear} /><Info label="Semester" value={student.term.semester} /><Info label="Term" value={student.term.label} /><Info label="Enrollment Status" value={student.term.status} /><Info label="Opening Date" value={student.term.enrollmentStart} /><Info label="Closing Date" value={student.term.enrollmentEnd} /></div>
-          <div className="notice" style={{ marginTop: 14 }}>Registrar enrollment period operations require authorized backend persistence and an audit trail. This demo displays the current period without changing shared term configuration.</div>
-        </> : null}
-        {view === "programs" ? <DataTable rows={catalog.programs.filter(match)} rowKey="code" columns={[{ key: "code", label: "Program Code" }, { key: "name", label: "Program" }, { key: "department", label: "Department" }, { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status.toUpperCase()} /> }, { key: "enrolled", label: "Enrollment Total" }]} /> : null}
-        {view === "curriculum" ? <>
-          <div className="notice">Curriculum assignments are read only. Program curricula, required subjects and version changes are maintained by the Academic Coordinator.</div>
-          <DataTable rowKey="reference" rows={[...new Map(registrar.enrollments.map((entry) => [`${entry.program}:${entry.curriculum}`, { reference: `${entry.program}:${entry.curriculum}`, program: entry.program, curriculum: entry.curriculum, term: entry.term }])).values()]} columns={[{ key: "program", label: "Program" }, { key: "curriculum", label: "Assigned Curriculum Version" }, { key: "term", label: "Academic Term" }]} />
-        </> : null}
-        {view === "subjects" ? <DataTable rowKey="code" rows={catalog.subjects.filter(match)} columns={[{ key: "code", label: "Code" }, { key: "name", label: "Subject" }, { key: "units", label: "Units" }, { key: "yearLevel", label: "Year" }, { key: "semester", label: "Term" }, { key: "prerequisites", label: "Prerequisites", render: (row) => row.prerequisites.join(", ") || "None" }, { key: "eligibility", label: "Demo Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> }]} /> : null}
-        {["sections", "schedules", "capacity"].includes(view) && hasPlanning ? <p className="notice">Academic plans and proposed assignments are references only. Published proposals and available planning slots do not grant enrollment confirmation.</p> : null}
-        {view === "sections" ? <DataTable rowKey="id" rows={sections} columns={[
-          { key: "code", label: "Block Section" },
-          { key: "programCode", label: "Program", render: (row) => row.programCode || row.subject },
-          { key: "yearLevel", label: "Year Level", render: (row) => row.yearLevel || "Not recorded" },
-          { key: "semester", label: "Semester", render: (row) => row.semester || "Not recorded" },
-          { key: "capacity", label: "Capacity" },
-          { key: "proposed", label: "Proposed Students", render: (row) => row.proposed ?? "Not tracked" },
-          { key: "confirmed", label: "Confirmed" },
-          { key: "planStatus", label: "Planning Status" },
-          { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openDetails(row.id)}>View Section</TableActionButton></TableActions> },
-        ]} /> : null}
-        {view === "schedules" ? <DataTable rowKey="id" rows={scheduleRows} columns={[
-          { key: "code", label: "Block Section" }, { key: "subjectCode", label: "Subject Code", render: (row) => row.subjectCode || row.subject },
-          { key: "subject", label: "Subject", render: (row) => row.subject || "Not recorded" },
-          { key: "schedule", label: "Day & Time" }, { key: "room", label: "Room" },
-          { key: "professor", label: "Professor", render: (row) => row.professor || "Not assigned" },
-          { key: "status", label: "Plan", render: (row) => hasPlanning ? (row.status === "PUBLISHED" ? "Published proposal" : "Draft proposal") : "Legacy reference" },
-          { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openDetails(row.sectionId)}>View Details</TableActionButton></TableActions> },
-        ]} /> : null}
-        {view === "capacity" ? <DataTable rowKey="id" rows={sections} columns={[
-          { key: "code", label: "Block Section" }, { key: "capacity", label: "Maximum Slots" },
-          { key: "proposed", label: "Proposed", render: (row) => row.proposed ?? "Not tracked" },
-          { key: "confirmed", label: "Registrar Confirmed" },
-          { key: "remaining", label: "Unassigned Planning Slots" },
-          { key: "planStatus", label: "Plan Status" },
-          { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openDetails(row.id)}>View Related Section</TableActionButton></TableActions> },
-        ]} /> : null}
-      </Tabs>
-      {currentSection && ["sections", "schedules", "capacity"].includes(view) ? <div style={{ marginTop: 16 }}><Panel title={`Section Details · ${currentSection.code}`} actions={<button className="table-action" type="button" onClick={() => setSelectedSection(null)}>Close</button>}>
-        <Details items={hasPlanning ? [
-          ["Block Section", currentSection.code], ["Program", currentSection.programCode],
-          ["Year Level", currentSection.yearLevel], ["Academic Term", `${currentSection.semester} ${currentSection.academicYear}`],
-          ["Capacity", currentSection.capacity], ["Proposed Students", currentSection.proposed],
-          ["Registrar Confirmed", currentSection.confirmed], ["Available Planning Slots", currentSection.remaining],
-          ["Planning Status", currentSection.planStatus],
-        ] : [
-          ["Subject", currentSection.subject], ["Section", currentSection.code],
-          ["Class Schedule", currentSection.schedule], ["Room", currentSection.room],
-          ["Capacity", currentSection.capacity], ["Confirmed Students", currentSection.confirmed],
-          ["Remaining Slots", currentSection.remaining], ["Capacity Indicator", currentSection.status],
-        ]} />
-      </Panel></div> : null}
+      <PageHeader title="Academic & Scheduling" description="Read only Registrar reference to Curriculum Project 2026 (P8F26), its Phase 8 block plans, class sections, schedules, rooms, professors, and capacity information." />
+
+      <InternalTabs items={[{ value: "reference", label: "Academic Reference" }, { value: "sections", label: "Sections & Schedules" }]} selected={tab} onSelect={(value) => { setTab(value); setSelected(null); setSearch(""); setProgram(ALL); setCurriculum(ALL); setTerm(ALL); setYear(ALL); setStatus(ALL); }} label="Academic and scheduling views">
+        {tab === "reference" ? (
+          <Panel title="Academic Reference" subtitle="This view is restricted to Curriculum Project 2026 / P8F26. Registrar access is read only; academic planning changes remain under Academic Coordinator authority.">
+            <div className="toolbar">
+              <FilterControl label="Reference Type" value={referenceType} onChange={(value) => { setReferenceType(value); setSelected(null); }} options={[{ value: "programs", label: "Programs" }, { value: "curricula", label: "Curricula" }, { value: "subjects", label: "Subjects & Prerequisites" }]} />
+              <SearchControl value={search} onChange={setSearch} label="Search academic reference" placeholder="Search code or name" />
+              {referenceType !== "programs" ? <FilterControl label="Program" value={program} onChange={setProgram} options={opts(academicData.programs.map((item) => item.code), "All Programs")} /> : null}
+              {referenceType === "subjects" ? <><FilterControl label="Curriculum" value={curriculum} onChange={setCurriculum} options={opts(academicData.curricula.map((item) => item.code), "All Curricula")} /><FilterControl label="Year Level" value={year} onChange={setYear} options={opts(academicData.curriculumSubjects.map((item) => String(item.year_level || "")).filter(Boolean), "All Years")} /></> : null}
+              {referenceType !== "subjects" ? <FilterControl label="Status" value={status} onChange={setStatus} options={opts((referenceType === "programs" ? academicData.programs : academicData.curricula).map((item) => item.status), "All Statuses")} /> : null}
+            </div>
+
+            {referenceType === "programs" ? <DataTable rowKey="code" rows={referenceRows} onRowClick={(row) => open(row, "Program")} columns={[{ key: "code", label: "Program" }, { key: "name", label: "Program Name" }, { key: "organizational_unit_code", label: "College / Department", render: (row) => row.organizational_unit_code || "Not available" }, { key: "status", label: "Status", render: (row) => <StatusBadge value={String(row.status).toUpperCase()} label={row.status} /> }]} /> : null}
+            {referenceType === "curricula" ? <DataTable rowKey="code" rows={referenceRows} onRowClick={(row) => open(row, "Curriculum")} columns={[{ key: "code", label: "Curriculum Version" }, { key: "program_code", label: "Program" }, { key: "name", label: "Name", render: (row) => row.name || "Not available" }, { key: "effective_year_start", label: "Effective Year", render: (row) => row.effective_year_start || "Not available" }, { key: "status", label: "Status", render: (row) => <StatusBadge value={String(row.status).toUpperCase()} label={row.status} /> }]} /> : null}
+            {referenceType === "subjects" ? <DataTable rowKey={(row) => `${row.curriculum_code}:${row.subject_code}:${row.year_level}:${row.semester}`} rows={referenceRows} onRowClick={(row) => open(row, "Subject")} columns={[{ key: "program_code", label: "Program" }, { key: "curriculum_code", label: "Curriculum" }, { key: "year_level", label: "Year" }, { key: "semester", label: "Semester" }, { key: "subject_code", label: "Subject Code" }, { key: "subject_name", label: "Subject Name" }, { key: "units", label: "Units" }, { key: "subject_status", label: "Status" }]} /> : null}
+          </Panel>
+        ) : null}
+
+        {tab === "sections" ? (
+          <Panel title="Sections & Schedules" subtitle="Reference only. Only P8F26 Phase 8 project blocks and linked project schedules are shown here. Viewing them never creates official enrollment.">
+            <div className="toolbar">
+              <SearchControl value={search} onChange={setSearch} label="Search sections" placeholder="Search block, program, or curriculum" />
+              <FilterControl label="Program" value={program} onChange={setProgram} options={opts(academicData.blocks.map((item) => item.program_code), "All Programs")} />
+              <FilterControl label="Curriculum" value={curriculum} onChange={setCurriculum} options={opts(academicData.blocks.map((item) => item.curriculum_code), "All Curricula")} />
+              <FilterControl label="Academic Term" value={term} onChange={setTerm} options={opts(academicData.blocks.map((item) => item.term_id), "All Terms")} />
+              <FilterControl label="Year Level" value={year} onChange={setYear} options={opts(academicData.blocks.map((item) => String(item.year_level || "")).filter(Boolean), "All Years")} />
+              <FilterControl label="Planning Status" value={status} onChange={setStatus} options={opts(academicData.blocks.map((item) => item.planning_status), "All Statuses")} />
+            </div>
+            <DataTable rowKey="id" rows={blockRows} onRowClick={(row) => open(row, "Block")} emptyMessage="No block sections match the selected filters." columns={[
+              { key: "code", label: "Block Section" }, { key: "program_code", label: "Program" }, { key: "year_level", label: "Year Level" }, { key: "term_id", label: "Term" }, { key: "capacity", label: "Capacity" }, { key: "projectAssignedCount", label: "Project Assigned Students" }, { key: "sections", label: "Subject Sections", render: (row) => row.sections.length }, { key: "planning_status", label: "Planning Status", render: (row) => <StatusBadge value={String(row.planning_status).toUpperCase()} label={row.planning_status} /> },
+            ]} />
+          </Panel>
+        ) : null}
+      </InternalTabs>
+
+      <Modal open={Boolean(selected)} title={selectedKind ? `${selectedKind} Details` : "Academic Details"} onClose={() => setSelected(null)} className="registrar-detail-modal" footer={<Button onClick={() => setSelected(null)}>Close</Button>}>
+        {selected && selectedKind === "Program" ? <Details items={[["Program Code", selected.code], ["Program Name", selected.name], ["College / Department", selected.organizational_unit_code], ["Status", selected.status], ["Registrar Authority", "Read only reference"]]} /> : null}
+        {selected && selectedKind === "Curriculum" ? <Details items={[["Curriculum Code", selected.code], ["Program", `${selected.program_code} · ${programMap.get(selected.program_code)?.name || "Not available"}`], ["Name", selected.name || "Not available"], ["Effective Year", selected.effective_year_start || "Not available"], ["Status", selected.status], ["Registrar Authority", "Read only reference"]]} /> : null}
+        {selected && selectedKind === "Subject" ? <><Details items={[["Program", selected.program_code], ["Curriculum", selected.curriculum_code], ["Year Level", selected.year_level], ["Semester", selected.semester], ["Subject", `${selected.subject_code} · ${selected.subject_name}`], ["Units", selected.units], ["Status", selected.subject_status], ["Prerequisites", selected.prerequisites?.length ? selected.prerequisites.join(", ") : "None recorded"], ["Registrar Authority", "Read only reference"]]} /></> : null}
+        {selected && selectedKind === "Block" ? <><Details items={[["Dataset", "Curriculum Project 2026 / P8F26"], ["Block Section", selected.code], ["Program", `${selected.program_code} · ${programMap.get(selected.program_code)?.name || "Not available"}`], ["Curriculum", selected.curriculum_code], ["Year Level", selected.year_level], ["Academic Term", selected.term_id], ["Capacity", selected.capacity], ["Project Assigned Students", selected.projectAssignedCount ?? "Not available"], ["Capacity Remaining", selected.capacity ? Math.max(0, selected.capacity - (selected.projectAssignedCount || 0)) : "Not available"], ["Planning Status", selected.planning_status], ["Registrar Authority", "Read only reference"]]} /><h3 style={{ marginTop: 18 }}>P8F26 Subject Sections and Schedule</h3><DataTable rowKey="id" rows={selected.sections || []} emptyMessage="No P8F26 subject sections are linked to this block." columns={[{ key: "subject_code", label: "Subject Code" }, { key: "subjectName", label: "Subject Name" }, { key: "section_code", label: "Section" }, { key: "instructor", label: "Professor" }, { key: "schedule_status", label: "Schedule Status" }, { key: "meetings", label: "Meeting Schedule", render: (row) => row.meetings.length ? row.meetings.map((m) => `Day ${m.day_of_week} ${m.start_time}-${m.end_time} · ${m.roomCode}`).join("; ") : "Not available" }]} /></> : null}
+      </Modal>
     </>
   );
 }

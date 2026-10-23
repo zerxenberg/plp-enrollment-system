@@ -805,3 +805,62 @@ a.list-item:focus-visible, button.list-item:focus-visible, label.list-item:focus
   .block-planning .block-heading .action-row, .block-planning .block-footer .portal-button { width: 100%; }
   .block-planning .block-heading .action-row .portal-button { flex: 1 1 auto; }
 }
+
+/* Registrar simplification overhaul. Role-scoped presentation only. */
+.portal-role-registrar .registrar-detail-modal {
+  width: min(900px, 96vw);
+}
+.portal-role-registrar .registrar-roster-modal,
+.portal-role-registrar .registrar-grade-modal,
+.portal-role-registrar .registrar-cor-modal {
+  width: min(1080px, 96vw);
+}
+.portal-role-registrar .registrar-enter,
+.portal-role-registrar .tab-panel > :first-child {
+  animation: registrar-surface-enter 220ms cubic-bezier(.2, .75, .25, 1);
+}
+.portal-role-registrar .modal-backdrop {
+  animation: registrar-backdrop-enter 150ms ease-out;
+}
+.portal-role-registrar .portal-modal {
+  animation: registrar-modal-enter 220ms cubic-bezier(.2, .78, .25, 1);
+}
+.portal-role-registrar .registrar-source-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--portal-table-divider);
+  border-radius: 10px;
+  background: rgba(245, 251, 247, .82);
+  color: var(--portal-muted);
+  font-size: .76rem;
+}
+.portal-role-registrar .registrar-source-strip strong {
+  color: var(--portal-green-800);
+}
+.portal-role-registrar .registrar-cor-modal .data-table {
+  min-width: 680px;
+}
+@keyframes registrar-surface-enter {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes registrar-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes registrar-modal-enter {
+  from { opacity: 0; transform: translateY(12px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portal-role-registrar .registrar-enter,
+  .portal-role-registrar .tab-panel > :first-child,
+  .portal-role-registrar .modal-backdrop,
+  .portal-role-registrar .portal-modal {
+    animation: none;
+  }
+}

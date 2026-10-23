@@ -1,32 +1,154 @@
 "use client";
 
-import { useState } from "react";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, PageHeader } from "@/components/ui/PortalUI";
-import { Panel, Info, Feedback } from "./RegistrarShared";
+import { useState, useTransition } from "react";
+import { Button, Modal, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { Info, Panel } from "./RegistrarShared";
+import RegistrarActionResultModal from "./RegistrarActionResultModal";
+import {
+  changeRegistrarPassword,
+  updateRegistrarPreferences,
+} from "@/features/registrar/registrar-actions";
 
-export default function RegistrarProfile() {
-  const {registrar} = useDemoData();
-  const account = registrar.registrar;
-  const [enrollmentUpdates,setEnrollmentUpdates] = useState(true);
-  const [corrections,setCorrections] = useState(true);
-  const [message,setMessage] = useState("");
+function prefValue(preferences, key) {
+  const value = preferences?.[key];
+  if (typeof value === "boolean") return value;
+  if (value && typeof value === "object" && "enabled" in value) return Boolean(value.enabled);
+  return true;
+}
+
+export default function RegistrarProfile({ profileData }) {
+  const [isPending, startTransition] = useTransition();
+  const [result, setResult] = useState(null);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [password, setPassword] = useState({ newPassword: "", confirmPassword: "" });
+  const [preferences, setPreferences] = useState({
+    enrollment_alerts: prefValue(profileData.preferences, "enrollment_alerts"),
+    grade_import_alerts: prefValue(profileData.preferences, "grade_import_alerts"),
+    announcement_alerts: prefValue(profileData.preferences, "announcement_alerts"),
+    correction_alerts: prefValue(profileData.preferences, "correction_alerts"),
+  });
+
+  function run(action, onSuccess) {
+    startTransition(async () => {
+      const response = await action();
+      setResult(response);
+      if (response.ok) onSuccess?.();
+    });
+  }
 
   return (
     <>
-      <PageHeader title="Registrar Profile" description="View Registrar account details and demonstration notification preferences." />
-      <Panel title="Account Information">
-        <div className="info-grid"><Info label="Registrar Name" value={account.fullName} /><Info label="Registrar Account ID" value={account.accountId} /><Info label="Office" value={account.office} /><Info label="Email" value={account.email} /><Info label="Assigned Role" value={account.role} /><Info label="Account Status" value={account.accountStatus} /></div>
-        <p className="notice" style={{marginTop:14}}>Changing account credentials or personal details requires the authentication and authorized profile service. This page displays demo account information.</p>
-      </Panel>
-      <div style={{marginTop:16}}><Panel title="Notification Preferences" subtitle="These preferences are local to this page demo session.">
-        <div className="list-stack">
-          <label className="list-item"><input type="checkbox" checked={enrollmentUpdates} onChange={(event)=>setEnrollmentUpdates(event.target.checked)} /> Enrollment status and validation updates</label>
-          <label className="list-item"><input type="checkbox" checked={corrections} onChange={(event)=>setCorrections(event.target.checked)} /> Correction requests and responses</label>
+      <PageHeader
+        title="Registrar Profile"
+        description="Live Registrar identity, own password management, and personal notification preferences."
+      />
+
+      <Panel
+        title="Registrar Information"
+        subtitle="The current access model exposes the Registrar's own account and staff profile as read only."
+      >
+        <div className="info-grid">
+          <Info label="Registrar Name" value={profileData.user.full_name || "Not available"} />
+          <Info label="University / Employee ID" value={profileData.staff?.employee_id || profileData.user.source_account_key || "Not available"} />
+          <Info label="Registered Email" value={profileData.user.email || "Not available"} />
+          <Info label="Assigned Role" value="Registrar" />
+          <div className="info-item">
+            <span>Account Status</span>
+            <strong><StatusBadge value={profileData.user.account_status === "Active" ? "ACTIVE" : "INACTIVE"} label={profileData.user.account_status} /></strong>
+          </div>
+          <Info label="Login Enabled" value={profileData.user.login_enabled ? "Yes" : "No"} />
+          <Info label="Office / Department" value={profileData.organization?.name || profileData.staff?.office_name || "Not available"} />
+          <Info label="Position" value={profileData.staff?.position_title || "Not available"} />
+          <Info label="Last Login" value={profileData.user.lastLoginLabel} />
+          <Info label="Account Created" value={profileData.user.createdAtLabel} />
         </div>
-        <div className="action-row" style={{marginTop:14}}><Button type="button" onClick={()=>setMessage("Demo preferences retained until you leave this page.")}>Save Demo Preferences</Button></div>
-        <Feedback message={message} />
-      </Panel></div>
+
+        <div className="action-row" style={{ marginTop: 14 }}>
+          <Button variant="secondary" onClick={() => setPasswordOpen(true)}>Change Own Password</Button>
+        </div>
+
+        <div className="notice" style={{ marginTop: 14 }}>
+          Name, email, employee ID, role, account state, and organizational assignment are not editable by Registrar under the current RLS and staff profile policies. No privileged workaround is used.
+        </div>
+      </Panel>
+
+      <div style={{ marginTop: 16 }}>
+        <Panel title="Notification Preferences" subtitle="Preferences are stored in the existing user_preferences table.">
+          <div className="list-stack">
+            {[
+              ["enrollment_alerts", "Enrollment processing alerts"],
+              ["grade_import_alerts", "Official grade import alerts"],
+              ["announcement_alerts", "Enrollment announcement activity"],
+              ["correction_alerts", "Correction and validation alerts"],
+            ].map(([key, label]) => (
+              <label className="list-item" key={key}>
+                <input
+                  type="checkbox"
+                  checked={preferences[key]}
+                  onChange={(event) => setPreferences({ ...preferences, [key]: event.target.checked })}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div className="action-row" style={{ marginTop: 14 }}>
+            <Button disabled={isPending} onClick={() => run(() => updateRegistrarPreferences(preferences))}>
+              {isPending ? "Saving..." : "Save Preferences"}
+            </Button>
+          </div>
+        </Panel>
+      </div>
+
+      <Modal
+        open={passwordOpen}
+        title="Change Own Password"
+        onClose={() => setPasswordOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPasswordOpen(false)}>Cancel</Button>
+            <Button
+              disabled={isPending || password.newPassword.length < 12 || password.newPassword !== password.confirmPassword}
+              onClick={() =>
+                run(
+                  () => changeRegistrarPassword(password),
+                  () => {
+                    setPasswordOpen(false);
+                    setPassword({ newPassword: "", confirmPassword: "" });
+                  },
+                )
+              }
+            >
+              {isPending ? "Saving..." : "Change Password"}
+            </Button>
+          </>
+        }
+      >
+        <div className="form-grid">
+          <label className="field full">
+            <span>New Password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={password.newPassword}
+              onChange={(event) => setPassword({ ...password, newPassword: event.target.value })}
+            />
+          </label>
+          <label className="field full">
+            <span>Confirm New Password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={password.confirmPassword}
+              onChange={(event) => setPassword({ ...password, confirmPassword: event.target.value })}
+            />
+          </label>
+        </div>
+        <div className="notice" style={{ marginTop: 14 }}>
+          Passwords are handled by Supabase Auth and are never stored in application tables.
+        </div>
+      </Modal>
+
+      <RegistrarActionResultModal result={result} onClose={() => setResult(null)} />
     </>
   );
 }

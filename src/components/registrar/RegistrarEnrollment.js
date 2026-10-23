@@ -1,191 +1,749 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
-import { Panel, Tabs, Info, Details, Feedback } from "./RegistrarShared";
-import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
-import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-const QUEUES = [
-  {value:"ALL",label:"All"}, {value:"PENDING",label:"Pending (Submitted)"},
-  {value:"FOR_VALIDATION",label:"For Validation"},
-  {value:"NEEDS_ACADEMIC_REVIEW",label:"Needs Academic Review"},
-  {value:"REQUIRES_CORRECTION",label:"Requires Correction"},
-  {value:"VALIDATED",label:"Validated"}, {value:"CONFIRMED",label:"Confirmed"},
-];
-const CHECKS = ["Program Match", "Curriculum Match", "Duplicate Subject Check", "Prerequisite Check", "Unit Validation", "Section Slot Check", "Schedule Conflict Check"];
-const CATEGORIES = ["Student Information", "Subject Registration", "Prerequisite", "Section Availability", "Schedule Conflict", "Unit Load", "Other"];
+import {
+  Button,
+  DataTable,
+  FilterControl,
+  InternalTabs,
+  Modal,
+  PageHeader,
+  SearchControl,
+  StatusBadge,
+} from "@/components/ui/PortalUI";
+import { Details, Panel } from "./RegistrarShared";
+import RegistrarActionResultModal from "./RegistrarActionResultModal";
+import RegistrarCORModal from "./RegistrarCORModal";
+import {
+  confirmOfficialEnrollment,
+  confirmProjectEnrollmentBatch,
+  loadRegistrarProjectEnrollmentDetail,
+  performProjectEnrollmentAction,
+  readRegistrarOfficialCOR,
+  readRegistrarProjectCOR,
+} from "@/features/registrar/registrar-actions";
+import { titleStatus } from "@/features/registrar/registrar-client-utils";
 
-export default function RegistrarEnrollment() {
-  const { registrar, catalog, runRegistrarValidation, returnForCorrection, confirmRegistrarEnrollment, applyAuthorizedCorrection } = useDemoData();
-  const [queue, setQueue] = useState("ALL");
-  const [search, setSearch] = useState("");
-  const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
-  const [historyAcademicFilters, setHistoryAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
-  const [sort, setSort] = useState("newest");
-  const params = useSearchParams();
-  const [referenceOverride, setReference] = useState(undefined);
-  const reference = referenceOverride === undefined ? params.get("reference") : referenceOverride;
-  const [detailTab, setDetailTab] = useState("subjects");
-  const [dialog, setDialog] = useState(null);
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [explanation, setExplanation] = useState("");
-  const [affected, setAffected] = useState("");
-  const [correctedInformation, setCorrectedInformation] = useState("");
-  const [correctionReason, setCorrectionReason] = useState("");
-  const [feedback, setFeedback] = useState("");
+const ALL = "ALL";
+const PROJECT = "PROJECT";
+const OFFICIAL = "OFFICIAL";
 
-  const enrollment = registrar.enrollments.find((item) => item.reference === reference);
-  const reviewApprovalConsumed = ["APPROVED", "APPLIED"].includes(enrollment?.academicReviewDecision);
-  const reviewAwaitingClarification = enrollment?.status === "NEEDS_ACADEMIC_REVIEW" &&
-    enrollment?.academicReviewDecision === "RETURNED_FOR_CLARIFICATION";
-  const validationResult = !enrollment?.lastValidatedAt ? "NOT_RUN" :
-    enrollment.validationPreset === "pass" || (enrollment.validationPreset === "review" && reviewApprovalConsumed)
-      ? "PASSED" : enrollment.validationPreset === "review" ? "REQUIRES_REVIEW" : "FAILED";
-  const canValidate = Boolean(enrollment && ["SUBMITTED", "FOR_VALIDATION", "VALIDATED"].includes(enrollment.status));
-  const canReturn = Boolean(enrollment && ["FOR_VALIDATION", "VALIDATED"].includes(enrollment.status));
-  const canConfirm = enrollment?.status === "VALIDATED";
-  const histories = registrar.activity.filter((item) => item.reference === reference);
+function options(values, allLabel) {
+  return [
+    { value: ALL, label: allLabel },
+    ...[...new Set(values.filter(Boolean))]
+      .sort()
+      .map((value) => ({ value, label: value })),
+  ];
+}
 
-  const queueFiltered = registrar.enrollments.filter((item) => {
-    const matchQueue = queue === "ALL" || (queue === "PENDING" ? item.status === "SUBMITTED" : item.status === queue);
-    return matchQueue && `${item.reference} ${item.studentName} ${item.studentNumber} ${item.program}`.toLowerCase().includes(search.trim().toLowerCase());
-  });
-  const filtered = filterAcademicRecords(queueFiltered, academicFilters, [], catalog.programs)
-    .sort((a,b)=>sort==="name" ? a.studentName.localeCompare(b.studentName) : sort==="program" ? a.program.localeCompare(b.program) : sort==="oldest" ? a.reference.localeCompare(b.reference) : b.reference.localeCompare(a.reference));
-  const historicalTransactions = registrar.enrollments.filter((item) => ["CONFIRMED","CANCELLED"].includes(item.status));
-  const historyRows = filterAcademicRecords(historicalTransactions, historyAcademicFilters, [], catalog.programs);
-  const changeAcademicFilter = (key, value) => setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
-  const changeHistoryAcademicFilter = (key, value) => setHistoryAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
+function groupProject(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const key = row.home_block_id || "UNASSIGNED";
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        block: row.home_block || "Unassigned",
+        program: row.program_code || "Not available",
+        term: row.current_term_id || "Not available",
+        total: 0,
+        pending: 0,
+        validated: 0,
+        confirmed: 0,
+        students: [],
+      });
+    }
+    const group = map.get(key);
+    group.total += 1;
+    group.students.push(row);
+    if (["SUBMITTED", "DRAFT", "RETURNED"].includes(row.status)) group.pending += 1;
+    if (row.status === "VALIDATED") group.validated += 1;
+    if (row.status === "CONFIRMED_SIMULATION") group.confirmed += 1;
+  }
+  return [...map.values()].sort((a, b) => a.block.localeCompare(b.block));
+}
 
-  function openReview(nextReference, nextTab = "subjects") {
-    setReference(nextReference);
-    setDetailTab(nextTab);
-    setFeedback("");
+function groupOfficial(rows) {
+  const map = new Map();
+  for (const row of rows) {
+    const block = row.targetBlock || row.currentBlock || "Unassigned";
+    const key = `${row.term_id}:${row.program_code}:${block}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        block,
+        program: row.program_code || "Not available",
+        term: row.term_id || "Not available",
+        total: 0,
+        pending: 0,
+        validated: 0,
+        confirmed: 0,
+        students: [],
+      });
+    }
+    const group = map.get(key);
+    group.total += 1;
+    group.students.push(row);
+    if (["SUBMITTED", "FOR_VALIDATION", "NEEDS_ACADEMIC_REVIEW", "REQUIRES_CORRECTION"].includes(row.status)) group.pending += 1;
+    if (row.status === "VALIDATED") group.validated += 1;
+    if (row.status === "CONFIRMED") group.confirmed += 1;
+  }
+  return [...map.values()].sort((a, b) => `${a.program}-${a.block}`.localeCompare(`${b.program}-${b.block}`));
+}
+
+export default function RegistrarEnrollment({ enrollmentData }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const [tab, setTab] = useState("processing");
+  const [recordType, setRecordType] = useState(PROJECT);
+  const [search, setSearch] = useState(searchParams.get("student") || "");
+  const [status, setStatus] = useState(ALL);
+  const [program, setProgram] = useState(ALL);
+  const [block, setBlock] = useState(ALL);
+  const [term, setTerm] = useState(ALL);
+  const [selectedTerm, setSelectedTerm] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [selectedCase, setSelectedCase] = useState(null);
+  const [projectDetail, setProjectDetail] = useState(null);
+  const [caseLoading, setCaseLoading] = useState(false);
+  const [decisionOpen, setDecisionOpen] = useState(false);
+  const [decisionType, setDecisionType] = useState("");
+  const [decisionValue, setDecisionValue] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchReference, setBatchReference] = useState("");
+  const [cor, setCor] = useState(null);
+  const [corProject, setCorProject] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const projectGroups = useMemo(() => groupProject(enrollmentData.project), [enrollmentData.project]);
+  const officialGroups = useMemo(() => groupOfficial(enrollmentData.official), [enrollmentData.official]);
+  const sourceGroups = recordType === PROJECT ? projectGroups : officialGroups;
+
+  const filteredGroups = sourceGroups
+    .map((group) => ({
+      ...group,
+      students: group.students.filter((row) => {
+        const searchable = recordType === PROJECT
+          ? `${row.student_number} ${row.full_name} ${row.program_code} ${row.home_block}`
+          : `${row.studentNumber} ${row.studentName} ${row.reference} ${row.program_code} ${row.currentBlock}`;
+        const rowBlock = recordType === PROJECT ? row.home_block : row.currentBlock;
+        const rowTerm = recordType === PROJECT ? row.current_term_id : row.term_id;
+        return (
+          searchable.toLowerCase().includes(search.toLowerCase()) &&
+          (status === ALL || row.status === status) &&
+          (program === ALL || row.program_code === program) &&
+          (block === ALL || rowBlock === block) &&
+          (term === ALL || rowTerm === term)
+        );
+      }),
+    }))
+    .filter((group) => group.students.length);
+
+  const allRows = recordType === PROJECT ? enrollmentData.project : enrollmentData.official;
+
+  function run(action, onSuccess) {
+    startTransition(async () => {
+      const response = await action();
+      setResult(response);
+      if (response.ok) {
+        onSuccess?.(response);
+        router.refresh();
+      }
+    });
   }
 
-  function validate() {
-    if (!canValidate) {setFeedback("Only Submitted, For Validation or Validated transactions can be validated in this demo.");return;}
-    const previousStatus = enrollment.status;
-    const result = runRegistrarValidation(enrollment.reference);
-    setFeedback(result
-      ? previousStatus === "SUBMITTED" && result === "FOR_VALIDATION"
-        ? "Validation started. The enrollment is now For Validation. Run validation again to complete the demo checks."
-        : `Demo validation completed. Enrollment status: ${result.replaceAll("_", " ")}.`
-      : "Validation could not be completed.");
-    setDetailTab("validation");
+  async function openCase(row) {
+    setSelectedCase(row);
+    setSelectedGroup(null);
+    setProjectDetail(null);
+
+    if (recordType === PROJECT) {
+      setCaseLoading(true);
+      const response = await loadRegistrarProjectEnrollmentDetail(row.student_id);
+      setCaseLoading(false);
+      if (!response.ok) {
+        setResult(response);
+        setSelectedCase(null);
+        return;
+      }
+      setProjectDetail(response.data);
+    }
   }
 
-  function sendCorrection(event) {
-    event.preventDefault();
-    if (!canReturn || !explanation.trim()) {setFeedback("This transaction cannot be returned, or its explanation is missing.");return;}
-    const success = returnForCorrection(enrollment.reference, {category, explanation: explanation.trim(), affected: affected.trim()});
-    setFeedback(success ? "Enrollment returned for correction. The reason is recorded in transaction history." : "The correction request was not saved.");
-    if (success) setDialog(null);
+  function startDecision(type) {
+    setDecisionType(type);
+    setDecisionValue("");
+    setDecisionOpen(true);
   }
 
-  function confirm() {
-    if (!canConfirm) {setFeedback("Only a Validated enrollment can be confirmed.");return;}
-    const success = confirmRegistrarEnrollment(enrollment.reference);
-    setFeedback(success ? "Enrollment confirmed. The demo generated its confirmation reference and transaction history." : "Confirmation could not be completed.");
-    if (success) setDialog(null);
+  function submitDecision() {
+    if (!selectedCase) return;
+
+    if (recordType === PROJECT) {
+      const action = decisionType;
+      run(
+        () =>
+          performProjectEnrollmentAction({
+            studentId: selectedCase.student_id,
+            action,
+            reason: decisionValue,
+          }),
+        (response) => {
+          setDecisionOpen(false);
+          setSelectedCase(null);
+          if (action === "CONFIRM" && response.data?.simulation_id) {
+            run(async () => {
+              const loaded = await readRegistrarProjectCOR(response.data.simulation_id);
+              if (loaded.ok) {
+                setCor(loaded.data);
+                setCorProject(true);
+              }
+              return loaded;
+            });
+          }
+        },
+      );
+      return;
+    }
+
+    if (decisionType === "CONFIRM") {
+      const enrollmentId = selectedCase.id;
+      run(
+        () =>
+          confirmOfficialEnrollment({
+            enrollmentId,
+            sourceReference: decisionValue,
+          }),
+        (response) => {
+          setDecisionOpen(false);
+          setSelectedCase(null);
+          if (response.ok) {
+            run(async () => {
+              const loaded = await readRegistrarOfficialCOR(enrollmentId);
+              if (loaded.ok) {
+                setCor(loaded.data);
+                setCorProject(false);
+              }
+              return loaded;
+            });
+          }
+        },
+      );
+    }
   }
 
-  function saveAuthorizedCorrection(event) {
-    event.preventDefault();
-    if (!enrollment || !correctedInformation.trim() || !correctionReason.trim()) {setFeedback("Corrected information and a reason are required.");return;}
-    const resolvesClarification = reviewAwaitingClarification;
-    const success = applyAuthorizedCorrection(enrollment.reference, correctedInformation.trim(), correctionReason.trim());
-    setFeedback(success ? resolvesClarification
-      ? "Clarification recorded. The academic review case is pending a new Coordinator decision."
-      : "Authorized correction recorded in the transaction history."
-      : "Authorized correction could not be saved.");
-    if (success) setDialog(null);
+  function confirmBatch() {
+    const rows = enrollmentData.project.filter(
+      (row) => selectedBatch.has(row.student_id) && row.status === "VALIDATED",
+    );
+    run(
+      () => confirmProjectEnrollmentBatch(rows.map((row) => row.student_id), batchReference),
+      () => {
+        setBatchOpen(false);
+        setSelectedBatch(new Set());
+        setBatchReference("");
+      },
+    );
+  }
+
+  function toggleBatch(studentId) {
+    setSelectedBatch((current) => {
+      const next = new Set(current);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }
+
+  function openProjectCor(row) {
+    run(async () => {
+      const response = await readRegistrarProjectCOR(row.project_simulation_id);
+      if (response.ok) {
+        setCor(response.data);
+        setCorProject(true);
+      }
+      return response;
+    });
+  }
+
+  function openOfficialCor(row) {
+    run(async () => {
+      const response = await readRegistrarOfficialCOR(row.id);
+      if (response.ok) {
+        setCor(response.data);
+        setCorProject(false);
+      }
+      return response;
+    });
   }
 
   return (
     <>
-      <PageHeader title="Enrollment" description="Review official enrollment transactions, run demo validation, return corrections and confirm validated records." />
-      <Tabs items={QUEUES.map((item) => ({...item,label:`${item.label} (${registrar.enrollments.filter((row) => item.value === "ALL" || (item.value === "PENDING" ? row.status === "SUBMITTED" : row.status === item.value)).length})`}))} selected={queue} onSelect={setQueue} label="Filter enrollment queue by status" filter />
-      <Panel title="Enrollment Queue" subtitle="Pending is a queue view for Submitted only. Every stored enrollment retains its canonical status.">
-        <div className="toolbar">
-          <SearchControl label="Search enrollment" value={search} onChange={setSearch} placeholder="Search reference, student name or student number" />
-          <FilterControl label="Sort By" value={sort} onChange={setSort} options={[{value:"newest",label:"Newest Reference"},{value:"oldest",label:"Oldest Reference"},{value:"name",label:"Student Name"},{value:"program",label:"Program"}]} />
-          <Button type="button" variant="ghost" onClick={() => {setSearch("");setAcademicFilters(ALL_ACADEMIC_FILTERS);setQueue("ALL");setSort("newest");}}>Clear Filters</Button>
-        </div>
-        <AcademicFilterBar records={queueFiltered} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={filtered.length} label="Enrollment queue academic filters" />
-        <DataTable rowKey="reference" rows={filtered} emptyMessage="No enrollment transactions match the selected filters." columns={[
-          {key:"reference",label:"Enrollment Ref."},{key:"studentNumber",label:"Student No."},{key:"studentName",label:"Student"},
-          {key:"program",label:"Program"},{key:"term",label:"Academic Term"},{key:"units",label:"Units"},
-          {key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},
-          {key:"submittedDate",label:"Submitted"},
-          {key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="review" tone="review" type="button" onClick={() => openReview(row.reference)}>Review</TableActionButton><TableActionButton as={Link} icon="users" tone="view" href="/registrar/students">Students</TableActionButton><TableActionButton icon="history" tone="history" type="button" onClick={() => openReview(row.reference,"history")}>History</TableActionButton></TableActions>}
-        ]} />
-      </Panel>
+      <PageHeader
+        title="Enrollment"
+        description="Real institutional enrollment records and the separate PROJECT_ONLY demonstration workflow."
+      />
 
-      {enrollment ? <div style={{marginTop:16}}>
-        <Tabs selected={detailTab} onSelect={setDetailTab} label="Enrollment review sections" title={`Enrollment Review · ${enrollment.reference}`} actions={<Button type="button" variant="ghost" onClick={() => {setReference(null);setFeedback("");}}>Close Review</Button>} items={[{value:"subjects",label:"Registered Subjects"},{value:"validation",label:"Validation Summary"},{value:"history",label:"Transaction History"}]}>
-        <div className="info-grid" style={{marginBottom:16}}>
-          <Info label="Student Number" value={enrollment.studentNumber} />
-          <Info label="Student" value={enrollment.studentName} />
-          <Info label="Program" value={enrollment.program} />
-          <Info label="Curriculum" value={enrollment.curriculum} />
-          <Info label="Academic Term" value={enrollment.term} />
-          <Info label="Total Units" value={enrollment.units} />
-          <div className="info-item"><span>Current Enrollment Status</span><strong><StatusBadge value={enrollment.status} /></strong></div>
-          <Info label="Submitted" value={enrollment.submittedDate} />
-        </div>
-        {detailTab === "subjects" ? <DataTable rowKey="code" rows={enrollment.subjects} columns={[{key:"code",label:"Subject Code"},{key:"name",label:"Subject Name"},{key:"units",label:"Units"},{key:"section",label:"Section"},{key:"schedule",label:"Schedule"},{key:"room",label:"Room"}]} /> : null}
-        {detailTab === "validation" ? <>
-          <div className="notice" style={{marginBottom:12}}>Demo validation uses the existing record validation preset. It does not independently verify live academic or section data.</div>
-          <DataTable rowKey="rule" rows={CHECKS.map((rule) => ({rule,result:validationResult}))} columns={[{key:"rule",label:"Rule"},{key:"result",label:"Demo Validation Result",render:(row)=><StatusBadge value={row.result} />}]} />
-          <div className="summary-strip" style={{marginTop:12}}><span>Overall Demo Validation Result: <strong><StatusBadge value={validationResult} /></strong></span><span>Last validated: <strong>{enrollment.lastValidatedAt || "Not run during this demo session"}</strong></span></div>
-          {enrollment.academicReviewDecision === "APPLIED" ? <p className="notice" style={{marginTop:12}}>The approved exception for this enrollment was applied during Registrar demo validation. Enrollment still requires separate Registrar confirmation.</p> : null}
-        </> : null}
-        {detailTab === "history" ? <><DataTable rowKey="id" rows={histories} emptyMessage="No transaction history is recorded yet." columns={[{key:"date",label:"Date & Time"},{key:"registrar",label:"Responsible Staff",render:(row)=>row.actorName || row.registrar},{key:"action",label:"Action"},{key:"previousStatus",label:"Previous"},{key:"newStatus",label:"Result"},{key:"reason",label:"Reason"}]} />{enrollment.confirmationReference ? <div className="summary-strip" style={{marginTop:12}}><span>Confirmation: <strong>{enrollment.confirmationReference}</strong></span><span>Date: <strong>{enrollment.confirmationDate}</strong></span></div> : null}</> : null}
-        {enrollment.correctionReason ? <div className="notice warning" style={{marginTop:12}}>Correction reason: {enrollment.correctionReason}</div> : null}
-        {enrollment.authorizedCorrection ? <div className="notice" style={{marginTop:12}}>Last authorized correction: {enrollment.authorizedCorrection}. Reason: {enrollment.authorizedCorrectionReason}</div> : null}
-        <div className="action-row" style={{marginTop:16}}>
-          <Button type="button" disabled={!canValidate} onClick={validate}>{enrollment.lastValidatedAt || enrollment.status === "VALIDATED" ? "Revalidate" : "Run Validation"}</Button>
-          <Button type="button" variant="secondary" disabled={!canReturn} onClick={() => {setCategory(CATEGORIES[0]);setExplanation("");setAffected("");setDialog("return");}}>Return for Correction</Button>
-          <Button type="button" variant="secondary" disabled={enrollment.status === "CANCELLED"} onClick={() => {setCorrectedInformation("");setCorrectionReason("");setDialog("correct");}}>Authorized Correction</Button>
-          <Button type="button" disabled={!canConfirm} onClick={() => setDialog("confirm")}>Confirm Enrollment</Button>
-          <Button type="button" variant="ghost" onClick={() => setDetailTab("history")}>View History</Button>
-        </div>
-        {enrollment.status === "NEEDS_ACADEMIC_REVIEW" ? <p className="notice warning" style={{marginTop:12}}>{reviewAwaitingClarification ? "Academic Review is waiting for clarification. Use Authorized Correction to document the supporting information and reopen the case for Coordinator review." : "An Academic Coordinator decision is required before Registrar validation can continue."}</p> : null}
-        {enrollment.status === "CONFIRMED" ? <p className="notice" style={{marginTop:12}}>This confirmed transaction is protected from ordinary edits and deletion. Only traceable, authorized corrections are permitted.</p> : null}
-        <Feedback message={feedback} />
-        </Tabs>
-      </div> : reference ? <p className="notice warning" role="status">Enrollment reference {reference} was not found. Select another transaction from the queue.</p> : null}
+      <InternalTabs
+        items={[
+          { value: "period", label: "Enrollment Period" },
+          { value: "processing", label: "Enrollment Processing" },
+          { value: "history", label: "Enrollment History" },
+        ]}
+        selected={tab}
+        onSelect={setTab}
+        label="Registrar enrollment sections"
+      >
+        {tab === "period" ? (
+          <Panel
+            title="Enrollment Period"
+            subtitle="The configured academic term and institutional enrollment dates are live database values."
+          >
+            <div className="notice warning" style={{ marginBottom: 14 }}>
+              <strong>Current backend boundary</strong>
+              <p>
+                The Registrar can read academic term and window status, but the current normalized schema does not expose a protected Registrar operation for Start Enrollment, Close Enrollment, or changing the enrollment dates.
+              </p>
+            </div>
 
-      <div style={{marginTop:16}}><Panel title="Enrollment History" subtitle="Official confirmed and past transaction records stay available for review and audit.">
-        <AcademicFilterBar records={historicalTransactions} programs={catalog.programs} departments={catalog.departments} value={historyAcademicFilters} onChange={changeHistoryAcademicFilter} matchingCount={historyRows.length} label="Enrollment history academic filters" />
-        <DataTable rowKey="reference" rows={historyRows} emptyMessage="No historical enrollment records match the selected academic filters." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openReview(row.reference,"history")}>View Details</TableActionButton></TableActions>}]} />
-      </Panel></div>
+            <DataTable
+              rowKey="id"
+              rows={enrollmentData.terms}
+              onRowClick={setSelectedTerm}
+              getRowAriaLabel={(row) => `View enrollment period ${row.label}`}
+              columns={[
+                { key: "label", label: "Academic Term" },
+                { key: "enrollmentStartLabel", label: "Opening Date" },
+                { key: "enrollmentEndLabel", label: "Closing Date" },
+                { key: "status", label: "Window Status", render: (row) => <StatusBadge value={row.status} /> },
+                { key: "source_inferred", label: "Source", render: (row) => row.source_inferred ? "Inferred" : "Configured" },
+              ]}
+            />
+          </Panel>
+        ) : null}
 
-      <Modal open={dialog === "return" && Boolean(enrollment)} title="Return for Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-return-form">Return for Correction</Button></>}>
-        <form id="registrar-return-form" className="form-grid" onSubmit={sendCorrection}>
-          <label className="field full">Reason Category<select required value={category} onChange={(event) => setCategory(event.target.value)}>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
-          <label className="field full">Explanation<textarea required value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="Describe what the student must correct" /></label>
-          <label className="field full">Affected Subject, Section or Field (optional)<input value={affected} onChange={(event) => setAffected(event.target.value)} placeholder="e.g. IT302 / BSIT-3A" /></label>
-        </form>
-        <p className="notice warning" style={{marginTop:12}}>This records a Registrar correction reason and sets the transaction to Requires Correction.</p>
+        {tab === "processing" ? (
+          <Panel
+            title="Enrollment Processing"
+            subtitle="Project Demonstration is the default view. Official Institutional records remain clearly separated."
+          >
+            <div className="toolbar">
+              <FilterControl
+                label="Record Type"
+                value={recordType}
+                onChange={(value) => {
+                  setRecordType(value);
+                  setSelectedGroup(null);
+                  setSelectedCase(null);
+                  setSelectedBatch(new Set());
+                }}
+                options={[
+                  { value: PROJECT, label: "Project Demonstration" },
+                  { value: OFFICIAL, label: "Official Institutional" },
+                ]}
+              />
+              <SearchControl value={search} onChange={setSearch} label="Search enrollment" placeholder="Search student, reference, program, or block" />
+              <FilterControl label="Status" value={status} onChange={setStatus} options={options(allRows.map((row) => row.status), "All Statuses")} />
+              <FilterControl label="Program" value={program} onChange={setProgram} options={options(allRows.map((row) => row.program_code), "All Programs")} />
+              <FilterControl label="Block" value={block} onChange={setBlock} options={options(allRows.map((row) => recordType === PROJECT ? row.home_block : row.currentBlock), "All Blocks")} />
+              <FilterControl label="Term" value={term} onChange={setTerm} options={options(allRows.map((row) => recordType === PROJECT ? row.current_term_id : row.term_id), "All Terms")} />
+              {(search || [status, program, block, term].some((value) => value !== ALL)) ? (
+                <Button variant="ghost" onClick={() => { setSearch(""); setStatus(ALL); setProgram(ALL); setBlock(ALL); setTerm(ALL); }}>
+                  Clear Filters
+                </Button>
+              ) : null}
+            </div>
+
+            {recordType === OFFICIAL ? (
+              <div className="notice" style={{ marginBottom: 14 }}>
+                <strong>Official validation boundary</strong>
+                <p>
+                  The current database supports protected final confirmation of VALIDATED enrollment, but it does not expose an atomic Registrar review, validate, or return for correction RPC. Those unsupported mutations are not simulated in this interface.
+                </p>
+              </div>
+            ) : (
+              <div className="notice" style={{ marginBottom: 14 }}>
+                Project grouping is only a navigation aid. Each student transaction is validated and confirmed individually by the protected simulation function.
+              </div>
+            )}
+
+            {recordType === PROJECT && selectedBatch.size ? (
+              <div className="action-row" style={{ marginBottom: 14 }}>
+                <Button onClick={() => setBatchOpen(true)}>
+                  Confirm {selectedBatch.size} Validated Selection{selectedBatch.size === 1 ? "" : "s"}
+                </Button>
+              </div>
+            ) : null}
+
+            <DataTable
+              rowKey="id"
+              rows={filteredGroups}
+              onRowClick={setSelectedGroup}
+              getRowAriaLabel={(row) => `View enrollment group ${row.block}`}
+              emptyMessage="No enrollment groups match the selected filters."
+              columns={[
+                { key: "program", label: "Program" },
+                { key: "block", label: "Block" },
+                { key: "term", label: "Term" },
+                { key: "total", label: "Applications" },
+                { key: "pending", label: "Pending Review" },
+                { key: "validated", label: "Validated" },
+                { key: "confirmed", label: recordType === PROJECT ? "Confirmed Simulation" : "Confirmed" },
+              ]}
+            />
+          </Panel>
+        ) : null}
+
+        {tab === "history" ? (
+          <Panel title="Enrollment History" subtitle="Live project simulation and official institutional history remain separate.">
+            <div className="toolbar">
+              <FilterControl
+                label="Record Type"
+                value={recordType}
+                onChange={setRecordType}
+                options={[
+                  { value: PROJECT, label: "Project Demonstration" },
+                  { value: OFFICIAL, label: "Official Institutional" },
+                ]}
+              />
+            </div>
+
+            <DataTable
+              rowKey={recordType === PROJECT ? "project_simulation_id" : "id"}
+              rows={recordType === PROJECT ? enrollmentData.project : enrollmentData.official}
+              onRowClick={openCase}
+              getRowAriaLabel={(row) => `View enrollment ${recordType === PROJECT ? row.student_number : row.reference}`}
+              emptyMessage="No enrollment records are available for this record type."
+              columns={[
+                {
+                  key: "reference",
+                  label: "Reference",
+                  render: (row) => recordType === PROJECT ? (row.project_simulation_id || "Not available") : row.reference,
+                },
+                {
+                  key: "student",
+                  label: "Student",
+                  render: (row) => recordType === PROJECT ? `${row.student_number} · ${row.full_name}` : `${row.studentNumber} · ${row.studentName}`,
+                },
+                { key: "program_code", label: "Program" },
+                {
+                  key: "term",
+                  label: "Term",
+                  render: (row) => recordType === PROJECT ? row.current_term_id : row.term_id,
+                },
+                {
+                  key: "status",
+                  label: "Status",
+                  render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed Simulation" : titleStatus(row.status)} />,
+                },
+                {
+                  key: "confirmed",
+                  label: "Confirmation Date",
+                  render: (row) => recordType === PROJECT ? row.confirmedAtLabel : row.confirmedAtLabel,
+                },
+              ]}
+            />
+          </Panel>
+        ) : null}
+      </InternalTabs>
+
+      <Modal
+        open={Boolean(selectedTerm)}
+        title={selectedTerm?.label || "Enrollment Period"}
+        onClose={() => setSelectedTerm(null)}
+        footer={<Button onClick={() => setSelectedTerm(null)}>Close</Button>}
+      >
+        {selectedTerm ? (
+          <Details
+            items={[
+              ["Academic Year", selectedTerm.academic_year],
+              ["Semester", selectedTerm.semester],
+              ["Opening Date", selectedTerm.enrollmentStartLabel],
+              ["Closing Date", selectedTerm.enrollmentEndLabel],
+              ["Status", selectedTerm.status],
+              ["Source Inferred", selectedTerm.source_inferred ? "Yes" : "No"],
+            ]}
+          />
+        ) : null}
       </Modal>
-      <Modal open={dialog === "correct" && Boolean(enrollment)} title="Authorized Enrollment Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-correction-form">Record Correction</Button></>}>
-        <form id="registrar-correction-form" className="form-grid" onSubmit={saveAuthorizedCorrection}>
-          <div className="field full"><Details items={[["Enrollment",enrollment?.reference],["Current Status",enrollment?.status]]} /></div>
-          <label className="field full">Corrected Information<textarea required value={correctedInformation} onChange={(event) => setCorrectedInformation(event.target.value)} placeholder="Describe the approved record correction" /></label>
-          <label className="field full">Correction Reason<textarea required value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Why was this correction authorized?" /></label>
-        </form>
-        <p className="notice" style={{marginTop:12}}>{reviewAwaitingClarification ? "Recording a documented clarification returns this case to the pending Academic Review queue. The Coordinator must still make a new decision." : "This demo records a correction annotation and audit entry; official confirmed record fields remain intact."}</p>
+
+      <Modal
+        open={Boolean(selectedGroup)}
+        title={selectedGroup ? `${selectedGroup.program} · ${selectedGroup.block}` : "Enrollment Group"}
+        onClose={() => setSelectedGroup(null)}
+        className="registrar-detail-modal"
+        footer={<Button onClick={() => setSelectedGroup(null)}>Close</Button>}
+      >
+        {selectedGroup ? (
+          <DataTable
+            rowKey={recordType === PROJECT ? "student_id" : "id"}
+            rows={selectedGroup.students}
+            onRowClick={openCase}
+            getRowAriaLabel={(row) => `View enrollment for ${recordType === PROJECT ? row.student_number : row.studentNumber}`}
+            columns={[
+              {
+                key: "select",
+                label: "",
+                render: (row) =>
+                  recordType === PROJECT && row.status === "VALIDATED" ? (
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${row.student_number}`}
+                      checked={selectedBatch.has(row.student_id)}
+                      data-stop-row-click="true"
+                      onChange={() => toggleBatch(row.student_id)}
+                    />
+                  ) : null,
+              },
+              { key: "studentNumber", label: "Student ID", render: (row) => recordType === PROJECT ? row.student_number : row.studentNumber },
+              { key: "studentName", label: "Student Name", render: (row) => recordType === PROJECT ? row.full_name : row.studentName },
+              { key: "program_code", label: "Program" },
+              { key: "block", label: "Block", render: (row) => recordType === PROJECT ? row.home_block : row.currentBlock },
+              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed Simulation" : titleStatus(row.status)} /> },
+            ]}
+          />
+        ) : null}
       </Modal>
-      <Modal open={dialog === "confirm" && Boolean(enrollment)} title="Confirm Enrollment" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button disabled={!canConfirm} onClick={confirm}>Confirm Enrollment</Button></>}>
-        <Details items={[["Student", enrollment?.studentName],["Academic Term",enrollment?.term],["Subject Count",enrollment?.subjects.length],["Total Units",enrollment?.units],["Current Status",enrollment?.status]]} />
-        <p className="notice" style={{marginTop:12}}>Confirmation completes official term enrollment and generates a confirmation reference.</p>
+
+      <Modal
+        open={Boolean(selectedCase)}
+        title={
+          selectedCase
+            ? recordType === PROJECT
+              ? `${selectedCase.student_number} · ${selectedCase.full_name}`
+              : `${selectedCase.studentNumber} · ${selectedCase.studentName}`
+            : "Enrollment Review"
+        }
+        onClose={() => {
+          setSelectedCase(null);
+          setProjectDetail(null);
+        }}
+        className="registrar-detail-modal"
+        footer={
+          selectedCase ? (
+            <>
+              <Button variant="ghost" onClick={() => setSelectedCase(null)}>Close</Button>
+              {recordType === PROJECT ? (
+                <>
+                  {selectedCase.status === "SUBMITTED" ? <Button onClick={() => startDecision("VALIDATE")}>Validate</Button> : null}
+                  {selectedCase.status === "VALIDATED" ? (
+                    <>
+                      <Button variant="secondary" onClick={() => startDecision("RETURN")}>Return for Correction</Button>
+                      <Button onClick={() => startDecision("CONFIRM")}>Confirm Demonstration</Button>
+                    </>
+                  ) : null}
+                  {selectedCase.status === "CONFIRMED_SIMULATION" ? <Button onClick={() => openProjectCor(selectedCase)}>View COR</Button> : null}
+                </>
+              ) : (
+                <>
+                  {selectedCase.status === "VALIDATED" ? <Button onClick={() => startDecision("CONFIRM")}>Confirm Official Enrollment</Button> : null}
+                  {selectedCase.status === "CONFIRMED" ? <Button onClick={() => openOfficialCor(selectedCase)}>View Official COR</Button> : null}
+                </>
+              )}
+            </>
+          ) : null
+        }
+      >
+        {caseLoading ? <div className="notice">Loading protected project record...</div> : null}
+
+        {selectedCase && !caseLoading && recordType === PROJECT ? (
+          <>
+            <p style={{ fontSize: ".7rem", color: "#607168", marginBottom: 12 }}>
+              Project demonstration. This record never writes to public.enrollments.
+            </p>
+            <Details
+              items={[
+                ["Student ID", selectedCase.student_number],
+                ["Student Name", selectedCase.full_name],
+                ["Program", projectDetail?.snapshot?.program_code || selectedCase.program_code],
+                ["Curriculum", projectDetail?.snapshot?.curriculum_code || "Not available"],
+                ["Year Level", projectDetail?.snapshot?.year_level || "Not available"],
+                ["Classification", titleStatus(projectDetail?.snapshot?.academic_classification)],
+                ["Progression", titleStatus(projectDetail?.snapshot?.progression_status)],
+                ["Home Block", projectDetail?.snapshot?.home_block || selectedCase.home_block],
+                ["Enrollment Status", titleStatus(selectedCase.status)],
+                ["Simulation ID", selectedCase.project_simulation_id || "Not available"],
+              ]}
+            />
+
+            <h3 style={{ marginTop: 18 }}>Eligible Subjects</h3>
+            <DataTable
+              rowKey="subject_code"
+              rows={projectDetail?.snapshot?.subjects || []}
+              emptyMessage="No project subject eligibility rows are available."
+              columns={[
+                { key: "subject_code", label: "Subject Code" },
+                { key: "subject_name", label: "Subject Name" },
+                { key: "academic_units", label: "Units" },
+                { key: "eligibility", label: "Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> },
+                { key: "reason", label: "Reason", render: (row) => row.reason || "Not available" },
+              ]}
+            />
+
+            <div className="notice" style={{ marginTop: 14 }}>
+              Simulation event history is stored privately by the backend and no Registrar event history reader exists in the current schema.
+            </div>
+          </>
+        ) : null}
+
+        {selectedCase && !caseLoading && recordType === OFFICIAL ? (
+          <>
+            <Details
+              items={[
+                ["Enrollment Reference", selectedCase.reference],
+                ["Student ID", selectedCase.studentNumber],
+                ["Student Name", selectedCase.studentName],
+                ["Program", selectedCase.program_code],
+                ["Curriculum", selectedCase.curriculum_code],
+                ["Classification", titleStatus(selectedCase.academicClassification)],
+                ["Current Block", selectedCase.currentBlock],
+                ["Eligibility", titleStatus(selectedCase.eligibility_status)],
+                ["Declared Units", selectedCase.declared_units ?? "Not available"],
+                ["Enrollment Status", titleStatus(selectedCase.status)],
+                ["Submitted At", selectedCase.submittedAtLabel],
+                ["Last Validated", selectedCase.validatedAtLabel],
+                ["Confirmation Reference", selectedCase.confirmation_reference || "Not available"],
+              ]}
+            />
+
+            {["FOR_VALIDATION", "REQUIRES_CORRECTION"].includes(selectedCase.status) ? (
+              <div className="notice warning" style={{ marginTop: 14 }}>
+                The current backend does not expose an atomic Registrar review, validation, or return operation that also preserves the required correction and status history. No direct status update is performed from this interface.
+              </div>
+            ) : null}
+
+            <h3 style={{ marginTop: 18 }}>Registered Subjects</h3>
+            <DataTable
+              rowKey={(row) => `${row.subject_code}-${row.section_id}`}
+              rows={selectedCase.subjects || []}
+              emptyMessage="No subject registration records are available."
+              columns={[
+                { key: "subject_code", label: "Subject Code" },
+                { key: "subjectName", label: "Subject Name" },
+                { key: "sectionCode", label: "Section" },
+                { key: "units_at_enrollment", label: "Units", render: (row) => row.units_at_enrollment ?? "Not available" },
+                { key: "registration_status", label: "Registration Status", render: (row) => <StatusBadge value={row.registration_status} /> },
+                { key: "scheduleStatus", label: "Schedule" },
+              ]}
+            />
+
+            <h3 style={{ marginTop: 18 }}>Status History</h3>
+            <DataTable
+              rowKey="id"
+              rows={selectedCase.history || []}
+              emptyMessage="No status history is available."
+              columns={[
+                { key: "changedAtLabel", label: "Date & Time" },
+                { key: "actor_label", label: "Actor" },
+                { key: "action", label: "Action" },
+                { key: "previous_status", label: "Previous" },
+                { key: "new_status", label: "Result" },
+                { key: "reason", label: "Reason", render: (row) => row.reason || "Not available" },
+              ]}
+            />
+          </>
+        ) : null}
       </Modal>
+
+      <Modal
+        open={decisionOpen}
+        title={
+          decisionType === "VALIDATE"
+            ? "Validate Project Enrollment"
+            : decisionType === "RETURN"
+              ? "Return Project Enrollment for Correction"
+              : recordType === PROJECT
+                ? "Confirm Project Demonstration Enrollment"
+                : "Confirm Official Enrollment"
+        }
+        onClose={() => setDecisionOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDecisionOpen(false)}>Cancel</Button>
+            <Button
+              disabled={isPending || (["RETURN", "CONFIRM"].includes(decisionType) && !decisionValue.trim())}
+              onClick={submitDecision}
+            >
+              {isPending ? "Processing..." : "Confirm Action"}
+            </Button>
+          </>
+        }
+      >
+        {decisionType === "VALIDATE" ? (
+          <>
+            <div className="notice">
+              The existing PROJECT_ONLY backend performs the authorized simulation transition. It remains separate from official institutional enrollment.
+            </div>
+            <label className="field full">
+              <span>Validation Note</span>
+              <textarea value={decisionValue} onChange={(event) => setDecisionValue(event.target.value)} />
+            </label>
+          </>
+        ) : null}
+
+        {decisionType === "RETURN" ? (
+          <label className="field full">
+            <span>Correction Reason</span>
+            <textarea value={decisionValue} onChange={(event) => setDecisionValue(event.target.value)} />
+          </label>
+        ) : null}
+
+        {decisionType === "CONFIRM" ? (
+          <>
+            <div className="notice warning">
+              <strong>{recordType === PROJECT ? "Confirm for project demonstration only?" : "Confirm official institutional enrollment?"}</strong>
+              <p>
+                {recordType === PROJECT
+                  ? "This affects only the protected PROJECT_ONLY simulation lifecycle and can generate a nonofficial demonstration COR."
+                  : "The existing protected confirmation function rechecks eligibility, finalized schedules, section capacity, and confirmation state before writing CONFIRMED."}
+              </p>
+            </div>
+            <label className="field full">
+              <span>{recordType === PROJECT ? "Demonstration Confirmation Reference" : "Official Validation Source Reference"}</span>
+              <input value={decisionValue} onChange={(event) => setDecisionValue(event.target.value)} />
+            </label>
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={batchOpen}
+        title="Confirm Selected Project Demonstration Enrollments"
+        onClose={() => setBatchOpen(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setBatchOpen(false)}>Cancel</Button>
+            <Button disabled={isPending || !batchReference.trim()} onClick={confirmBatch}>
+              {isPending ? "Confirming..." : `Confirm ${selectedBatch.size} Selected`}
+            </Button>
+          </>
+        }
+      >
+        <div className="notice warning">
+          <strong>Batch grouping does not waive individual validation.</strong>
+          <p>
+            Every selected student is passed independently through the existing protected confirmation function. Invalid members remain unconfirmed.
+          </p>
+        </div>
+        <label className="field full">
+          <span>Batch Confirmation Reference</span>
+          <input value={batchReference} onChange={(event) => setBatchReference(event.target.value)} />
+        </label>
+      </Modal>
+
+      <RegistrarCORModal
+        open={Boolean(cor)}
+        cor={cor}
+        isProject={corProject}
+        onClose={() => setCor(null)}
+      />
+
+      <RegistrarActionResultModal result={result} onClose={() => setResult(null)} />
     </>
   );
 }

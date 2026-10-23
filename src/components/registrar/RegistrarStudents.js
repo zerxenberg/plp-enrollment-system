@@ -1,103 +1,345 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
-import AppIcon from "@/components/ui/AppIcon";
-import { Panel, Tabs, Info, Feedback, Details } from "./RegistrarShared";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+
+import {
+  Button,
+  DataTable,
+  FilterControl,
+  InternalTabs,
+  Modal,
+  PageHeader,
+  SearchControl,
+  StatusBadge,
+} from "@/components/ui/PortalUI";
+import { Details, Panel } from "./RegistrarShared";
 import RegistrarGradeImports from "./RegistrarGradeImports";
-import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
-import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import RegistrarActionResultModal from "./RegistrarActionResultModal";
+import { loadRegistrarStudentRecordDetail } from "@/features/registrar/registrar-actions";
+import { titleStatus } from "@/features/registrar/registrar-client-utils";
 
-const ALL = { value: "ALL", label: "All" };
+const ALL = "ALL";
 
-export default function RegistrarStudents() {
-  const [section, setSection] = useState("list");
-  const { registrar, catalog, correctRegistrarStudent } = useDemoData();
+function options(values, allLabel) {
+  return [
+    { value: ALL, label: allLabel },
+    ...[...new Set(values.filter(Boolean))]
+      .sort()
+      .map((value) => ({ value, label: value })),
+  ];
+}
+
+export default function RegistrarStudents({ studentsData }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [tab, setTab] = useState("blocks");
   const [search, setSearch] = useState("");
-  const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
-  const [studentStatus, setStudentStatus] = useState("ALL");
-  const [enrollmentStatus, setEnrollmentStatus] = useState("ALL");
-  const [sort, setSort] = useState("name_asc");
-  const [selectedId, setSelectedId] = useState(null);
-  const [view, setView] = useState("profile");
-  const [correctionOpen, setCorrectionOpen] = useState(false);
-  const [field, setField] = useState("email");
-  const [value, setValue] = useState("");
-  const [reason, setReason] = useState("");
-  const [feedback, setFeedback] = useState("");
+  const [college, setCollege] = useState(ALL);
+  const [program, setProgram] = useState(ALL);
+  const [curriculum, setCurriculum] = useState(ALL);
+  const [term, setTerm] = useState(ALL);
+  const [year, setYear] = useState(ALL);
+  const [section, setSection] = useState(ALL);
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [studentDetail, setStudentDetail] = useState(null);
+  const [studentOpen, setStudentOpen] = useState(false);
+  const [result, setResult] = useState(null);
 
-  const selected = registrar.students.find((item) => item.studentNumber === selectedId);
-  const selectedEnrollments = registrar.enrollments.filter((item) => item.studentNumber === selectedId);
-  const options = (key) => [ALL, ...new Set(registrar.students.map((item) => item[key])).values()].map((item) => typeof item === "string" ? { value: item, label: item } : item);
-  const statusFiltered = registrar.students.filter((item) => {
-    const searchText = `${item.studentNumber} ${item.admissionReference} ${item.fullName} ${item.program}`.toLowerCase();
-    return searchText.includes(search.trim().toLowerCase()) &&
-      (studentStatus === "ALL" || item.studentStatus === studentStatus) &&
-      (enrollmentStatus === "ALL" || (registrar.enrollments.find((entry) => entry.studentNumber === item.studentNumber)?.status || item.enrollmentStatus) === enrollmentStatus);
-  });
-  const filtered = filterAcademicRecords(statusFiltered, academicFilters, registrar.enrollments, catalog.programs)
-    .sort((a, b) => sort === "name_desc" ? b.fullName.localeCompare(a.fullName) : sort === "student_asc" ? a.studentNumber.localeCompare(b.studentNumber) : sort === "student_desc" ? b.studentNumber.localeCompare(a.studentNumber) : a.fullName.localeCompare(b.fullName));
-  const changeAcademicFilter = (key, value) => setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
+  const filteredGroups = useMemo(
+    () =>
+      studentsData.groups.filter(
+        (item) =>
+          `${item.blockSection} ${item.college} ${item.programCode} ${item.programName} ${item.curriculumCode} ${item.source}`
+            .toLowerCase()
+            .includes(search.toLowerCase()) &&
+          (college === ALL || item.college === college) &&
+          (program === ALL || item.programCode === program) &&
+          (curriculum === ALL || item.curriculumCode === curriculum) &&
+          (term === ALL || item.termId === term) &&
+          (year === ALL || String(item.yearLevel) === year) &&
+          (section === ALL || item.blockSection === section),
+      ),
+    [studentsData.groups, search, college, program, curriculum, term, year, section],
+  );
 
-  function openStudent(number) { setSelectedId(number); setView("profile"); setFeedback(""); }
-  function beginCorrection() { setField("email"); setValue(selected?.email || ""); setReason(""); setFeedback(""); setCorrectionOpen(true); }
-  function saveCorrection(event) {
-    event.preventDefault();
-    if (!value.trim() || !reason.trim()) { setFeedback("Enter a corrected value and an audit reason."); return; }
-    const success = correctRegistrarStudent(selectedId, field, value.trim(), reason.trim());
-    setFeedback(success ? "Authorized change saved in the Registrar transaction history." : "Correction could not be saved.");
-    if (success) setCorrectionOpen(false);
+  const roster = selectedGroup
+    ? studentsData.students.filter(
+        (item) =>
+          (selectedGroup.blockId
+            ? item.home_block_id === selectedGroup.blockId
+            : !item.home_block_id) &&
+          item.current_term_id === selectedGroup.termId &&
+          item.program_code === selectedGroup.programCode,
+      )
+    : [];
+
+  function openStudent(student) {
+    setSelectedStudent(student);
+    setStudentOpen(true);
+    setStudentDetail(null);
+
+    startTransition(async () => {
+      const response = await loadRegistrarStudentRecordDetail(
+        student.student_id,
+        student.project_only,
+      );
+      if (!response.ok) {
+        setResult(response);
+        return;
+      }
+      setStudentDetail(response.data);
+    });
   }
 
   return (
     <>
-      <PageHeader title="Students" description="Review student records and manage the official grade import workflow." />
+      <PageHeader
+        title="Students"
+        description="Live student records grouped by block section, protected PROJECT_ONLY snapshots, and the existing official grade publication workflow."
+      />
+
       <InternalTabs
-        items={[{ value: "list", label: "Student List" }, { value: "import", label: "Official Grades Import" }, { value: "history", label: "Grade Import History" }]}
-        selected={section}
-        onSelect={setSection}
-        label="Registrar Students sections"
+        items={[
+          { value: "blocks", label: "Block Section Student List" },
+          { value: "grades", label: "Official Grades Import" },
+          { value: "history", label: "Grade Import History" },
+        ]}
+        selected={tab}
+        onSelect={setTab}
+        label="Registrar student sections"
       >
-      {section === "list" ? <>
-      <Panel title="Student List" subtitle={`${filtered.length} matching student records. Records originate from the Admission handoff.`}>
-        <div className="toolbar">
-          <SearchControl label="Search students" value={search} onChange={setSearch} placeholder="Search student name, number or admission reference" />
-          <FilterControl label="Student Status" value={studentStatus} onChange={setStudentStatus} options={options("studentStatus")} />
-          <FilterControl label="Enrollment Status" value={enrollmentStatus} onChange={setEnrollmentStatus} options={[ALL, ...new Set([...registrar.students.map((item) => item.enrollmentStatus), ...registrar.enrollments.map((item) => item.status)])].map((item) => typeof item === "string" ? {value:item,label:item.replaceAll("_", " ")} : item)} />
-          <FilterControl label="Sort By" value={sort} onChange={setSort} options={[{value:"name_asc",label:"Name A to Z"},{value:"name_desc",label:"Name Z to A"},{value:"student_asc",label:"Student Number Ascending"},{value:"student_desc",label:"Student Number Descending"}]} />
-          <Button type="button" variant="ghost" onClick={() => { setSearch(""); setAcademicFilters(ALL_ACADEMIC_FILTERS); setStudentStatus("ALL"); setEnrollmentStatus("ALL"); setSort("name_asc"); }}>Clear Filters</Button>
-        </div>
-        <AcademicFilterBar records={statusFiltered} enrollments={registrar.enrollments} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={filtered.length} label="Student list academic filters" />
-        <DataTable rowKey="studentNumber" rows={filtered} emptyMessage="No student records match the selected filters." columns={[
-          {key:"studentNumber",label:"Student Number"},{key:"fullName",label:"Full Name"},{key:"admissionReference",label:"Admission Reference"},{key:"program",label:"Program"},{key:"academicTerm",label:"Academic Term"},{key:"studentStatus",label:"Student Status",render:(row)=><StatusBadge value={row.studentStatus} />},
-          {key:"enrollmentStatus",label:"Enrollment",render:(row)=><StatusBadge value={registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber)?.status || row.enrollmentStatus} />},
-          {key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openStudent(row.studentNumber)}>View Student</TableActionButton>{registrar.enrollments.some((entry) => entry.studentNumber === row.studentNumber) ? <TableActionButton as={Link} icon="calendar" tone="schedule" href={`/registrar/enrollment?reference=${encodeURIComponent(registrar.enrollments.find((entry) => entry.studentNumber === row.studentNumber).reference)}`}>Open Enrollment</TableActionButton> : null}<TableActionButton icon="history" tone="history" type="button" onClick={() => {openStudent(row.studentNumber);setView("history");}}>View History</TableActionButton></TableActions>}
-        ]} />
-      </Panel>
+        {tab === "blocks" ? (
+          <Panel
+            title="Block Section Student List"
+            subtitle="Grouping is a navigation aid only. Every student remains an individual protected record."
+          >
+            <div className="toolbar">
+              <SearchControl value={search} onChange={setSearch} label="Search blocks" placeholder="Search block, program, curriculum, or source" />
+              <FilterControl label="College" value={college} onChange={setCollege} options={options(studentsData.groups.map((item) => item.college), "All Colleges")} />
+              <FilterControl label="Program" value={program} onChange={setProgram} options={options(studentsData.groups.map((item) => item.programCode), "All Programs")} />
+              <FilterControl label="Curriculum" value={curriculum} onChange={setCurriculum} options={options(studentsData.groups.map((item) => item.curriculumCode), "All Curricula")} />
+              <FilterControl label="Term" value={term} onChange={setTerm} options={options(studentsData.groups.map((item) => item.termId), "All Terms")} />
+              <FilterControl label="Year" value={year} onChange={setYear} options={options(studentsData.groups.map((item) => String(item.yearLevel)), "All Years")} />
+              <FilterControl label="Section" value={section} onChange={setSection} options={options(studentsData.groups.map((item) => item.blockSection), "All Sections")} />
+              {(search || [college, program, curriculum, term, year, section].some((value) => value !== ALL)) ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setCollege(ALL);
+                    setProgram(ALL);
+                    setCurriculum(ALL);
+                    setTerm(ALL);
+                    setYear(ALL);
+                    setSection(ALL);
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              ) : null}
+            </div>
 
-      {selected ? <div style={{marginTop:16}}>
-        <Tabs selected={view} onSelect={setView} label="Student record sections" title={`${selected.fullName} · Student Profile`} subtitle={`Student ${selected.studentNumber}`} actions={<div className="action-row"><Button type="button" variant="secondary" onClick={beginCorrection}>Edit Authorized Information</Button><Button type="button" variant="ghost" onClick={() => setSelectedId(null)}>Close Profile</Button></div>} items={[{value:"profile",label:"Profile"},{value:"enrollment",label:"Current Enrollment"},{value:"history",label:"Enrollment History"},{value:"records",label:"Record History"}]}>
-        {view === "profile" ? <div className="info-grid">{[["Student Number",selected.studentNumber],["Admission Reference",selected.admissionReference],["Full Name",selected.fullName],["Email",selected.email],["Contact Number",selected.contactNumber],["Program",selected.program],["Academic Term",selected.academicTerm],["Student Status",selected.studentStatus]].map(([label,value]) => <Info key={label} label={label} value={value} />)}</div> : null}
-        {view === "enrollment" ? selectedEnrollments.length ? <div className="list-stack">{selectedEnrollments.map((entry) => <div className="list-item" key={entry.reference}><div className="list-item-header"><strong>{entry.reference} · {entry.term}</strong><StatusBadge value={entry.status} /></div><p>{entry.units} units · {entry.curriculum}</p><Link className="section-link" href={`/registrar/enrollment?reference=${encodeURIComponent(entry.reference)}`}>Review Enrollment <AppIcon name="arrowRight" className="inline-action-icon" /></Link></div>)}</div> : <div className="notice">No enrollment transaction is linked to this demo student.</div> : null}
-        {view === "history" ? selectedEnrollments.length ? <DataTable rowKey="reference" rows={selectedEnrollments} columns={[{key:"term",label:"Academic Term"},{key:"program",label:"Program"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"units",label:"Total Units"},{key:"confirmationReference",label:"Confirmation Ref.",render:(row)=>row.confirmationReference || "Not confirmed"},{key:"confirmationDate",label:"Confirmation Date",render:(row)=>row.confirmationDate || "Not confirmed"}]} /> : <div className="notice">No previous term records are available in this demo.</div> : null}
-        {view === "records" ? <DataTable rowKey="id" rows={registrar.activity.filter((item) => item.reference === selected.studentNumber || selectedEnrollments.some((entry) => entry.reference === item.reference))} emptyMessage="No record changes are recorded for this student." columns={[{key:"date",label:"Date"},{key:"registrar",label:"Registrar"},{key:"action",label:"Action"},{key:"reason",label:"Reason"}]} /> : null}
-        <Feedback message={feedback} />
-        </Tabs>
-      </div> : null}
+            <DataTable
+              rowKey="id"
+              rows={filteredGroups}
+              onRowClick={setSelectedGroup}
+              getRowAriaLabel={(row) => `View students in ${row.blockSection}`}
+              emptyMessage="No block groups match the selected filters."
+              columns={[
+                { key: "blockSection", label: "Block Section" },
+                { key: "college", label: "College" },
+                { key: "programCode", label: "Program" },
+                { key: "curriculumCode", label: "Curriculum" },
+                { key: "yearLevel", label: "Year" },
+                { key: "termId", label: "Academic Term" },
+                { key: "assignedStudents", label: "Students" },
+                { key: "source", label: "Record Source" },
+              ]}
+            />
+          </Panel>
+        ) : null}
 
-      <Modal open={correctionOpen && Boolean(selected)} title="Authorized Student Record Correction" onClose={() => setCorrectionOpen(false)} footer={<><Button variant="ghost" onClick={() => setCorrectionOpen(false)}>Cancel</Button><Button type="submit" form="registrar-student-correction">Save Changes</Button></>}>
-        <form id="registrar-student-correction" onSubmit={saveCorrection} className="form-grid">
-          <label className="field full">Editable field<select value={field} onChange={(event) => { const next = event.target.value; setField(next); setValue(selected?.[next] || ""); }}><option value="email">Email Address</option><option value="contactNumber">Contact Number</option></select></label>
-          <Info label="Current Value" value={selected?.[field]} />
-          <label className="field">Corrected Value<input required value={value} onChange={(event) => setValue(event.target.value)} /></label>
-          <label className="field full">Correction Reason<textarea required value={reason} onChange={(event) => setReason(event.target.value)} placeholder="State the authorized reason for this change" /></label>
-        </form>
-        <p className="notice" style={{marginTop:12}}>The original value, corrected value, Registrar identity and date are retained in record history.</p>
-      </Modal>
-      </> : <RegistrarGradeImports mode={section} onNavigate={setSection} />}
+        {tab === "grades" ? <RegistrarGradeImports data={studentsData} /> : null}
+        {tab === "history" ? <RegistrarGradeImports data={studentsData} historyOnly /> : null}
       </InternalTabs>
+
+      <Modal
+        open={Boolean(selectedGroup)}
+        title={selectedGroup ? `${selectedGroup.blockSection} Student List` : "Student List"}
+        onClose={() => setSelectedGroup(null)}
+        className="registrar-detail-modal"
+        footer={<Button onClick={() => setSelectedGroup(null)}>Close</Button>}
+      >
+        {selectedGroup ? (
+          <>
+            <Details
+              items={[
+                ["Block Section", selectedGroup.blockSection],
+                ["College", selectedGroup.college],
+                ["Program", `${selectedGroup.programCode} · ${selectedGroup.programName}`],
+                ["Curriculum", selectedGroup.curriculumCode],
+                ["Academic Term", selectedGroup.termId],
+                ["Year Level", selectedGroup.yearLevel],
+                ["Assigned Students", selectedGroup.assignedStudents],
+                ["Record Source", selectedGroup.source],
+              ]}
+            />
+
+            <div style={{ marginTop: 16 }}>
+              <DataTable
+                rowKey="student_id"
+                rows={roster}
+                onRowClick={openStudent}
+                getRowAriaLabel={(row) => `View student ${row.student_number}`}
+                emptyMessage="No students are currently assigned to this group."
+                columns={[
+                  { key: "student_number", label: "Student ID" },
+                  { key: "full_name", label: "Full Name" },
+                  { key: "academic_classification", label: "Classification", render: (row) => titleStatus(row.academic_classification) },
+                  { key: "student_status", label: "Student Status", render: (row) => <StatusBadge value={row.student_status} /> },
+                  { key: "progression_status", label: "Progression", render: (row) => titleStatus(row.progression_status) },
+                  { key: "home_block", label: "Assignment" },
+                ]}
+              />
+            </div>
+          </>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={studentOpen}
+        title={selectedStudent ? `${selectedStudent.student_number} · ${selectedStudent.full_name}` : "Student Record"}
+        onClose={() => {
+          setStudentOpen(false);
+          setSelectedStudent(null);
+          setStudentDetail(null);
+        }}
+        className="registrar-detail-modal"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setStudentOpen(false)}>Close</Button>
+            {selectedStudent ? (
+              <Button
+                variant="secondary"
+                onClick={() => router.push(`/registrar/enrollment?student=${encodeURIComponent(selectedStudent.student_number)}`)}
+              >
+                Open Enrollment
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        {isPending && !studentDetail ? <div className="notice">Loading protected student record...</div> : null}
+
+        {selectedStudent && studentDetail ? (
+          <>
+            <Details
+              items={[
+                ["Student ID", selectedStudent.student_number],
+                ["Full Name", selectedStudent.full_name],
+                ["Record Source", selectedStudent.project_only ? "PROJECT_ONLY demonstration" : "Institutional"],
+                ["Program", selectedStudent.program_code],
+                ["Curriculum", selectedStudent.curriculum_code],
+                ["Academic Term", selectedStudent.current_term_id],
+                ["Year Level", selectedStudent.year_level],
+                ["Student Type", selectedStudent.student_type],
+                ["Academic Classification", titleStatus(selectedStudent.academic_classification)],
+                ["Progression", titleStatus(selectedStudent.progression_status)],
+                ["Block Assignment", selectedStudent.home_block],
+              ]}
+            />
+
+            {!selectedStudent.project_only ? (
+              <div className="notice" style={{ marginTop: 14 }}>
+                The current RLS model does not expose other students&apos; application identity rows to the Registrar, so institutional full names remain labeled Not available unless another protected record supplies them.
+              </div>
+            ) : null}
+
+            {selectedStudent.project_only ? (
+              <>
+                <h3 style={{ marginTop: 18 }}>PROJECT_ONLY Academic Snapshot</h3>
+                <DataTable
+                  rowKey="subject_code"
+                  rows={studentDetail.snapshot?.subjects || []}
+                  emptyMessage="No project subject eligibility rows are available."
+                  columns={[
+                    { key: "subject_code", label: "Subject" },
+                    { key: "subject_name", label: "Subject Name" },
+                    { key: "academic_units", label: "Units" },
+                    { key: "eligibility", label: "Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> },
+                    { key: "reason", label: "Reason", render: (row) => row.reason || "Not available" },
+                  ]}
+                />
+
+                <h3 style={{ marginTop: 18 }}>Transfer Equivalency Reference</h3>
+                <DataTable
+                  rowKey="target_subject"
+                  rows={studentDetail.snapshot?.transfer_credits || []}
+                  emptyMessage="No project transfer equivalency reference is available."
+                  columns={[
+                    { key: "target_subject", label: "Target Subject" },
+                    { key: "source_course", label: "Source Course" },
+                    { key: "credited_units", label: "Credited Units" },
+                    { key: "project_decision", label: "Project Decision" },
+                  ]}
+                />
+                <div className="notice" style={{ marginTop: 14 }}>
+                  Placement and transfer equivalency are read only here. Registrar does not auto allocate or finalize academic placement.
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ marginTop: 18 }}>Admission Handoff</h3>
+                <Details
+                  items={[
+                    ["Applicant Reference", studentDetail.admission?.applicant_reference || "Not available"],
+                    ["Admission Type", studentDetail.admission?.admission_type || "Not available"],
+                    ["Admission Status", studentDetail.admission?.admission_status || "Not available"],
+                    ["Approved Program", studentDetail.admission?.approved_program_code || "Not available"],
+                    ["Source", studentDetail.admission?.source_name || "Not available"],
+                  ]}
+                />
+
+                <h3 style={{ marginTop: 18 }}>Official Enrollment History</h3>
+                <DataTable
+                  rowKey="id"
+                  rows={studentDetail.officialEnrollments || []}
+                  emptyMessage="No official enrollment history is available."
+                  columns={[
+                    { key: "reference", label: "Enrollment Reference" },
+                    { key: "term_id", label: "Term" },
+                    { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "declared_units", label: "Units" },
+                    { key: "confirmedAtLabel", label: "Confirmation Date" },
+                  ]}
+                />
+
+                <h3 style={{ marginTop: 18 }}>Official Academic Results</h3>
+                <DataTable
+                  rowKey="id"
+                  rows={studentDetail.academicResults || []}
+                  emptyMessage="No official academic results are visible."
+                  columns={[
+                    { key: "term_id", label: "Term" },
+                    { key: "subject_code", label: "Subject" },
+                    { key: "official_grade_value", label: "Official Grade", render: (row) => row.official_grade_value ?? "Not available" },
+                    { key: "result_status", label: "Result", render: (row) => <StatusBadge value={row.result_status} /> },
+                    { key: "source_name", label: "Source" },
+                  ]}
+                />
+
+                <div className="notice" style={{ marginTop: 14 }}>
+                  Authorized contact correction is not exposed until the backend can record the correction and its immutable audit history atomically.
+                </div>
+              </>
+            )}
+          </>
+        ) : null}
+      </Modal>
+
+      <RegistrarActionResultModal result={result} onClose={() => setResult(null)} />
     </>
   );
 }

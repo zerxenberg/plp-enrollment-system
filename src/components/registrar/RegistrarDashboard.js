@@ -1,57 +1,136 @@
 "use client";
 
 import Link from "next/link";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
-import { Panel, Metric, LinkButton } from "./RegistrarShared";
+import { LinkButton, Metric, Panel } from "./RegistrarShared";
 
-export default function RegistrarDashboard() {
-  const { registrar, notifications, student } = useDemoData();
-  const { enrollments, students, sections, activity } = registrar;
-  const count = (status) => enrollments.filter((item) => item.status === status).length;
-  const pending = count("SUBMITTED");
-  const validation = count("FOR_VALIDATION");
-  const corrections = count("REQUIRES_CORRECTION");
-  const full = sections.filter((item) => item.confirmed >= item.capacity || item.status === "Full");
-  const near = sections.filter((item) => item.confirmed < item.capacity && item.capacity - item.confirmed <= 5);
+function count(map, key) {
+  return map?.[key] || 0;
+}
+
+export default function RegistrarDashboard({ dashboardData }) {
+  const {
+    currentTerm,
+    studentCount,
+    projectStudentCount,
+    officialCounts,
+    projectCounts,
+    gradeImportSummary,
+    capacityConcerns,
+    recentActivity,
+    notifications,
+  } = dashboardData;
 
   return (
     <>
-      <PageHeader title="Registrar Dashboard" description="Official enrollment operations, student records, validation workload and academic term overview." actions={<LinkButton href="/registrar/enrollment">Open Enrollment Queue</LinkButton>} />
-      <section className="portal-card hero-card" aria-label="Current enrollment term">
+      <PageHeader
+        title="Registrar Dashboard"
+        description="Live institutional enrollment operations, project demonstration workload, student records, and current academic term status."
+        actions={<LinkButton href="/registrar/enrollment">Open Enrollment Processing</LinkButton>}
+      />
+
+      <section className="portal-card hero-card registrar-enter" aria-label="Current enrollment term">
         <h2>Enrollment operations at a glance</h2>
-        <div className="hero-meta"><span className="hero-chip">{student.term.label}</span><span className="hero-chip">Enrollment period: {student.term.status}</span><span className="hero-chip">{student.term.enrollmentStart} to {student.term.enrollmentEnd}</span></div>
+        <p>Official institutional records and PROJECT_ONLY demonstration records remain separate.</p>
+        <div className="hero-meta">
+          <span className="hero-chip">{currentTerm?.label || "Academic term not available"}</span>
+          <span className="hero-chip">Institutional window: {currentTerm?.status || "Not available"}</span>
+          <span className="hero-chip">{currentTerm?.enrollmentStartLabel || "Not available"} to {currentTerm?.enrollmentEndLabel || "Not available"}</span>
+        </div>
       </section>
+
       <div className="stats-grid" style={{ margin: "16px 0" }}>
-        <Metric label="Student Records" value={students.length} hint="Available demo records" />
-        <Metric label="Pending (Submitted)" value={pending} hint="Awaiting Registrar queue processing" />
-        <Metric label="For Validation" value={validation} hint="Ready for review" />
-        <Metric label="Requires Correction" value={corrections} hint="Returned for student updates" />
-        <Metric label="Validated" value={count("VALIDATED")} hint="Ready for confirmation" />
-        <Metric label="Confirmed" value={count("CONFIRMED")} hint="Officially completed" />
-        <Metric label="Full Sections" value={full.length} hint="No available slots" />
-        <Metric label="Near Capacity" value={near.length} hint="Five or fewer slots remaining" />
+        <Metric label="Student Records" value={studentCount} hint={`${projectStudentCount} PROJECT_ONLY records`} />
+        <Metric label="Official For Validation" value={count(officialCounts, "FOR_VALIDATION")} hint="Institutional Registrar queue" />
+        <Metric label="Official Requires Correction" value={count(officialCounts, "REQUIRES_CORRECTION")} hint="Institutional records" />
+        <Metric label="Official Validated" value={count(officialCounts, "VALIDATED")} hint="Eligible for protected confirmation" />
+        <Metric label="Officially Enrolled" value={count(officialCounts, "CONFIRMED")} hint="CONFIRMED institutional transactions" />
+        <Metric label="Project Submitted" value={count(projectCounts, "SUBMITTED")} hint="Demonstration workflow only" />
+        <Metric label="Project Validated" value={count(projectCounts, "VALIDATED")} hint="Demonstration workflow only" />
+        <Metric
+          label="Grade Import History"
+          value={gradeImportSummary.available ? gradeImportSummary.total : "Unavailable"}
+          hint={gradeImportSummary.available ? "Live grade import batches" : "Current schema exposes write workflow but no Registrar history reader"}
+        />
       </div>
+
       <div className="content-grid">
-        <Panel title="Enrollment Status Overview" className="span-7">
+        <Panel title="Enrollment Workload" subtitle="Official and demonstration statuses remain separate." className="span-7">
           <div className="list-stack">
-            {["SUBMITTED", "FOR_VALIDATION", "NEEDS_ACADEMIC_REVIEW", "REQUIRES_CORRECTION", "VALIDATED", "CONFIRMED"].map((status) => <div className="list-item" key={status}><div className="list-item-header"><StatusBadge value={status} /><strong>{count(status)}</strong></div></div>)}
+            {[
+              ["Official · For Validation", count(officialCounts, "FOR_VALIDATION"), "FOR_VALIDATION"],
+              ["Official · Needs Academic Review", count(officialCounts, "NEEDS_ACADEMIC_REVIEW"), "NEEDS_ACADEMIC_REVIEW"],
+              ["Official · Validated", count(officialCounts, "VALIDATED"), "VALIDATED"],
+              ["Project · Submitted", count(projectCounts, "SUBMITTED"), "SUBMITTED"],
+              ["Project · Validated", count(projectCounts, "VALIDATED"), "VALIDATED"],
+              ["Project · Confirmed Simulation", count(projectCounts, "CONFIRMED_SIMULATION"), "CONFIRMED"],
+            ].map(([label, value, status]) => (
+              <div className="list-item" key={label}>
+                <div className="list-item-header">
+                  <strong>{label}</strong>
+                  <span><StatusBadge value={status} /> · {value}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </Panel>
+
         <Panel title="Quick Actions" className="span-5">
           <div className="list-stack">
-            {[["Find Student", "/registrar/students"], ["Review Pending Enrollment", "/registrar/enrollment"], ["View Requires Correction", "/registrar/enrollment"], ["Generate Enrollment Report", "/registrar/reports-monitoring"]].map(([label, href]) => <Link key={href + label} href={href} className="list-item section-link">{label} <AppIcon name="arrowRight" className="inline-action-icon" /></Link>)}
+            {[
+              ["Review Enrollments", "/registrar/enrollment"],
+              ["Find Student", "/registrar/students"],
+              ["Import Official Grades", "/registrar/students"],
+              ["View Reports", "/registrar/reports-monitoring"],
+            ].map(([label, href]) => (
+              <Link key={label} href={href} className="list-item section-link">
+                {label} <AppIcon name="arrowRight" className="inline-action-icon" />
+              </Link>
+            ))}
           </div>
         </Panel>
-        <Panel title="Recent Enrollment Activity" subtitle="Registrar operations and changes to student records." className="span-8" actions={<LinkButton href="/registrar/reports-monitoring">View History</LinkButton>}>
-          <DataTable rowKey="id" rows={activity.slice(0, 5)} columns={[{key:"date",label:"Date & Time"},{key:"student",label:"Student"},{key:"action",label:"Action"},{key:"newStatus",label:"Result",render:(row)=><StatusBadge value={row.newStatus} />}]} />
+
+        <Panel title="Recent Registrar Activity" subtitle="Traceable Registrar business actions visible through the existing audit history." className="span-8" actions={<LinkButton href="/registrar/reports-monitoring">View History</LinkButton>}>
+          <DataTable
+            rowKey="id"
+            rows={recentActivity.slice(0, 6)}
+            emptyMessage="No Registrar activity is visible in the current history."
+            columns={[
+              { key: "occurredAtLabel", label: "Date & Time" },
+              { key: "module", label: "Module" },
+              { key: "record_reference", label: "Record" },
+              { key: "action", label: "Action" },
+            ]}
+          />
         </Panel>
+
         <Panel title="Important Notifications" className="span-4" actions={<LinkButton href="/registrar/notifications">View All</LinkButton>}>
-          <div className="list-stack">{notifications.registrar.slice(0, 4).map((item) => <Link key={item.id} href={item.relatedHref} className="list-item"><strong>{item.title}</strong><p>{item.date}</p></Link>)}</div>
+          <div className="list-stack">
+            {notifications.map((item) => (
+              <Link key={item.id} href={item.relatedHref || "/registrar/notifications"} className="list-item">
+                <strong>{item.title}</strong>
+                <p>{item.date}</p>
+              </Link>
+            ))}
+            {!notifications.length ? <div className="notice">No Registrar notifications are currently available.</div> : null}
+          </div>
         </Panel>
-        <Panel title="Section Capacity Concerns" className="span-12" actions={<LinkButton href="/registrar/academic-scheduling">View Sections</LinkButton>}>
-          <DataTable rowKey="code" rows={[...full, ...near.filter((item) => !full.includes(item))]} emptyMessage="No capacity concerns in the demo sections." columns={[{key:"code",label:"Section"},{key:"subject",label:"Subject"},{key:"capacity",label:"Maximum Slots"},{key:"confirmed",label:"Confirmed"},{key:"status",label:"Capacity",render:(row)=><StatusBadge value={row.confirmed >= row.capacity ? "FULL" : "NEAR_CAPACITY"} label={row.confirmed >= row.capacity ? "Full" : "Near Capacity"} />}]} />
+
+        <Panel title="Project Block Capacity Concerns" subtitle="PROJECT_ONLY blocks at or near configured capacity." className="span-12" actions={<LinkButton href="/registrar/academic-scheduling">View Sections & Schedules</LinkButton>}>
+          <DataTable
+            rowKey="id"
+            rows={capacityConcerns}
+            emptyMessage="No project block capacity concerns are currently detected."
+            columns={[
+              { key: "code", label: "Block Section" },
+              { key: "programCode", label: "Program" },
+              { key: "yearLevel", label: "Year Level" },
+              { key: "capacity", label: "Capacity" },
+              { key: "assigned", label: "Assigned Students" },
+              { key: "remaining", label: "Remaining", render: (row) => Math.max(0, row.capacity - row.assigned) },
+            ]}
+          />
         </Panel>
       </div>
     </>
