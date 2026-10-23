@@ -90,6 +90,33 @@ test("expired term and unvalidated timetable block student submission", () => {
   }
 });
 
+test("a verified project demonstration window opens enrollment without rewriting old term dates", () => {
+  const oldTerm = fixture({ termStart: "2026-06-10", termEnd: "2026-06-30" });
+  const demoWindow = {
+    project_cohort_id: "PLP_PROJECT_600_2026_1",
+    term_id: "TERM-2026-1",
+    source_type: "PROJECT_ONLY_FICTIONAL",
+    verified_institutionally: false,
+    start_date: "2026-10-23",
+    end_date: "2026-11-06",
+    status: "OPEN",
+  };
+  const ready = prepare({ ...oldTerm, demoWindow });
+  assert.equal(ready.canSubmit, true);
+  assert.equal(ready.term.windowOpen, true);
+  assert.equal(ready.term.demonstrationWindow, true);
+  assert.equal(ready.term.enrollmentStart, "2026-10-23");
+  assert.equal(oldTerm.term.enrollment_start, "2026-06-10");
+  for (const invalid of [
+    { ...demoWindow, status: "CLOSED" },
+    { ...demoWindow, verified_institutionally: true },
+    { ...demoWindow, project_cohort_id: "UNRELATED" },
+    { ...demoWindow, start_date: "2026-11-01" },
+  ]) {
+    assert.equal(prepare({ ...oldTerm, demoWindow: invalid }).canSubmit, false);
+  }
+});
+
 test("submitted or simulated confirmed enrollment is read only, never officially confirmed", () => {
   for (const status of ["SUBMITTED", "VALIDATED", "CONFIRMED_SIMULATION"]) {
     const result = prepare(fixture({ status }));

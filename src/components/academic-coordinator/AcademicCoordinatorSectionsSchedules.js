@@ -173,13 +173,20 @@ export default function AcademicCoordinatorSectionsSchedules() {
 
   function close() { setDialog(""); setFormError(""); }
   async function result(response, fallback) {
-    response = await response;
-    const success = Boolean(response?.ok);
-    const message = response?.message || (success ? fallback : "Unable to complete this action.");
-    setFeedback({ message, warning: !success });
-    setFormError(success ? "" : message);
-    if (success) close();
-    return success;
+    try {
+      const outcome = await response;
+      const success = Boolean(outcome?.ok);
+      const message = outcome?.message || (success ? fallback : "Unable to complete this action.");
+      setFeedback({ message, warning: !success });
+      setFormError(success ? "" : message);
+      if (success) close();
+      return success;
+    } catch {
+      const message = "The academic planning change could not be saved. Check your connection and try again.";
+      setFeedback({ message, warning: true });
+      setFormError(message);
+      return false;
+    }
   }
   function openSection(item = null) {
     const first = item?.programCode || programs[0]?.code || "";
@@ -594,8 +601,8 @@ export default function AcademicCoordinatorSectionsSchedules() {
       </Modal>
       <Modal open={dialog === "reset"} title="Reset Block Planning Demo Data" onClose={close}
         footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button variant="danger"
-          onClick={() => {
-            if (result(resetBlockDemoData(), "Demo planning restored.")) {
+          onClick={async () => {
+            if (await result(resetBlockDemoData(), "Demo planning restored.")) {
               setScheduleId(""); setSectionId(""); setStudentIds([]); setMeetingId("");
             }
           }}>Reset Demo Planning</Button></>}>

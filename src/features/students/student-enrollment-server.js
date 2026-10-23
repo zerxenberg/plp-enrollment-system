@@ -8,6 +8,7 @@ import {
 import { loadVerifiedProjectSubjectPrices } from "./project-fee-prices-server";
 
 const TERM_ID = "TERM-2026-1";
+const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
 
 function manilaCalendarDate() {
   // PostgreSQL term dates describe the local school calendar day.
@@ -54,6 +55,7 @@ function preparedSubjects(snapshot, sectionCodes) {
 
 export function buildStudentEnrollmentSummary({
   context, snapshot, term, simulation, sectionCodes, correctionReason = null,
+  demoWindow = null,
   priceRows,
   asOfDate = manilaCalendarDate(),
 }) {
@@ -62,11 +64,21 @@ export function buildStudentEnrollmentSummary({
   // registered class. Only sections present in this student's validated home
   // block timetable form the prepared selection.
   const projectFeeEstimate = estimateProjectSelectedSubjects(eligible, priceRows);
-  const termEnd = term?.enrollment_end || null;
-  const termStart = term?.enrollment_start || null;
+  const validDemoWindow = demoWindow?.project_cohort_id === PROJECT_COHORT &&
+    demoWindow?.term_id === (term?.id || TERM_ID) &&
+    demoWindow?.source_type === "PROJECT_ONLY_FICTIONAL" &&
+    demoWindow?.verified_institutionally === false;
+  const demoStart = validDemoWindow ? demoWindow.start_date : null;
+  const demoEnd = validDemoWindow ? demoWindow.end_date : null;
+  const termEnd = demoStart && demoEnd ? demoEnd : term?.enrollment_end || null;
+  const termStart = demoStart && demoEnd ? demoStart : term?.enrollment_start || null;
   const today = asOfDate;
-  const windowOpen = term?.status === "Open" && Boolean(termStart && termEnd) &&
-    today >= termStart && today <= termEnd;
+  const originalOpen = term?.status === "Open" &&
+    Boolean(term?.enrollment_start && term?.enrollment_end) &&
+    today >= term.enrollment_start && today <= term.enrollment_end;
+  const demonstrationOpen = validDemoWindow && demoWindow.status === "OPEN" &&
+    Boolean(demoStart && demoEnd) && today >= demoStart && today <= demoEnd;
+  const windowOpen = originalOpen || demonstrationOpen;
   const ready = snapshot.schedule_validated_for_project === true &&
     eligible.length > 0;
   const blockingReasons = [];
@@ -99,6 +111,7 @@ export function buildStudentEnrollmentSummary({
       enrollmentEnd: termEnd,
       status: term?.status || "Unknown",
       windowOpen,
+      demonstrationWindow: validDemoWindow,
     },
     homeBlock: snapshot.home_block || null,
     homeBlockStatus: snapshot.block_planning_status || null,
@@ -127,7 +140,7 @@ export async function loadStudentEnrollmentForPage() {
   const context = await getStudentContext();
   if (context.kind !== "project") return { kind: "unavailable" };
   try {
-    const [snapshotResult, termResult, statusResult, placementResult] = await Promise.all([
+    const [snapshotResult, termResult, statusResult, placementResult, windowResult] = await Promise.all([
       context.client.rpc("project_phase8_student_snapshot_v2", { p_student_id: context.studentId }),
       context.admin.from("academic_terms")
         .select("id,label,academic_year,semester,enrollment_start,enrollment_end,status")
@@ -138,6 +151,9 @@ export async function loadStudentEnrollmentForPage() {
       context.admin.from("project_student_academic_placements")
         .select("home_block_id").eq("student_id", context.studentId)
         .eq("term_id", TERM_ID).maybeSingle(),
+      context.admin.from("project_phase8_demo_enrollment_window")
+        .select("project_cohort_id,term_id,start_date,end_date,status,source_type,verified_institutionally")
+        .eq("project_cohort_id", PROJECT_COHORT).maybeSingle(),
     ]);
     if (snapshotResult.error || snapshotResult.data?.project_only !== true ||
         snapshotResult.data?.verified_institutionally !== false ||
@@ -149,7 +165,7 @@ export async function loadStudentEnrollmentForPage() {
         statusResult.data?.verified_institutionally !== false ||
         statusResult.data?.curriculum_is_official !== false ||
         statusResult.data?.curriculum_code !== snapshotResult.data?.curriculum_code ||
-        placementResult.error || !placementResult.data) {
+        placementResult.error || !placementResult.data || windowResult.error) {
       return { kind: "unavailable" };
     }
     const sectionCodes = new Map();
@@ -183,7 +199,8 @@ export async function loadStudentEnrollmentForPage() {
     if (priceRows.length !== selectedCodes.length) return { kind: "unavailable" };
     return buildStudentEnrollmentSummary({ context, snapshot: snapshotResult.data,
       term: termResult.data, simulation, sectionCodes,
-      priceRows, correctionReason: simulation?.correction_reason || null });
+      priceRows, demoWindow: windowResult.data,
+      correctionReason: simulation?.correction_reason || null });
   } catch {
     return { kind: "unavailable" };
   }

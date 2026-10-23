@@ -23,16 +23,26 @@ export async function loadRegistrarProjectSimulationQueue() {
   await requireRole("registrar");
   try {
     const client = await createClient();
-    const { data: result, error } = await client.rpc(
-      "project_phase8_registrar_simulation_queue_v1",
-    );
+    const admin = createAdminClient();
+    const [{ data: result, error }, windowResult] = await Promise.all([
+      client.rpc("project_phase8_registrar_simulation_queue_v1"),
+      admin.from("project_phase8_demo_enrollment_window")
+        .select("project_cohort_id,term_id,start_date,end_date,status,source_type,verified_institutionally")
+        .eq("project_cohort_id", PROJECT_COHORT).maybeSingle(),
+    ]);
+    const demoWindow = !windowResult.error &&
+      windowResult.data?.project_cohort_id === PROJECT_COHORT &&
+      windowResult.data?.term_id === PROJECT_TERM &&
+      windowResult.data?.verified_institutionally === false &&
+      windowResult.data?.source_type === "PROJECT_ONLY_FICTIONAL"
+        ? windowResult.data : null;
     const simulations = result?.records;
     if (error || result?.fictional_only !== true ||
         result?.verified_institutionally !== false ||
         !Array.isArray(simulations) || simulations.length > MAX_PROJECT_RECORDS) {
       return { kind: "unavailable", records: [] };
     }
-    if (!simulations.length) return { kind: "ready", records: [] };
+    if (!simulations.length) return { kind: "ready", records: [], demoWindow };
     const records = simulations.flatMap((sim) => {
       if (sim.term_id !== PROJECT_TERM ||
           sim.source_provenance !== "GENERATED_PROJECT" ||
@@ -50,9 +60,36 @@ export async function loadRegistrarProjectSimulationQueue() {
         source: "GENERATED_PROJECT",
       }];
     });
-    return { kind: "ready", records };
+    return { kind: "ready", records, demoWindow };
   } catch {
     return { kind: "unavailable", records: [] };
+  }
+}
+
+// The window is separate from the institutional academic term dates.
+// Only a signed-in Registrar can invoke the protected PostgreSQL transition.
+export async function saveRegistrarDemonstrationWindow(startDate, endDate, status) {
+  await requireRole("registrar");
+  const validDate = /^\d{4}-\d{2}-\d{2}$/;
+  if (!validDate.test(String(startDate || "")) ||
+      !validDate.test(String(endDate || "")) ||
+      !["OPEN", "CLOSED"].includes(status)) {
+    return { ok: false, message: "Enter a valid demonstration period and status." };
+  }
+  try {
+    const client = await createClient();
+    const { data, error } = await client.rpc("project_phase8_manage_demo_window_v1", {
+      p_start: startDate, p_end: endDate, p_status: status,
+    });
+    if (error || data?.ok !== true || data?.simulation_only !== true ||
+      data?.official !== false || data.status !== status) {
+      return { ok: false, message: "The demonstration window was not accepted. Check the dates and Registrar permissions." };
+    }
+    for (const route of ["/registrar/enrollment", "/student/enrollment",
+      "/student/dashboard", "/student/class-schedule"]) revalidatePath(route);
+    return { ok: true, status: data.status, message: "Demonstration enrollment window updated." };
+  } catch {
+    return { ok: false, message: "Unable to update the demonstration window." };
   }
 }
 

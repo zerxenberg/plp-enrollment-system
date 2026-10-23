@@ -7,7 +7,7 @@ import {
   StatusBadge, TableActions, TablePagination,
 } from "@/components/ui/PortalUI";
 import { Panel } from "./RegistrarShared";
-import { performRegistrarProjectSimulationAction } from "@/features/academic/registrar-project-simulations";
+import { performRegistrarProjectSimulationAction, saveRegistrarDemonstrationWindow } from "@/features/academic/registrar-project-simulations";
 
 const PAGE_SIZE = 20;
 const STATUSES = [
@@ -42,6 +42,10 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
   const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [startDate, setStartDate] = useState(queue?.demoWindow?.start_date || "");
+  const [endDate, setEndDate] = useState(queue?.demoWindow?.end_date || "");
+  const [windowWorking, setWindowWorking] = useState(false);
+  const [windowFeedback, setWindowFeedback] = useState("");
 
   const rows = Array.isArray(queue?.records) ? queue.records : [];
   const filtered = rows.filter((row) =>
@@ -85,8 +89,47 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
     void performAction(dialog.row, dialog.action, reason.trim());
   }
 
+  async function saveWindow(event, status) {
+    event.preventDefault();
+    if (windowWorking) return;
+    setWindowWorking(true);
+    setWindowFeedback("");
+    try {
+      const result = await saveRegistrarDemonstrationWindow(startDate, endDate, status);
+      setWindowFeedback(result?.message || "The demonstration period could not be updated.");
+      if (result?.ok) router.refresh();
+    } catch {
+      setWindowFeedback("The demonstration period could not be updated.");
+    } finally {
+      setWindowWorking(false);
+    }
+  }
+
   return (
     <div style={{ marginBottom: 18 }}>
+      <Panel title="Demonstration Enrollment Window"
+        subtitle="Registrar controlled classroom testing dates. Official academic term dates remain unchanged.">
+        <form className="form-grid" onSubmit={(event) => void saveWindow(event, "OPEN")}>
+          <label className="field">Testing Starts
+            <input type="date" required value={startDate} disabled={windowWorking}
+              onChange={(event) => setStartDate(event.target.value)} />
+          </label>
+          <label className="field">Testing Ends
+            <input type="date" required value={endDate} disabled={windowWorking}
+              onChange={(event) => setEndDate(event.target.value)} />
+          </label>
+          <div className="action-row">
+            <Button type="submit" disabled={windowWorking || !startDate || !endDate}>Open Testing Window</Button>
+            <Button variant="secondary" type="button"
+              disabled={windowWorking || !startDate || !endDate}
+              onClick={(event) => void saveWindow(event, "CLOSED")}>Close Testing Window</Button>
+          </div>
+        </form>
+        <p className="notice" role="status" style={{ marginTop: 10 }}>
+          Current status: {queue?.demoWindow?.status === "OPEN" ? "Open (classroom demonstration only)" : "Closed"}.
+          {windowFeedback ? ` ${windowFeedback}` : ""}
+        </p>
+      </Panel>
       <Panel title="Enrollment Review Queue"
         subtitle="Registrar review of fictional classroom submissions. These records are separate from official enrollments and the existing demonstration queue.">
         <div className="notice" role="note" style={{ marginBottom: 14 }}>
