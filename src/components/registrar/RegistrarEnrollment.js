@@ -8,6 +8,7 @@ import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, Sta
 import { Panel, Tabs, Info, Details, Feedback } from "./RegistrarShared";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import RegistrarProjectSimulationQueue from "./RegistrarProjectSimulationQueue";
 
 const QUEUES = [
   {value:"ALL",label:"All"}, {value:"PENDING",label:"Pending (Submitted)"},
@@ -19,7 +20,7 @@ const QUEUES = [
 const CHECKS = ["Program Match", "Curriculum Match", "Duplicate Subject Check", "Prerequisite Check", "Unit Validation", "Section Slot Check", "Schedule Conflict Check"];
 const CATEGORIES = ["Student Information", "Subject Registration", "Prerequisite", "Section Availability", "Schedule Conflict", "Unit Load", "Other"];
 
-export default function RegistrarEnrollment() {
+export default function RegistrarEnrollment({ projectSimulationQueue }) {
   const { registrar, catalog, runRegistrarValidation, returnForCorrection, confirmRegistrarEnrollment, applyAuthorizedCorrection } = useDemoData();
   const [queue, setQueue] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -109,6 +110,7 @@ export default function RegistrarEnrollment() {
   return (
     <>
       <PageHeader title="Enrollment" description="Review official enrollment transactions, run demo validation, return corrections and confirm validated records." />
+      <RegistrarProjectSimulationQueue queue={projectSimulationQueue} />
       <Tabs items={QUEUES.map((item) => ({...item,label:`${item.label} (${registrar.enrollments.filter((row) => item.value === "ALL" || (item.value === "PENDING" ? row.status === "SUBMITTED" : row.status === item.value)).length})`}))} selected={queue} onSelect={setQueue} label="Filter enrollment queue by status" filter />
       <Panel title="Enrollment Queue" subtitle="Pending is a queue view for Submitted only. Every stored enrollment retains its canonical status.">
         <div className="toolbar">

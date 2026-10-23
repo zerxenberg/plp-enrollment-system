@@ -63,7 +63,7 @@ function renderBoundary(pathname, authenticatedProfile) {
   ));
 }
 
-test("all existing non-profile Student modules hide shared fixtures for project accounts", () => {
+test("authenticated PROJECT_ONLY pages render verified server-owned module content", () => {
   for (const path of [
     "/student/dashboard",
     "/student/enrollment",
@@ -75,28 +75,27 @@ test("all existing non-profile Student modules hide shared fixtures for project 
   ]) {
     for (const profile of [{ mode: "project" }, { kind: "complete" }]) {
       const html = renderBoundary(path, profile);
-      assert.match(html, /Not yet available from verified academic source/);
-      assert.match(html, /PROJECT_ONLY account is fictional/);
-      assert.doesNotMatch(html, /SHARED_DEMO_GRADE_FAILED/);
-      assert.match(html, /data-test="card"/);
+      assert.match(html, /SHARED_DEMO_GRADE_FAILED/);
+      assert.doesNotMatch(html, /Student information unavailable/);
     }
   }
 });
 
-test("Student Profile is handled by its separate authenticated loader", () => {
+test("Student Profile is rendered only after the project account boundary is verified", () => {
   for (const path of ["/student/student-profile", "/student/student-profile/"]) {
-    for (const profile of [{ mode: "project" }, { mode: "demo" }, { mode: "unavailable" }]) {
+    for (const profile of [{ mode: "project" }, { kind: "complete" }]) {
       const html = renderBoundary(path, profile);
       assert.match(html, /SHARED_DEMO_GRADE_FAILED/);
-      assert.doesNotMatch(html, /Not yet available from verified academic source/);
+      assert.doesNotMatch(html, /Student information unavailable/);
     }
   }
 });
 
-test("legacy accounts retain existing Student modules and unknown authentication denies fixtures", () => {
+test("legacy, demo, or unverified accounts cannot access project student modules", () => {
   for (const profile of [{ mode: "demo" }, { kind: "legacy" }]) {
     const html = renderBoundary("/student/enrollment", profile);
-    assert.match(html, /SHARED_DEMO_GRADE_FAILED/);
+    assert.match(html, /Student information unavailable/);
+    assert.doesNotMatch(html, /SHARED_DEMO_GRADE_FAILED/);
   }
 
   for (const profile of [
@@ -108,13 +107,13 @@ test("legacy accounts retain existing Student modules and unknown authentication
     { mode: "project", kind: "legacy" },
   ]) {
     const html = renderBoundary("/student/enrollment", profile);
-    assert.match(html, /Student information unavailable|Not yet available from verified academic source/);
+    assert.match(html, /Student information unavailable/);
     assert.doesNotMatch(html, /SHARED_DEMO_GRADE_FAILED/);
   }
 });
 
 test("boundary cannot query the shared demo provider or create another authentication source", () => {
-  assert.match(source, /usePathname/);
+  assert.match(source, /mode === "project"/);
   assert.doesNotMatch(source, /useDemoData|DemoDataProvider|localStorage|sessionStorage/);
   assert.doesNotMatch(source, /auth\.getUser|SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY/);
 });

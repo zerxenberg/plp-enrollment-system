@@ -1,189 +1,233 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { DataTable, FilterControl, InternalTabs, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import {
+  Button, Card, DataTable, EmptyState, FilterControl, InternalTabs, Modal,
+  PageHeader, SearchControl, StatusBadge, TablePagination,
+} from "@/components/ui/PortalUI";
 
-const TABS = ["Academic Overview", "Subject History", "Curriculum Progress", "Deficiencies", "Prerequisite Progress"];
+const TABS = ["Academic History", "Curriculum Progress"];
+const projectLabel = "Fictional classroom records · No institutionally verified grades";
+const PAGE_SIZE = 20;
 
-export default function StudentAcademicRecords() {
-  const { student, catalog } = useDemoData();
-  const [activeTab, setActiveTab] = useState("Academic Overview");
+function formatUnits(units) {
+  const number = Number(units);
+  return units != null && Number.isFinite(number) ? number.toLocaleString() : "Not recorded";
+}
+
+function studentResults(snapshot) {
+  const grades = snapshot.previousResults.map((item, index) => ({
+    key: `grade:${item.term}:${item.subject_code}:${index}`,
+    code: item.subject_code,
+    name: item.subject_name || item.subject_code,
+    units: item.units,
+    term: item.term,
+    grade: item.grade,
+    status: item.result,
+    source: "Simulated project academic result",
+    note: "A generated classroom grade. No official Registrar publication is asserted.",
+  }));
+  const transfer = snapshot.transferCredits.map((item, index) => ({
+    key: `transfer:${item.target_subject}:${index}`,
+    code: item.target_subject,
+    name: snapshot.curriculum.find((row) => row.code === item.target_subject)?.name || item.target_subject,
+    units: item.credited_units,
+    term: "Transfer simulation",
+    grade: null,
+    status: item.project_decision === "PROJECT_CREDITED" ? "CREDITED" :
+      item.project_decision === "PROJECT_DENIED" ? "DENIED" : "PENDING",
+    source: "Simulated transfer evaluation",
+    note: `Source course: ${item.source_course || "Not recorded"}. This evaluation is fictional and is not institutional accreditation.`,
+  }));
+  return [...grades, ...transfer].sort((a, b) => b.term.localeCompare(a.term) || a.code.localeCompare(b.code));
+}
+
+function curriculumRows(snapshot) {
+  const credited = new Set(
+    snapshot.transferCredits.filter((item) => item.project_decision === "PROJECT_CREDITED")
+      .map((item) => item.target_subject),
+  );
+  const completed = new Set(
+    snapshot.previousResults.filter((item) => item.result === "COMPLETED")
+      .map((item) => item.subject_code),
+  );
+  const failed = new Set(
+    snapshot.previousResults.filter((item) => item.result === "FAILED")
+      .map((item) => item.subject_code),
+  );
+  const incomplete = new Set(
+    snapshot.previousResults.filter((item) => item.result === "INCOMPLETE")
+      .map((item) => item.subject_code),
+  );
+  const eligibility = new Map(snapshot.eligibility.map((item) => [item.subject_code, item]));
+  return snapshot.curriculum.map((row) => ({
+    ...row,
+    status: credited.has(row.code) ? "CREDITED" :
+      completed.has(row.code) ? "COMPLETED" :
+      incomplete.has(row.code) ? "INCOMPLETE" :
+      failed.has(row.code) ? "FAILED" : eligibility.get(row.code)?.eligibility || "NOT_TAKEN",
+    reason: eligibility.get(row.code)?.reason || null,
+  }));
+}
+
+export default function StudentAcademicRecords({ mode = "unavailable", snapshot }) {
+  const [tab, setTab] = useState(TABS[0]);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [termFilter, setTermFilter] = useState("ALL");
+  const [term, setTerm] = useState("ALL");
+  const [status, setStatus] = useState("ALL");
+  const [year, setYear] = useState("ALL");
+  const [selected, setSelected] = useState(null);
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("NEWEST");
 
-  const history = useMemo(() => student.academicResults.filter((item) => {
-    const matchesSearch = `${item.code} ${item.name}`.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "ALL" || item.status === statusFilter;
-    const matchesTerm = termFilter === "ALL" || item.term === termFilter;
-    return matchesSearch && matchesStatus && matchesTerm;
-  }), [search, statusFilter, student.academicResults, termFilter]);
-
-  const completed = student.academicResults.filter((item) => item.status === "COMPLETED");
-  const credited = student.academicResults.filter((item) => item.status === "CREDITED");
-  const deficiencies = student.academicResults.filter((item) => item.status === "FAILED" || item.status === "INCOMPLETE");
-  const restricted = catalog.subjects.filter((item) => item.eligibility === "RESTRICTED");
-  const progressPercent = Math.round(((completed.length + credited.length) / Math.max(student.academicResults.length + catalog.subjects.length, 1)) * 100);
-
-  function renderTab() {
-    if (activeTab === "Academic Overview") {
-      return (
-        <>
-          <div className="info-grid">
-            <div className="info-item"><span>Program</span><strong>{student.profile.program}</strong></div>
-            <div className="info-item"><span>Curriculum</span><strong>{student.profile.curriculum}</strong></div>
-            <div className="info-item"><span>Year Level</span><strong>{student.profile.yearLevel}</strong></div>
-            <div className="info-item"><span>Classification</span><strong><StatusBadge value={student.profile.academicClassification} /></strong></div>
-            <div className="info-item"><span>Progression</span><strong><StatusBadge value={student.profile.progressionStatus} /></strong></div>
-            <div className="info-item"><span>Completed or Credited</span><strong>{completed.length + credited.length}</strong></div>
-            <div className="info-item"><span>Failed</span><strong>{student.academicResults.filter((item) => item.status === "FAILED").length}</strong></div>
-            <div className="info-item"><span>Incomplete</span><strong>{student.academicResults.filter((item) => item.status === "INCOMPLETE").length}</strong></div>
-          </div>
-          <div className="notice" style={{ marginTop: 14 }}>Grades imported through the Registrar demo appear in Subject History only after publication. Unpublished or missing grades are never inferred.</div>
-          <div className="notice" style={{ marginTop: 14 }}>
-            Academic Records is read only enrollment support. It does not provide grade encoding, grade computation, or transcript generation.
-          </div>
-        </>
-      );
-    }
-
-    if (activeTab === "Subject History") {
-      return (
-        <>
-          <div className="toolbar">
-            <SearchControl value={search} onChange={setSearch} placeholder="Search subject code or name" />
-            <FilterControl
-              label="Completion Status"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "ALL", label: "All statuses" },
-                { value: "COMPLETED", label: "Completed" },
-                { value: "FAILED", label: "Failed" },
-                { value: "INCOMPLETE", label: "Incomplete" },
-                { value: "CREDITED", label: "Credited" },
-              ]}
-            />
-            <FilterControl
-              label="Academic Term"
-              value={termFilter}
-              onChange={setTermFilter}
-              options={[
-                { value: "ALL", label: "All terms" },
-                ...Array.from(new Set(student.academicResults.map((item) => item.term))).map((term) => ({ value: term, label: term })),
-              ]}
-            />
-          </div>
-          <DataTable
-            rowKey={(row) => row.resultId || `${row.code}:${row.term}`}
-            rows={history}
-            columns={[
-              { key: "code", label: "Subject Code" },
-              { key: "name", label: "Subject Name" },
-              { key: "units", label: "Units" },
-              { key: "term", label: "Academic Term" },
-              { key: "grade", label: "Grade", render: (row) => row.publicationReference ? <strong>{row.grade || "Not recorded"}</strong> : "Awaiting publication" },
-              { key: "status", label: "Completion Status", render: (row) => <StatusBadge value={row.status} /> },
-              { key: "source", label: "Result Source", render: (row) => row.publicationReference ? <span title={row.amendedAt ? `Corrected on ${new Date(row.amendedAt).toLocaleString()}` : row.publicationReference}>{row.amendedAt ? "Demo published · Corrected" : "Demo published"}</span> : "Historical demo completion" },
-            ]}
-          />
-        </>
-      );
-    }
-
-    if (activeTab === "Curriculum Progress") {
-      return (
-        <>
-          <div className="summary-strip">
-            <span>Curriculum: <strong>{student.profile.curriculum}</strong></span>
-            <span>Completion estimate from demo records: <strong>{progressPercent}%</strong></span>
-          </div>
-          <div className="progress-track" style={{ marginTop: 12 }} aria-label={`${progressPercent}% curriculum progress`}>
-            <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
-          </div>
-          <div className="list-stack" style={{ marginTop: 14 }}>
-            {catalog.subjects.map((subject) => {
-              const result = student.academicResults.find((item) => item.code === subject.code);
-              const status = result?.status || subject.eligibility;
-              return (
-                <div className="list-item" key={subject.code}>
-                  <div className="list-item-header">
-                    <strong>{subject.code} • {subject.name}</strong>
-                    <StatusBadge value={status} />
-                  </div>
-                  <p>{subject.yearLevel} • {subject.semester} • {subject.units} units</p>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      );
-    }
-
-    if (activeTab === "Deficiencies") {
-      return (
-        <div className="list-stack">
-          {deficiencies.map((item) => (
-            <div className="list-item" key={item.code}>
-              <div className="list-item-header">
-                <strong>{item.code} • {item.name}</strong>
-                <StatusBadge value={item.status} />
-              </div>
-              <p>{item.status === "FAILED" ? "Retake may be required when the subject is offered. Dependent subjects remain restricted until prerequisites are satisfied." : "Incomplete result remains a deficiency and is not treated as completed for prerequisite purposes."}</p>
-            </div>
-          ))}
-          {restricted.map((subject) => (
-            <div className="list-item" key={subject.code}>
-              <div className="list-item-header">
-                <strong>{subject.code} • {subject.name}</strong>
-                <StatusBadge value="RESTRICTED" />
-              </div>
-              <p>{subject.restrictionReason}</p>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    return (
-      <DataTable
-        rowKey="code"
-        rows={catalog.subjects.filter((subject) => subject.prerequisites.length)}
-        columns={[
-          { key: "code", label: "Future Subject" },
-          { key: "prerequisites", label: "Required Prerequisite", render: (row) => row.prerequisites.join(", ") },
-          {
-            key: "completion",
-            label: "Prerequisite Status",
-            render: (row) => {
-              const satisfied = row.prerequisites.every((code) =>
-                student.academicResults.some((item) => item.code === code && (item.status === "COMPLETED" || item.status === "CREDITED")),
-              );
-              return <StatusBadge value={satisfied ? "PASSED" : "FAILED"} label={satisfied ? "Completed" : "Not Completed"} />;
-            },
-          },
-          { key: "eligibility", label: "Eligibility Result", render: (row) => <StatusBadge value={row.eligibility} /> },
-        ]}
-      />
-    );
-  }
+  const history = useMemo(() => snapshot ? studentResults(snapshot) : [], [snapshot]);
+  const curriculum = useMemo(() => snapshot ? curriculumRows(snapshot) : [], [snapshot]);
+  const terms = useMemo(() => [...new Set(history.map((item) => item.term))], [history]);
+  const statuses = useMemo(() =>
+    [...new Set(tab === TABS[0] ? history.map((item) => item.status) : curriculum.map((item) => item.status))],
+    [tab, history, curriculum],
+  );
+  const filteredHistory = history.filter((item) =>
+    (term === "ALL" || item.term === term) &&
+    (status === "ALL" || item.status === status) &&
+    `${item.code} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()),
+  ).sort((a, b) => sort === "SUBJECT" ? a.code.localeCompare(b.code)
+    : sort === "OLDEST" ? a.term.localeCompare(b.term)
+      : b.term.localeCompare(a.term));
+  const filteredCurriculum = curriculum.filter((item) =>
+    (year === "ALL" || String(item.yearLevel) === year) &&
+    (status === "ALL" || item.status === status) &&
+    `${item.code} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()),
+  ).sort((a, b) => sort === "SUBJECT" ? a.code.localeCompare(b.code) :
+    Number(a.yearLevel) - Number(b.yearLevel) || String(a.semester).localeCompare(String(b.semester)));
+  const reset = (setter) => (value) => { setter(value); setPage(1); };
+  const currentRows = tab === TABS[0] ? filteredHistory : filteredCurriculum;
+  const totalPages = Math.max(1, Math.ceil(currentRows.length / PAGE_SIZE));
+  const safePage = Math.max(1, Math.min(page, totalPages));
+  const pagedRows = currentRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const totalUnits = curriculum.reduce((sum, row) => sum + (Number(row.units) || 0), 0);
+  const completedUnits = curriculum.reduce((sum, row) =>
+    sum + (["COMPLETED", "CREDITED"].includes(row.status) ? Number(row.units) || 0 : 0), 0);
+  const progressPercent = totalUnits ? Math.round(100 * completedUnits / totalUnits) : 0;
 
   return (
     <>
-      <PageHeader
-        title="Academic Records"
-        description="Read only academic information used to explain enrollment eligibility, deficiencies, prerequisite progress, and curriculum progress."
-      />
-      <InternalTabs
-        items={TABS.map((tab) => ({ value: tab, label: tab }))}
-        selected={activeTab}
-        onSelect={setActiveTab}
-        label="Academic records sections"
-        panelCard
-      >
-        {renderTab()}
-      </InternalTabs>
+      <PageHeader title="Academic Records" description="Academic history and progress through your assigned curriculum." />
+      {mode !== "project" || !snapshot ? (
+        <Card><EmptyState title="Academic records unavailable"
+          description="We could not verify a project student academic source for this account. Sign in with an activated student account and try again." /></Card>
+      ) : (
+        <>
+          <div className="notice" role="status" style={{ marginBottom: 16 }}>{projectLabel}. Grades and transfer decisions shown here are generated for the PROJECT_ONLY demonstration and have not been published as official PLP results.</div>
+          <div className="summary-strip" style={{ marginBottom: 16 }}>
+            <span>Student: <strong>{snapshot.studentNumber}</strong></span>
+            <span>Program: <strong>{snapshot.program}{snapshot.track ? ` · ${snapshot.track}` : ""}</strong></span>
+            <span>Curriculum: <strong>{snapshot.curriculumCode}</strong></span>
+            <span>Year: <strong>{snapshot.yearLevel}</strong></span>
+          </div>
+          <InternalTabs items={TABS.map((item) => ({ value: item, label: item }))}
+            selected={tab} onSelect={(value) => { setTab(value); setStatus("ALL"); setSearch(""); setPage(1); }}
+            label="Academic record sections" panelCard>
+            {tab === TABS[0] ? (
+              <>
+                <div className="toolbar">
+                  <SearchControl value={search} onChange={reset(setSearch)} placeholder="Search code or subject" />
+                  <FilterControl label="Term" value={term} onChange={reset(setTerm)}
+                    options={[{ value: "ALL", label: "All terms" },
+                      ...terms.map((value) => ({ value, label: value }))]} />
+                  <FilterControl label="Result" value={status} onChange={reset(setStatus)}
+                    options={[{ value: "ALL", label: "All results" },
+                      ...statuses.map((value) => ({ value, label: value.replaceAll("_", " ") }))]} />
+                  <FilterControl label="Sort" value={sort} onChange={reset(setSort)}
+                    options={[{value:"NEWEST",label:"Newest term"},{value:"OLDEST",label:"Oldest term"},{value:"SUBJECT",label:"Subject code"}]} />
+                </div>
+                <DataTable rows={pagedRows} rowKey="key"
+                  emptyMessage="No simulated academic history matches these filters."
+                  onRowClick={setSelected} rowTitle="View simulated result details"
+                  getRowAriaLabel={(row) => `View ${row.code} simulated result`}
+                  columns={[
+                    { key: "code", label: "Code" },
+                    { key: "name", label: "Subject" },
+                    { key: "units", label: "Units", render: (row) => formatUnits(row.units) },
+                    { key: "term", label: "Term" },
+                    { key: "grade", label: "Grade", render: (row) => row.grade == null ? "Not recorded" : String(row.grade) },
+                    { key: "status", label: "Result", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "source", label: "Provenance" },
+                  ]} />
+                {filteredHistory.length > PAGE_SIZE && <TablePagination
+                  page={safePage} pageSize={PAGE_SIZE} total={filteredHistory.length}
+                  onPageChange={setPage} label="Academic history pages" />}
+              </>
+            ) : (
+              <>
+                <div className="summary-strip">
+                  <span>Assigned curriculum units: <strong>{formatUnits(totalUnits)}</strong></span>
+                  <span>Simulated completed or credited: <strong>{formatUnits(completedUnits)}</strong></span>
+                  <span>Estimated completion: <strong>{progressPercent}%</strong></span>
+                </div>
+                <div className="progress-track" style={{ marginTop: 12, marginBottom: 16 }}
+                  role="progressbar" aria-label="Simulated curriculum progress"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent}>
+                  <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+                </div>
+                <div className="notice" style={{ marginBottom: 16 }}>Progress is calculated from the assigned curriculum units stored in the database. Generated completions and fictional transfer credits count toward this classroom estimate only.</div>
+                <div className="toolbar">
+                  <SearchControl value={search} onChange={reset(setSearch)} placeholder="Search curriculum subjects" />
+                  <FilterControl label="Year level" value={year} onChange={reset(setYear)}
+                    options={[{ value: "ALL", label: "All years" },
+                      ...[...new Set(curriculum.map((row) => String(row.yearLevel)))].map((value) => ({ value, label: `Year ${value}` }))]} />
+                  <FilterControl label="Progress" value={status} onChange={reset(setStatus)}
+                    options={[{ value: "ALL", label: "All statuses" },
+                      ...statuses.map((value) => ({ value, label: value.replaceAll("_", " ") }))]} />
+                  <FilterControl label="Sort" value={sort} onChange={reset(setSort)}
+                    options={[{value:"NEWEST",label:"Curriculum order"},{value:"SUBJECT",label:"Subject code"}]} />
+                </div>
+                <DataTable rows={pagedRows} rowKey="code"
+                  emptyMessage="No curriculum subjects match these filters."
+                  onRowClick={setSelected} rowTitle="View curriculum subject details"
+                  getRowAriaLabel={(row) => `View ${row.code} curriculum details`}
+                  columns={[
+                    { key: "code", label: "Subject Code" },
+                    { key: "name", label: "Subject" },
+                    { key: "yearLevel", label: "Year", render: (row) => `Year ${row.yearLevel}` },
+                    { key: "semester", label: "Semester" },
+                    { key: "units", label: "Curriculum Units", render: (row) => formatUnits(row.units) },
+                    { key: "status", label: "Simulated Progress", render: (row) => <StatusBadge value={row.status} /> },
+                  ]} />
+                {filteredCurriculum.length > PAGE_SIZE && <TablePagination
+                  page={safePage} pageSize={PAGE_SIZE} total={filteredCurriculum.length}
+                  onPageChange={setPage} label="Curriculum progress pages" />}
+              </>
+            )}
+          </InternalTabs>
+          <Modal open={Boolean(selected)} onClose={() => setSelected(null)}
+            title={selected ? `${selected.code} · ${selected.name}` : "Subject details"}
+            footer={<Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>}>
+            {selected && (
+              <>
+                <div className="info-grid">
+                  <div className="info-item"><span>Subject Code</span><strong>{selected.code}</strong></div>
+                  <div className="info-item"><span>Units</span><strong>{formatUnits(selected.units)}</strong></div>
+                  <div className="info-item"><span>Simulation Status</span><strong><StatusBadge value={selected.status} /></strong></div>
+                  {"term" in selected ? (
+                    <>
+                      <div className="info-item"><span>Term</span><strong>{selected.term}</strong></div>
+                      <div className="info-item"><span>Simulated Grade</span><strong>{selected.grade == null ? "Not recorded" : selected.grade}</strong></div>
+                      <div className="info-item"><span>Source</span><strong>{selected.source}</strong></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="info-item"><span>Year</span><strong>{selected.yearLevel}</strong></div>
+                      <div className="info-item"><span>Semester</span><strong>{selected.semester}</strong></div>
+                    </>
+                  )}
+                </div>
+                <div className="notice" style={{ marginTop: 14 }}>{selected.note || selected.reason || "Assigned fictional curriculum requirement. No official academic result is implied."}</div>
+              </>
+            )}
+          </Modal>
+        </>
+      )}
     </>
   );
 }

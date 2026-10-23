@@ -9,8 +9,10 @@ import { PORTAL_META } from "@/config/portal-navigation";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { getLiveSession } from "@/lib/auth/live-auth";
 import { LoadingState } from "@/components/ui/PortalUI";
+import { markStudentNotificationRead } from "@/features/students/student-portal-actions";
 
-export default function PortalLayout({ role, authUser, projectOnly = false, children }) {
+export default function PortalLayout({ role, authUser, projectOnly = false,
+  portalTerm = null, portalNotifications = null, children }) {
   const router = useRouter();
   const {
     student,
@@ -62,8 +64,12 @@ export default function PortalLayout({ role, authUser, projectOnly = false, chil
 
   // Real fictional PROJECT_ONLY students must not inherit another demo
   // student's term or notification inbox from the shared mock provider.
-  const term = projectOnly ? null : student.term;
-  const roleNotifications = projectOnly ? [] : (notifications[role] || []);
+  const term = projectOnly ? portalTerm : student.term;
+  const roleNotifications = projectOnly ? (portalNotifications || []) : (notifications[role] || []);
+  const markHeaderNotification = projectOnly && role === "student"
+    ? (_role, id) => markStudentNotificationRead(id, true)
+      .then(() => router.refresh()).catch(() => {})
+    : markNotification;
   if (!authUser && !authenticatedAccount) {
     return <LoadingState label={authError || "Verifying secure portal access..."} />;
   }
@@ -83,10 +89,10 @@ export default function PortalLayout({ role, authUser, projectOnly = false, chil
           role,
           term,
           notifications: roleNotifications,
-          markNotification,
+          markNotification: markHeaderNotification,
           notificationHref: meta.notificationHref,
           utilityLabel: meta.topbarUtilityLabel,
-          showTerm: !projectOnly,
+          showTerm: projectOnly ? Boolean(portalTerm) : true,
           menuOpen: sidebarOpen,
           onMenu: toggleSidebar,
         }}>
