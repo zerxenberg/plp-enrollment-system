@@ -1,252 +1,199 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import { Button, Card, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton } from "@/components/ui/PortalUI";
-import { submitPreparedProjectEnrollment, getConfirmedProjectDemonstrationCor } from "@/features/students/student-portal-actions";
+import { useState, useTransition } from "react";
+import {
+  Button, Card, DataTable, InternalTabs, Modal, PageHeader, StatusBadge, TableActionButton,
+} from "@/components/ui/PortalUI";
+import {
+  getConfirmedProjectDemonstrationCor,
+  getInstitutionalOfficialCor,
+  selectInstitutionalEnrollmentSubject,
+  startInstitutionalEnrollment,
+  submitInstitutionalEnrollment,
+  submitPreparedProjectEnrollment,
+} from "@/features/students/student-portal-actions";
 import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
-const TABS = [
-  { value: "current", label: "Current Enrollment" },
-  { value: "history", label: "Enrollment History" },
-];
-
-const ENROLLMENT_REVIEW_LABELS = Object.freeze({
-  NOT_STARTED: "Not started",
-  DRAFT: "Draft",
-  SUBMITTED: "Submitted",
-  VALIDATED: "Validated",
-  RETURNED: "Returned",
-  CONFIRMED_SIMULATION: "Confirmed (demo only)",
-  CONFIRMED_FOR_PROJECT_SIMULATION: "Confirmed (demonstration only)",
-});
-
-function enrollmentReviewLabel(value) {
-  const raw = String(value || "Not recorded");
-  const canonical = raw.trim().toUpperCase().replaceAll(/\s+/g, "_");
-  return ENROLLMENT_REVIEW_LABELS[canonical] || raw.replaceAll("_", " ");
+function ProjectEnrollment({data}){
+  const [pending,startTransition]=useTransition();
+  const [feedback,setFeedback]=useState("");
+  const [cor,setCor]=useState(null);
+  const submit=()=>startTransition(async()=>{
+    try{await submitPreparedProjectEnrollment();setFeedback("Your demonstration enrollment was submitted for Registrar review.");}
+    catch(error){setFeedback(error?.message||"Enrollment could not be submitted.");}
+  });
+  const viewCor=()=>startTransition(async()=>{
+    try{setCor(await getConfirmedProjectDemonstrationCor());}
+    catch(error){setFeedback(error?.message||"Registration demonstration is unavailable.");}
+  });
+  return <>
+    <div className="notice" role="note" style={{marginBottom:16}}>
+      Classroom demonstration. This workflow is separate from official institutional enrollment.
+    </div>
+    <div className="summary-strip" style={{marginBottom:16}}>
+      <span>Student: <strong>{data.student.number}</strong></span>
+      <span>Program: <strong>{data.student.program}</strong></span>
+      <span>Curriculum: <strong>{displayCurriculumCode(data.student.curriculum)}</strong></span>
+      <span>Term: <strong>{data.term.label}</strong></span>
+    </div>
+    {feedback?<div className="notice" role="status" style={{marginBottom:16}}>{feedback}</div>:null}
+    <Card className="section-card">
+      <div className="section-header"><div><h2>Prepared Subjects</h2><p>Subjects cleared for this classroom enrollment demonstration.</p></div>
+        <StatusBadge value={data.simulation?.status||"NOT_STARTED"}/></div>
+      <DataTable rows={data.proposedSubjects} rowKey="code" emptyMessage="No prepared subjects are currently available."
+        columns={[
+          {key:"code",label:"Subject Code",render:(row)=>displaySubjectCode(row.code)},
+          {key:"name",label:"Subject"},{key:"units",label:"Units"},
+          {key:"section",label:"Section",render:(row)=>row.section||"Not assigned"},
+          {key:"eligibility",label:"Eligibility",render:(row)=><StatusBadge value={row.eligibility}/>},
+        ]}/>
+      <div className="action-row" style={{marginTop:16}}>
+        {data.canSubmit?<Button disabled={pending} onClick={submit}>{pending?"Submitting...":"Submit Demonstration Enrollment"}</Button>:null}
+        {data.simulation?.status==="CONFIRMED_SIMULATION"
+          ?<Button variant="secondary" disabled={pending} onClick={viewCor}>View Registration Demonstration</Button>:null}
+      </div>
+      {data.blockingReasons?.length?<div className="notice" style={{marginTop:16}}>
+        <strong>Current requirements</strong>{data.blockingReasons.map((reason)=><p key={reason}>{reason}</p>)}</div>:null}
+    </Card>
+    <Modal open={Boolean(cor)} title="Registration Demonstration" onClose={()=>setCor(null)}
+      footer={<Button variant="secondary" onClick={()=>setCor(null)}>Close</Button>}>
+      {cor?<div className="detail-list">
+        <div className="detail-row"><span>Student</span><strong>{cor.student?.student_number}</strong></div>
+        <div className="detail-row"><span>Program</span><strong>{cor.student?.program_code}</strong></div>
+        <div className="detail-row"><span>Status</span><strong>Confirmed demonstration</strong></div>
+      </div>:null}
+      <div className="notice" style={{marginTop:14}}>This is not an official PLP Certificate of Registration.</div>
+    </Modal>
+  </>;
 }
 
-function Field({ label, value }) {
-  return <div className="info-item"><span>{label}</span><strong>{value ?? "Not available"}</strong></div>;
-}
+function InstitutionalEnrollment({data}){
+  const [tab,setTab]=useState("current");
+  const [pending,startTransition]=useTransition();
+  const [feedback,setFeedback]=useState("");
+  const [selectedSubject,setSelectedSubject]=useState(null);
+  const [cor,setCor]=useState(data.officialCor||null);
 
-function formatProjectPeso(amount) {
-  return typeof amount === "number" && Number.isFinite(amount)
-    ? new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(amount)
-    : "Not available";
-}
-
-function ScheduleText({ meetings }) {
-  if (!meetings?.length) return "Awaiting timetable";
-  return <span>{meetings.map((m) => `${m.day} ${String(m.start || "").slice(0, 5)} to ${String(m.end || "").slice(0, 5)}`).join("; ")}</span>;
-}
-
-function SampleNotice() {
-  return <div className="notice" role="note">
-    <strong>Classroom demonstration only.</strong> The curriculum, grades, timetable, admission context, and enrollment review are fictional records. They are not institutionally verified. A demonstration review confirmation does not create official university enrollment.
-  </div>;
-}
-
-export default function StudentEnrollmentWorkspace({ data }) {
-  const [activeTab, setActiveTab] = useState("current");
-  const [detail, setDetail] = useState(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
-  const [message, setMessage] = useState("");
-  const [cor, setCor] = useState(null);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
-  const [yearFilter, setYearFilter] = useState("ALL");
-  const [semesterFilter, setSemesterFilter] = useState("ALL");
-  const [isPending, startTransition] = useTransition();
-
-  const history = useMemo(() => data.kind === "ready" && data.simulation ? [{
-    id: data.simulation.id,
-    academicYear: data.term.academicYear,
-    semester: data.term.semester,
-    program: data.student.program,
-    block: data.homeBlock,
-    units: data.proposedUnits,
-    status: data.simulation.status,
-    submittedAt: data.simulation.submittedAt,
-  }] : [], [data]);
-  const visibleHistory = history.filter((item) =>
-    `${item.academicYear} ${item.semester} ${item.program} ${item.block}`.toLowerCase().includes(search.toLowerCase()) &&
-    (yearFilter === "ALL" || String(item.academicYear) === yearFilter) &&
-    (semesterFilter === "ALL" || String(item.semester) === semesterFilter) &&
-    (statusFilter === "ALL" || statusFilter === item.status));
-
-  function handleSubmit() {
-    setMessage("");
-    startTransition(async () => {
-      try {
-        await submitPreparedProjectEnrollment();
-        setReviewOpen(false);
-        setMessage("Your demonstration enrollment was submitted for Registrar review. Your official university enrollment remains unconfirmed.");
-        window.location.reload();
-      } catch (error) {
-        setMessage(error?.message || "Submission failed. Please review your enrollment details.");
-      }
+  function run(action,reload=true){
+    startTransition(async()=>{
+      const result=await action().catch((error)=>({ok:false,message:error?.message||"The action could not be completed."}));
+      setFeedback(result?.message||"Action completed.");
+      if(result?.ok&&reload){setSelectedSubject(null);window.location.reload();}
     });
   }
-
-  function openDemonstrationCor() {
-    setMessage("");
-    startTransition(async () => {
-      try {
-        const result = await getConfirmedProjectDemonstrationCor();
-        setCor(result);
-      } catch (error) {
-        setMessage(error?.message || "The registration demonstration is unavailable.");
-      }
-    });
-  }
-
-  if (data.kind !== "ready") {
-    return <><PageHeader title="Enrollment" description="Current Enrollment and Enrollment History" />
-      <Card><div className="notice" role="alert">Your authenticated enrollment data could not be verified. Please sign in again or contact the System Administrator.</div></Card></>;
-  }
-
-  const simulationStatus = data.simulation?.status || "NOT_STARTED";
-  const locked = ["SUBMITTED", "VALIDATED", "CONFIRMED_SIMULATION"].includes(simulationStatus);
-  const isConfirmedSimulation = simulationStatus === "CONFIRMED_SIMULATION";
-  const selectedCount = data.proposedSubjects.length;
-  const eligibility = data.canSubmit ? "ELIGIBLE" : "NOT_ELIGIBLE";
+  const viewCor=()=>startTransition(async()=>{
+    try{setCor(await getInstitutionalOfficialCor(data.enrollment.id));}
+    catch(error){setFeedback(error?.message||"Official registration record is unavailable.");}
+  });
 
   return <>
-    <PageHeader title="Enrollment" description="Review your prepared subjects, submit for review, and follow your enrollment progress." />
-    <SampleNotice />
-    <div style={{ marginTop: 16 }}>
-      <InternalTabs items={TABS} selected={activeTab} onSelect={setActiveTab} label="Enrollment sections" panelCard>
-        {activeTab === "current" ? <>
-          <div className="section-header"><div>
-            <h2>Current Enrollment</h2>
-            <p>Automatically prepared from your linked curriculum, project academic history, and validated block timetable.</p>
-          </div><StatusBadge value={simulationStatus} label={enrollmentReviewLabel(simulationStatus)} /></div>
-
-          <div className="info-grid" style={{ marginTop: 16 }}>
-            <Field label="Student" value={`${data.student.name} (${data.student.number})`} />
-            <Field label="Program and Curriculum" value={`${data.student.program} · ${displayCurriculumCode(data.student.curriculum)}`} />
-            <Field label="Academic Term" value={data.term.label} />
-            <Field label="Proposed Home Block" value={data.homeBlock || "No validated block"} />
-            <Field label="Prepared Eligible Subjects" value={String(selectedCount)} />
-            <Field label="Proposed Units" value={String(data.proposedUnits)} />
-            <Field label="Estimated Tuition (Demonstration)" value={formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)} />
-            <Field label="Academic Classification" value={<StatusBadge value={data.student.classification || "NOT_VERIFIED"} />} />
-            <Field label="Current Eligibility" value={<StatusBadge value={eligibility} />} />
-          </div>
-
-          <div className="notice" style={{ marginTop: 16 }}>
-            <strong>Enrollment period:</strong> {data.term.enrollmentStart || "Not configured"} to {data.term.enrollmentEnd || "Not configured"}.
-            {data.term.windowOpen ? " Currently open." : " Currently closed or unavailable."}
-          </div>
-          {data.blockingReasons.map((reason) => <div key={reason} className="notice" role="status" style={{ marginTop: 10 }}>{reason}</div>)}
-          {locked && <div className="notice" role="status" style={{ marginTop: 12 }}>
-            Your submitted demonstration enrollment is read only. The Registrar controls validation, return for correction, and demonstration-only confirmation.
-          </div>}
-          {simulationStatus === "RETURNED" && <div className="notice warning" role="status" style={{ marginTop: 12 }}>
-            <strong>Returned by Registrar for correction.</strong>
-            <p>{data.simulation?.correctionReason || "Please review your prepared enrollment and contact the Registrar for the recorded return reason."}</p>
-            <p>Make permitted corrections before resubmission. This demonstration enrollment can be resubmitted when the Registrar reopens a valid enrollment period.</p>
-          </div>}
-
-          <div className="section-header" style={{ marginTop: 22 }}><div>
-            <h2>Prepared Subject Registration</h2>
-            <p>Subjects with eligible status, a matching home block class section, and a validated timetable are prepared automatically. Other curriculum requirements remain visible with their restrictions.</p>
-          </div></div>
-          <DataTable rowKey="code" rows={data.subjects} columns={[
-            { key: "code", label: "Subject Code", render: (item) => displaySubjectCode(item.code) },
-            { key: "name", label: "Subject Name", render: (item) => displaySubjectCode(item.name) },
-            { key: "units", label: "Units" },
-            { key: "section", label: "Assigned Section", render: (item) => item.section || "Not assigned" },
-            { key: "meetings", label: "Class Schedule", render: (item) => <ScheduleText meetings={item.meetings} /> },
-            { key: "eligibility", label: "Eligibility", render: (item) => <StatusBadge value={item.eligibility} /> },
-            { key: "action", label: "Action", render: (item) =>
-              <TableActionButton onClick={() => setDetail({ type: "subject", value: item })}>View Details</TableActionButton> },
-          ]} />
-          <div className="action-row" style={{ marginTop: 18 }}>
-            {data.canSubmit ? <Button onClick={() => setReviewOpen(true)} disabled={isPending}>Review Enrollment</Button> : null}
-            {isConfirmedSimulation ? <Button onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
-          </div>
-          {message && <div className="notice" role="status" style={{ marginTop: 12 }}>{message}</div>}
-          <p style={{ marginTop: 10 }}>Schedule and block selections remain proposed during student review. Only an authorized Registrar may finalize the demonstration review. Official COR and class schedules require a separate officially confirmed enrollment.</p>
-        </> : <>
-          <div className="section-header"><div><h2>Enrollment History</h2><p>Read only enrollment transactions associated with this authenticated student.</p></div></div>
-          <div className="toolbar">
-            <SearchControl value={search} onChange={setSearch} placeholder="Search academic year or block" />
-            <FilterControl label="Academic Year" value={yearFilter} onChange={setYearFilter}
-              options={[{value:"ALL",label:"All years"}, ...[...new Set(history.map((h)=>String(h.academicYear)).filter(Boolean))].map((v)=>({value:v,label:v}))]} />
-            <FilterControl label="Semester" value={semesterFilter} onChange={setSemesterFilter}
-              options={[{value:"ALL",label:"All semesters"}, ...[...new Set(history.map((h)=>String(h.semester)).filter(Boolean))].map((v)=>({value:v,label:v}))]} />
-            <FilterControl label="Status" value={statusFilter} onChange={setStatusFilter}
-              options={[{ value: "ALL", label: "All statuses" }, ...[...new Set(history.map((h) => h.status))].map((v) => ({ value: v, label: enrollmentReviewLabel(v) }))]} />
-          </div>
-          {visibleHistory.length ? <DataTable rowKey="id" rows={visibleHistory} columns={[
-            { key: "academicYear", label: "Academic Year" },
-            { key: "semester", label: "Semester" },
-            { key: "program", label: "Program and Block", render: (r) => `${r.program} · ${r.block || "Unassigned"}` },
-            { key: "units", label: "Proposed Units" },
-            { key: "status", label: "Review Status", render: (r) => <StatusBadge value={r.status} label={enrollmentReviewLabel(r.status)} /> },
-            { key: "actions", label: "Actions", render: (r) => <TableActionButton onClick={() => setDetail({ type: "history", value: r })}>View Details</TableActionButton> },
-          ]} /> : <div className="empty-state"><strong>No enrollment transactions found.</strong><p>Your generated academic placement is separate from an enrollment submission.</p></div>}
-          {isConfirmedSimulation ? <Button variant="secondary" onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
-          {message && <div className="notice" role="status">{message}</div>}
-        </>}
-      </InternalTabs>
+    <div className="summary-strip" style={{marginBottom:16}}>
+      <span>Student: <strong>{data.student.number}</strong></span>
+      <span>Program: <strong>{data.student.program||"Pending"}</strong></span>
+      <span>Curriculum: <strong>{displayCurriculumCode(data.student.curriculum)||"Pending"}</strong></span>
+      <span>Term: <strong>{data.term?.label||"Pending"}</strong></span>
     </div>
+    {feedback?<div className="notice" role="status" style={{marginBottom:16}}>{feedback}</div>:null}
 
-    <Modal open={Boolean(detail)} title={detail?.type === "history" ? "Enrollment Review Details" : "Subject Details"}
-      onClose={() => setDetail(null)} footer={<Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>}>
-      {detail?.type === "subject" ? <div className="detail-list">
-        <div className="detail-row"><span>Subject</span><strong>{displaySubjectCode(detail.value.code)} · {displaySubjectCode(detail.value.name)}</strong></div>
-        <div className="detail-row"><span>Units</span><strong>{detail.value.units}</strong></div>
-        <div className="detail-row"><span>Estimated Subject Fee</span><strong>{(() => {
-          const selectedFee = data.projectFeeEstimate?.subjects?.find((item) => item.code === detail.value.code);
-          return selectedFee ? formatProjectPeso(selectedFee.estimatedFee) : "Not included in prepared registration";
-        })()}</strong></div>
-        <div className="detail-row"><span>Proposed Section</span><strong>{detail.value.section || "Not assigned"}</strong></div>
-        <div className="detail-row"><span>Eligibility</span><StatusBadge value={detail.value.eligibility} /></div>
-        <p>{detail.value.reason || "No additional academic restriction was supplied."}</p>
-        {(detail.value.meetings || []).map((meeting, i) => <div className="info-item" key={i}>
-          <span>{meeting.component || "Class Meeting"}</span>
-          <strong>{meeting.day} {meeting.start} to {meeting.end} · {meeting.room} · {meeting.instructor}</strong>
-        </div>)}
-      </div> : detail?.value ? <div className="info-grid">
-        <Field label="Term" value={`${detail.value.academicYear} · ${detail.value.semester}`} />
-        <Field label="Program and Block" value={`${detail.value.program} · ${detail.value.block}`} />
-        <Field label="Submitted At" value={detail.value.submittedAt ? new Date(detail.value.submittedAt).toLocaleString() : "Not submitted"} />
-        <Field label="Review Status" value={enrollmentReviewLabel(detail.value.status)} />
-      </div> : null}
+    <InternalTabs items={[
+      {value:"current",label:"Current Enrollment"},
+      {value:"history",label:"Enrollment History"},
+    ]} selected={tab} onSelect={setTab} label="Student enrollment sections" panelCard>
+      {tab==="current"?<>
+        <div className="content-grid">
+          <Card className="section-card span-5">
+            <div className="section-header"><h2>Enrollment Status</h2></div>
+            <div className="detail-list">
+              <div className="detail-row"><span>Admission</span><StatusBadge value={data.admission?.status||"PENDING"}/></div>
+              <div className="detail-row"><span>Student Record</span><StatusBadge value={data.student.status||"ADMITTED"}/></div>
+              <div className="detail-row"><span>Enrollment</span><StatusBadge value={data.enrollment?.status||"NOT_STARTED"}/></div>
+              <div className="detail-row"><span>Enrollment Period</span><strong>{data.term?.windowOpen?"Open":"Closed"}</strong></div>
+            </div>
+            {!data.enrollment&&data.canStart?<div className="action-row" style={{marginTop:14}}>
+              <Button disabled={pending} onClick={()=>run(startInstitutionalEnrollment)}>{pending?"Starting...":"Start Enrollment"}</Button>
+            </div>:null}
+            {data.enrollment?.status==="IN_PROGRESS"&&data.canSubmit?<div className="action-row" style={{marginTop:14}}>
+              <Button disabled={pending} onClick={()=>run(()=>submitInstitutionalEnrollment(data.enrollment.id))}>
+                {pending?"Submitting...":"Submit for Registrar Processing"}
+              </Button>
+            </div>:null}
+            {data.enrollment?.status==="CONFIRMED"?<div className="action-row" style={{marginTop:14}}>
+              <Button variant="secondary" disabled={pending} onClick={viewCor}>View Official Registration</Button>
+            </div>:null}
+          </Card>
+          <Card className="section-card span-7">
+            <div className="section-header"><div><h2>Current Requirements</h2><p>Your official enrollment depends on these conditions.</p></div></div>
+            {data.blockingReasons?.length?<div className="list-stack">
+              {data.blockingReasons.map((reason)=><div className="list-item" key={reason}>{reason}</div>)}
+            </div>:<div className="notice">Your current enrollment requirements are satisfied.</div>}
+          </Card>
+        </div>
+        <Card className="section-card" style={{marginTop:16}}>
+          <div className="section-header"><div><h2>Subjects & Class Sections</h2>
+            <p>Only cleared subjects and finalized institutional class sections can be selected.</p></div></div>
+          <DataTable rows={data.subjects} rowKey="code" emptyMessage="No subjects are currently prepared for this enrollment."
+            columns={[
+              {key:"code",label:"Subject Code",render:(row)=>displaySubjectCode(row.code)},
+              {key:"name",label:"Subject"},{key:"units",label:"Units"},
+              {key:"eligibility",label:"Eligibility",render:(row)=><StatusBadge value={row.eligibility}/>},
+              {key:"selection",label:"Selection",render:(row)=>row.selectedSectionId?"Selected":
+                row.sections.length?`${row.sections.length} section${row.sections.length===1?"":"s"}`:"No finalized section"},
+              {key:"action",label:"Action",render:(row)=>
+                data.canEdit&&["ELIGIBLE","RETAKE"].includes(row.eligibility)&&row.sections.length
+                  ?<TableActionButton onClick={()=>setSelectedSubject(row)}>Choose Section</TableActionButton>:null},
+            ]}/>
+        </Card>
+      </>:null}
+
+      {tab==="history"?<DataTable rows={data.history} rowKey="id" emptyMessage="No enrollment history is available."
+        columns={[
+          {key:"term",label:"Academic Term"},{key:"reference",label:"Enrollment Reference"},
+          {key:"status",label:"Status",render:(row)=><StatusBadge value={row.status}/>},
+          {key:"units",label:"Units",render:(row)=>row.units??"Not available"},
+          {key:"submittedAt",label:"Submitted"},{key:"confirmedAt",label:"Confirmed"},
+        ]}/>:null}
+    </InternalTabs>
+
+    <Modal open={Boolean(selectedSubject)}
+      title={selectedSubject?`${displaySubjectCode(selectedSubject.code)} · Choose Class Section`:"Choose Class Section"}
+      onClose={()=>!pending&&setSelectedSubject(null)}
+      footer={<Button variant="secondary" disabled={pending} onClick={()=>setSelectedSubject(null)}>Close</Button>}>
+      {selectedSubject?<div className="list-stack">{selectedSubject.sections.map((section)=>
+        <div className="list-item" key={section.id}>
+          <div className="list-item-header"><div><strong>{section.code}</strong><p>{section.instructor}</p></div>
+            <StatusBadge value={section.status}/></div>
+          <p>{section.meetings.length?section.meetings.map((m)=>`Day ${m.day} ${m.start}-${m.end} · ${m.room}`).join("; "):"Schedule details are not available."}</p>
+          <div className="action-row" style={{marginTop:10}}>
+            <Button disabled={pending} onClick={()=>run(()=>selectInstitutionalEnrollmentSubject(
+              data.enrollment.id,selectedSubject.code,section.id))}>{pending?"Selecting...":"Select This Section"}</Button>
+          </div>
+        </div>)}</div>:null}
     </Modal>
 
-    <Modal open={reviewOpen} title="Review and Submit Enrollment"
-      onClose={() => { if (!isPending) setReviewOpen(false); }} footer={<>
-        <Button variant="secondary" disabled={isPending} onClick={() => setReviewOpen(false)}>Cancel</Button>
-        <Button disabled={isPending} onClick={handleSubmit}>{isPending ? "Submitting..." : "Confirm Submission"}</Button>
-      </>}>
-      <p>Confirm that you reviewed all {selectedCount} eligible subjects and {data.proposedUnits} proposed units for {data.term.label}.</p>
-      <p>Your submission creates a fictional classroom enrollment record for Registrar review. It does not confirm official registration.</p>
-      {message && <p role="alert">{message}</p>}
+    <Modal open={Boolean(cor)} title="Official Registration" onClose={()=>setCor(null)}
+      footer={<><Button variant="secondary" onClick={()=>setCor(null)}>Close</Button>
+        <Button onClick={()=>window.print()}>Print</Button></>}>
+      {cor?<>
+        <div className="detail-list">
+          <div className="detail-row"><span>Student</span><strong>{cor.student_name}</strong></div>
+          <div className="detail-row"><span>Student Number</span><strong>{cor.student_number}</strong></div>
+          <div className="detail-row"><span>Academic Term</span><strong>{cor.academic_term}</strong></div>
+          <div className="detail-row"><span>Program</span><strong>{cor.program_name}</strong></div>
+          <div className="detail-row"><span>Confirmation Reference</span><strong>{cor.confirmation_reference}</strong></div>
+        </div>
+        <DataTable rows={cor.subjects||[]} rowKey="subject_code" columns={[
+          {key:"subject_code",label:"Subject Code",render:(row)=>displaySubjectCode(row.subject_code)},
+          {key:"subject_name",label:"Subject"},{key:"units",label:"Units"},
+        ]}/>
+      </>:null}
     </Modal>
+  </>;
+}
 
-    <Modal open={Boolean(cor)} title="Enrollment Registration Demonstration"
-      onClose={() => setCor(null)} footer={<>
-        <Button variant="secondary" onClick={() => setCor(null)}>Close</Button>
-        <Button onClick={() => window.print()}>Print Demonstration</Button>
-      </>}>
-      {cor ? <div className="detail-list">
-        <div className="notice"><strong>FICTIONAL CLASSROOM DEMONSTRATION ONLY. NOT AN OFFICIAL CERTIFICATE OF REGISTRATION.</strong></div>
-        <div className="detail-row"><span>Student</span><strong>{cor.student?.student_name}</strong></div>
-        <div className="detail-row"><span>Student Number</span><strong>{cor.student?.student_number}</strong></div>
-        <div className="detail-row"><span>Program and Term</span><strong>{cor.student?.program_code} · {cor.student?.term_id}</strong></div>
-        <div className="detail-row"><span>Registrar Review</span><strong>{enrollmentReviewLabel(cor.registration_status)}</strong></div>
-        {(cor.projectFeeEstimate?.subjects || []).map((item) =>
-          <div className="detail-row" key={item.code}>
-            <span>{displaySubjectCode(item.code)} · {displaySubjectCode(item.name)} ({item.units} units)</span>
-            <strong>{formatProjectPeso(item.estimatedFee)}</strong>
-          </div>)}
-        <div className="detail-row"><span>Registered Units (Demonstration)</span><strong>{cor.projectFeeEstimate?.totalUnits ?? "Not available"}</strong></div>
-        <div className="detail-row"><span>Estimated Tuition (Not Official)</span><strong>{formatProjectPeso(cor.projectFeeEstimate?.estimatedAmount)}</strong></div>
-      </div> : null}
-    </Modal>
+export default function StudentEnrollmentWorkspace({data}){
+  return <>
+    <PageHeader title="Enrollment" description="Review your prepared subjects, enrollment status, and registration history."/>
+    {data.kind!=="ready"?<Card><div className="notice">Your enrollment information is currently unavailable.</div></Card>
+      :data.mode==="institutional"?<InstitutionalEnrollment data={data}/>:<ProjectEnrollment data={data}/>}
   </>;
 }
