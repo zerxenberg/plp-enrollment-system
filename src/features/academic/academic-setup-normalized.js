@@ -108,7 +108,7 @@ export function validateLiveCurriculumDraft(record, existing, catalog) {
 export function liveSubjectCandidates(subjects, assignments, search = "", programCode = "") {
   const assigned = new Set((assignments || []).map((row) => row.subjectCode));
   const query = search.trim().toLowerCase();
-  return subjects.filter((subject) => subject.status === "Active" && !assigned.has(subject.code) &&
+  return subjects.filter((subject) => subject.status === "Active" && !subject.isProjectOnly && !assigned.has(subject.code) &&
     (query || !(subject.programs || []).length || subject.programs.includes(programCode)) &&
     (subject.code + " " + subject.name).toLowerCase().includes(query));
 }
