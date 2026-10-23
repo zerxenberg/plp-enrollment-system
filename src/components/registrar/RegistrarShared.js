@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { Card, StatusBadge, Button, InternalTabs } from "@/components/ui/PortalUI";
+import {
+  displayCurriculumCode, displayCurriculumName, displaySubjectCode,
+} from "@/features/academic/project-academic-display-aliases.mjs";
+
+function displayAcademicDetail(value) {
+  if (typeof value !== "string") return value;
+  return displayCurriculumName(displayCurriculumCode(displaySubjectCode(value)));
+}
 
 export function PanelHeading({ title, subtitle, actions }) {
   return (
@@ -26,11 +34,11 @@ export function Metric({ label, value, hint }) {
 }
 
 export function Info({ label, value }) {
-  return <div className="info-item"><span>{label}</span><strong>{value ?? "Not available"}</strong></div>;
+  return <div className="info-item"><span>{label}</span><strong>{displayAcademicDetail(value) ?? "Not available"}</strong></div>;
 }
 
 export function Details({ items }) {
-  return <div className="detail-list">{items.map(([label, value]) => <div className="detail-row" key={label}><span>{label}</span><strong>{value ?? "Not available"}</strong></div>)}</div>;
+  return <div className="detail-list">{items.map(([label, value]) => <div className="detail-row" key={label}><span>{label}</span><strong>{displayAcademicDetail(value) ?? "Not available"}</strong></div>)}</div>;
 }
 
 export function Tabs({ items, selected, onSelect, label, filter = false, title, subtitle, actions, children }) {

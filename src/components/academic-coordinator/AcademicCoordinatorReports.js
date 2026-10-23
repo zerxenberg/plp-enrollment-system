@@ -9,6 +9,7 @@ import {
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { loadAuthorizedAcademicReviewCases } from "@/features/academic/academic-review-cases";
+import { displayAcademicReference, displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { Details, Feedback, LinkButton, Metric } from "@/components/registrar/RegistrarShared";
 import {
   ACADEMIC_REPORT_TYPES, buildAcademicReviewSummary, buildCapacityRows,
@@ -70,6 +71,15 @@ const listOptions = (values, allLabel) => [
   ...[...new Set(values.filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)))
     .map((value) => ({ value, label: value })),
 ];
+const reportDisplay = (field, value) => {
+  if (field === "subject") return displaySubjectCode(value);
+  if (field === "curriculum") return displayCurriculumName(value);
+  if (field === "record") return displayAcademicReference(value);
+  if (field === "prerequisites" && typeof value === "string" && value !== "None") {
+    return value.split(", ").map(displaySubjectCode).join(", ");
+  }
+  return value;
+};
 
 function getReportColumns(type, breakdown) {
   if (type === ACADEMIC_REPORT_TYPES[0]) return COLUMNS[breakdown === "curriculum" ? "curriculum" : "program"];
@@ -334,7 +344,11 @@ export default function AcademicCoordinatorReports() {
     }
     if (!filteredRows.length) { setFeedback("No report records match the selected filters."); return; }
     try {
-      exportCsv(filteredRows, reportFields, reportType.toLowerCase().replaceAll(" ", "-") + ".csv");
+      // CSV is a user-facing report. Convert copies only, keeping canonical
+      // identifiers in reportRows, filters, review actions, and history.
+      const presentationRows = filteredRows.map((row) => Object.fromEntries(
+        reportFields.map((field) => [field, reportDisplay(field, row[field])])));
+      exportCsv(presentationRows, reportFields, reportType.toLowerCase().replaceAll(" ", "-") + ".csv");
       setFeedback("");
     } catch {
       setFeedback("The CSV download could not start. Please retry the export.");
@@ -380,7 +394,9 @@ export default function AcademicCoordinatorReports() {
                   ...terms.map((item) => ({ value: item.id, label: item.label || item.id }))]} />}
               {needsSubject && !(reportType === ACADEMIC_REPORT_TYPES[2] && breakdown === "section") && <FilterControl label="Subject" value={subject}
                 onChange={(value) => { setSubject(value); setReportPage(1); setFeedback(""); }}
-                options={listOptions(availableSubjects, "All Subjects")} />}
+                options={listOptions(availableSubjects, "All Subjects").map((option) => ({
+                  ...option, label: option.value === "ALL" ? option.label : displaySubjectCode(option.label),
+                }))} />}
               <SearchControl value={search} onChange={(value) => { setSearch(value); setReportPage(1); setFeedback(""); }}
                 label="Search report" placeholder="Search report records" />
               <Button variant="ghost" onClick={clearFilters}>Clear Filters</Button>
@@ -404,7 +420,7 @@ export default function AcademicCoordinatorReports() {
           <p className="portal-demo-caption"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Data (Read Only)" : isLive ? "Live Academic Data" : "Demo Data"}</strong></p>
                   <p>Program: {program === "ALL" ? "All Programs" : program}
                     {needsTerm ? " · Term: " + (term === "ALL" ? "All Terms" : terms.find((item) => item.id === term)?.label || term) : ""}
-                    {needsSubject && subject !== "ALL" ? " · Subject: " + subject : ""} · {filteredRows.length} records</p></div>
+                    {needsSubject && subject !== "ALL" ? " · Subject: " + displaySubjectCode(subject) : ""} · {filteredRows.length} records</p></div>
               </div>
               {metrics.length > 0 && <div className="stats-grid" style={{ marginBottom: 16 }}>
                 {metrics.map((metric) => <Metric key={metric.label} label={metric.label} value={metric.value} />)}
@@ -421,7 +437,9 @@ export default function AcademicCoordinatorReports() {
                       <StatusBadge value={row.conflictStatus === "No detected conflicts" ? "OPEN" : "REQUIRES_REVIEW"}
                         label={row.conflictStatus} /></> }
                     : field === "capacityStatus" || field === "scheduleStatus"
-                      ? { render: (row) => <StatusBadge value={row[field]} label={row[field]} /> } : {}) })),
+                      ? { render: (row) => <StatusBadge value={row[field]} label={row[field]} /> }
+                      : ["subject", "curriculum", "prerequisites"].includes(field)
+                        ? { render: (row) => reportDisplay(field, row[field]) } : {}) })),
                 ...(!printAll ? [{ key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view"
                   onClick={() => setSelectedDetail({ kind: "report", row })}>View Details</TableActionButton></TableActions> }] : [])]} />
               {!printAll && filteredRows.length > PAGE_SIZE &&
@@ -446,7 +464,8 @@ export default function AcademicCoordinatorReports() {
             <DataTable rowKey="id" rows={visibleHistory} emptyMessage={usesRemoteHistory && (!remoteHistoryCurrent || remoteHistory.loading)
               ? "Loading history records..." : "No academic changes match your search."}
               columns={[
-                ...["dateTime", "coordinator", "module", "record", "action"].map((key) => ({ key, label: FIELDS[key] })),
+                ...["dateTime", "coordinator", "module", "record", "action"].map((key) => ({ key, label: FIELDS[key],
+                  ...(key === "record" ? { render: (row) => reportDisplay(key, row[key]) } : {}) })),
                 { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view"
                   onClick={() => setSelectedDetail({ kind: "history", row })}>View Details</TableActionButton></TableActions> },
               ]} />
@@ -464,10 +483,10 @@ export default function AcademicCoordinatorReports() {
           ? ["dateTime", "coordinator", "module", "record", "action", "previousValue", "newValue",
             ...["reason", "scope"].filter((key) => selectedDetail.row[key])].map((key) => [
             key === "record" ? "Record Reference" : FIELDS[key],
-            displayDetail(selectedDetail.row[key]) || (key === "previousValue" || key === "newValue" ? "No recorded value" : "Not available"),
+            displayDetail(reportDisplay(key, selectedDetail.row[key])) || (key === "previousValue" || key === "newValue" ? "No recorded value" : "Not available"),
           ])
           : reportFields
-            .map((key) => [FIELDS[key], selectedDetail.row[key] ?? "Not available"])} />}
+            .map((key) => [FIELDS[key], reportDisplay(key, selectedDetail.row[key]) ?? "Not available"])} />}
       </Modal>
     </>
   );

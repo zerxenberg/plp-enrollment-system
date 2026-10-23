@@ -5,6 +5,7 @@ import {
   Button, Card, DataTable, EmptyState, FilterControl, InternalTabs, Modal,
   PageHeader, SearchControl, StatusBadge, TablePagination,
 } from "@/components/ui/PortalUI";
+import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const TABS = ["Academic History", "Curriculum Progress"];
 const projectLabel = "Fictional classroom records · No institutionally verified grades";
@@ -90,14 +91,14 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
   const filteredHistory = history.filter((item) =>
     (term === "ALL" || item.term === term) &&
     (status === "ALL" || item.status === status) &&
-    `${item.code} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()),
+    `${item.code} ${displaySubjectCode(item.code)} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()),
   ).sort((a, b) => sort === "SUBJECT" ? a.code.localeCompare(b.code)
     : sort === "OLDEST" ? a.term.localeCompare(b.term)
       : b.term.localeCompare(a.term));
   const filteredCurriculum = curriculum.filter((item) =>
     (year === "ALL" || String(item.yearLevel) === year) &&
     (status === "ALL" || item.status === status) &&
-    `${item.code} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()),
+    `${item.code} ${displaySubjectCode(item.code)} ${item.name}`.toLowerCase().includes(search.trim().toLowerCase()),
   ).sort((a, b) => sort === "SUBJECT" ? a.code.localeCompare(b.code) :
     Number(a.yearLevel) - Number(b.yearLevel) || String(a.semester).localeCompare(String(b.semester)));
   const reset = (setter) => (value) => { setter(value); setPage(1); };
@@ -122,7 +123,7 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
           <div className="summary-strip" style={{ marginBottom: 16 }}>
             <span>Student: <strong>{snapshot.studentNumber}</strong></span>
             <span>Program: <strong>{snapshot.program}{snapshot.track ? ` · ${snapshot.track}` : ""}</strong></span>
-            <span>Curriculum: <strong>{snapshot.curriculumCode}</strong></span>
+            <span>Curriculum: <strong>{displayCurriculumCode(snapshot.curriculumCode)}</strong></span>
             <span>Year: <strong>{snapshot.yearLevel}</strong></span>
           </div>
           <InternalTabs items={TABS.map((item) => ({ value: item, label: item }))}
@@ -144,10 +145,10 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                 <DataTable rows={pagedRows} rowKey="key"
                   emptyMessage="No simulated academic history matches these filters."
                   onRowClick={setSelected} rowTitle="View simulated result details"
-                  getRowAriaLabel={(row) => `View ${row.code} simulated result`}
+                  getRowAriaLabel={(row) => `View ${displaySubjectCode(row.code)} simulated result`}
                   columns={[
-                    { key: "code", label: "Code" },
-                    { key: "name", label: "Subject" },
+                    { key: "code", label: "Code", render: (row) => displaySubjectCode(row.code) },
+                    { key: "name", label: "Subject", render: (row) => displaySubjectCode(row.name) },
                     { key: "units", label: "Units", render: (row) => formatUnits(row.units) },
                     { key: "term", label: "Term" },
                     { key: "grade", label: "Grade", render: (row) => row.grade == null ? "Not recorded" : String(row.grade) },
@@ -185,10 +186,10 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                 <DataTable rows={pagedRows} rowKey="code"
                   emptyMessage="No curriculum subjects match these filters."
                   onRowClick={setSelected} rowTitle="View curriculum subject details"
-                  getRowAriaLabel={(row) => `View ${row.code} curriculum details`}
+                  getRowAriaLabel={(row) => `View ${displaySubjectCode(row.code)} curriculum details`}
                   columns={[
-                    { key: "code", label: "Subject Code" },
-                    { key: "name", label: "Subject" },
+                    { key: "code", label: "Subject Code", render: (row) => displaySubjectCode(row.code) },
+                    { key: "name", label: "Subject", render: (row) => displaySubjectCode(row.name) },
                     { key: "yearLevel", label: "Year", render: (row) => `Year ${row.yearLevel}` },
                     { key: "semester", label: "Semester" },
                     { key: "units", label: "Curriculum Units", render: (row) => formatUnits(row.units) },
@@ -201,12 +202,12 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
             )}
           </InternalTabs>
           <Modal open={Boolean(selected)} onClose={() => setSelected(null)}
-            title={selected ? `${selected.code} · ${selected.name}` : "Subject details"}
+            title={selected ? `${displaySubjectCode(selected.code)} · ${displaySubjectCode(selected.name)}` : "Subject details"}
             footer={<Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>}>
             {selected && (
               <>
                 <div className="info-grid">
-                  <div className="info-item"><span>Subject Code</span><strong>{selected.code}</strong></div>
+                  <div className="info-item"><span>Subject Code</span><strong>{displaySubjectCode(selected.code)}</strong></div>
                   <div className="info-item"><span>Units</span><strong>{formatUnits(selected.units)}</strong></div>
                   <div className="info-item"><span>Simulation Status</span><strong><StatusBadge value={selected.status} /></strong></div>
                   {"term" in selected ? (

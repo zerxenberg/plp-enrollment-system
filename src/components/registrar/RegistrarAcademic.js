@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { DataTable, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 import { Panel, Tabs, Info, Details } from "./RegistrarShared";
+import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const VIEWS = [
   { value: "term", label: "Academic Term & Enrollment Period" },
@@ -20,7 +21,8 @@ export default function RegistrarAcademic() {
   const [view, setView] = useState("term");
   const [search, setSearch] = useState("");
   const [selectedSection, setSelectedSection] = useState(null);
-  const match = (value) => JSON.stringify(value).toLowerCase().includes(search.trim().toLowerCase());
+  const match = (value) => `${JSON.stringify(value)} ${displaySubjectCode(value?.code || "")} ${displaySubjectCode(value?.subjectCode || "")}`
+    .toLowerCase().includes(search.trim().toLowerCase());
 
   // Block plans remain Academic Coordinator proposals. Only confirmed Registrar
   // transactions count as official registrations, regardless of planning status.
@@ -78,9 +80,9 @@ export default function RegistrarAcademic() {
         {view === "programs" ? <DataTable rows={catalog.programs.filter(match)} rowKey="code" columns={[{ key: "code", label: "Program Code" }, { key: "name", label: "Program" }, { key: "department", label: "Department" }, { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status.toUpperCase()} /> }, { key: "enrolled", label: "Enrollment Total" }]} /> : null}
         {view === "curriculum" ? <>
           <div className="notice">Curriculum assignments are read only. Program curricula, required subjects and version changes are maintained by the Academic Coordinator.</div>
-          <DataTable rowKey="reference" rows={[...new Map(registrar.enrollments.map((entry) => [`${entry.program}:${entry.curriculum}`, { reference: `${entry.program}:${entry.curriculum}`, program: entry.program, curriculum: entry.curriculum, term: entry.term }])).values()]} columns={[{ key: "program", label: "Program" }, { key: "curriculum", label: "Assigned Curriculum Version" }, { key: "term", label: "Academic Term" }]} />
+          <DataTable rowKey="reference" rows={[...new Map(registrar.enrollments.map((entry) => [`${entry.program}:${entry.curriculum}`, { reference: `${entry.program}:${entry.curriculum}`, program: entry.program, curriculum: entry.curriculum, term: entry.term }])).values()]} columns={[{ key: "program", label: "Program" }, { key: "curriculum", label: "Assigned Curriculum Version", render: (row) => displayCurriculumCode(row.curriculum) }, { key: "term", label: "Academic Term" }]} />
         </> : null}
-        {view === "subjects" ? <DataTable rowKey="code" rows={catalog.subjects.filter(match)} columns={[{ key: "code", label: "Code" }, { key: "name", label: "Subject" }, { key: "units", label: "Units" }, { key: "yearLevel", label: "Year" }, { key: "semester", label: "Term" }, { key: "prerequisites", label: "Prerequisites", render: (row) => row.prerequisites.join(", ") || "None" }, { key: "eligibility", label: "Demo Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> }]} /> : null}
+        {view === "subjects" ? <DataTable rowKey="code" rows={catalog.subjects.filter(match)} columns={[{ key: "code", label: "Code", render: (row) => displaySubjectCode(row.code) }, { key: "name", label: "Subject", render: (row) => displaySubjectCode(row.name) }, { key: "units", label: "Units" }, { key: "yearLevel", label: "Year" }, { key: "semester", label: "Term" }, { key: "prerequisites", label: "Prerequisites", render: (row) => row.prerequisites.map(displaySubjectCode).join(", ") || "None" }, { key: "eligibility", label: "Demo Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> }]} /> : null}
         {["sections", "schedules", "capacity"].includes(view) && hasPlanning ? <p className="notice">Academic plans and proposed assignments are references only. Published proposals and available planning slots do not grant enrollment confirmation.</p> : null}
         {view === "sections" ? <DataTable rowKey="id" rows={sections} columns={[
           { key: "code", label: "Block Section" },
@@ -94,8 +96,8 @@ export default function RegistrarAcademic() {
           { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openDetails(row.id)}>View Section</TableActionButton></TableActions> },
         ]} /> : null}
         {view === "schedules" ? <DataTable rowKey="id" rows={scheduleRows} columns={[
-          { key: "code", label: "Block Section" }, { key: "subjectCode", label: "Subject Code", render: (row) => row.subjectCode || row.subject },
-          { key: "subject", label: "Subject", render: (row) => row.subject || "Not recorded" },
+          { key: "code", label: "Block Section" }, { key: "subjectCode", label: "Subject Code", render: (row) => displaySubjectCode(row.subjectCode || row.subject) },
+          { key: "subject", label: "Subject", render: (row) => displaySubjectCode(row.subject || "Not recorded") },
           { key: "schedule", label: "Day & Time" }, { key: "room", label: "Room" },
           { key: "professor", label: "Professor", render: (row) => row.professor || "Not assigned" },
           { key: "status", label: "Plan", render: (row) => hasPlanning ? (row.status === "PUBLISHED" ? "Published proposal" : "Draft proposal") : "Legacy reference" },

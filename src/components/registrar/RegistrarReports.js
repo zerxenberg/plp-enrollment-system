@@ -6,14 +6,21 @@ import { Button, DataTable, FilterControl, PageHeader, StatusBadge } from "@/com
 import { Panel, Tabs, Metric, Feedback } from "./RegistrarShared";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import { displaySubjectCode, displayCurriculumCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const VIEW_OPTIONS = [{value:"reports",label:"Reports"},{value:"statistics",label:"Enrollment Statistics"},{value:"monitoring",label:"Enrollment Monitoring"},{value:"quality",label:"Data Quality Review"},{value:"history",label:"Registrar Transaction History"}];
 const REPORTS = ["Enrollment Report", "Student Enrollment Report", "Enrollment Status Report", "Program Enrollment Report", "Subject Registration Report", "Section Capacity Report", "Academic Term Report"];
 
+function reportDisplayValue(key, value) {
+  if (key === "code" || key === "subjectCode" || key === "subject") return displaySubjectCode(value);
+  if (key === "curriculum" || key === "curriculumCode") return displayCurriculumCode(value);
+  return value;
+}
+
 function exportCsv(rows, filename) {
   const headings = Object.keys(rows[0] || {message:"No records"});
   const escape = (value) => `"${String(value ?? "").replaceAll('"','""')}"`;
-  const csv = [headings.join(","), ...rows.map((row) => headings.map((heading)=>escape(row[heading])).join(","))].join("\r\n");
+  const csv = [headings.join(","), ...rows.map((row) => headings.map((heading)=>escape(reportDisplayValue(heading, row[heading]))).join(","))].join("\r\n");
   const url = URL.createObjectURL(new Blob(["\uFEFF", csv],{type:"text/csv;charset=utf-8;"}));
   const link = document.createElement("a");
   link.href = url;
@@ -43,8 +50,8 @@ export default function RegistrarReports() {
     report === "Program Enrollment Report" ? catalog.programs.filter((item)=>academicFilters.program==="ALL" || academicFilters.program===item.code).map((item)=>({program:item.code,name:item.name,enrollments:reportEnrollments.filter((entry)=>entry.program===item.code).length,confirmed:reportEnrollments.filter((entry)=>entry.program===item.code && entry.status==="CONFIRMED").length})) :
     reportEnrollments.map(({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference})=>({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference:confirmationReference || ""}));
   const count = (filter) => enrolled.filter((entry)=>entry.status===filter).length;
-  const reportColumns = Object.keys(reportRows[0] || {}).map((key)=>({key,label:key.replace(/([A-Z])/g," $1").replace(/^./, (letter)=>letter.toUpperCase())}));
-  const choices = (array) => [{value:"ALL",label:"All"},...new Set(array)].map((item)=>typeof item==="string"?{value:item,label:item.replaceAll("_"," ")}:item);
+  const reportColumns = Object.keys(reportRows[0] || {}).map((key)=>({key,label:key.replace(/([A-Z])/g," $1").replace(/^./, (letter)=>letter.toUpperCase()),render:(row)=>reportDisplayValue(key,row[key])}));
+  const choices = (array) => [{value:"ALL",label:"All"},...new Set(array)].map((item)=>typeof item==="string"?{value:item,label:displaySubjectCode(item).replaceAll("_"," ")}:item);
   const showEnrollmentFilters = view === "statistics" || view === "monitoring" || (view === "reports" && report !== "Section Capacity Report");
   const changeAcademicFilter = (key, value) => { setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value); setPreview(false); };
 

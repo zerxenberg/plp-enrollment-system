@@ -127,3 +127,14 @@ Apply these rules to existing and future data tables across all four authenticat
 * Contain genuinely wide tables in a responsive horizontal scroll wrapper such as the shared `.table-scroll` in the active `src/styles/portal.css`. Keep the table, headers, cells, and action controls accessible without clipping; do not allow horizontal overflow to break the page layout or hide content behind `overflow: hidden`.
 * Show the complete text of every status badge on a single line. Prevent wrapping, word breaking, truncation, and ellipses within status labels; give the status column enough usable width and let the table scroll horizontally when necessary. Preserve existing status meanings and visual distinctions.
 * Before completing table layout changes, inspect short and long datasets, the longest status labels, action buttons, empty states, narrow mobile widths, browser zoom, keyboard navigation, and any affected themes. Check for clipped text, inaccessible horizontal or vertical content, page-level overflow, and unintended nested scrollbars while preserving existing table actions and behavior.
+
+## 13. Permanent live database correction workflow (user decision, 2026-10-23)
+
+When a user authorizes a correction, update, or repair to the existing PLP Enrollment System Supabase PostgreSQL database, perform it **directly against the existing live database using targeted transactional SQL**, not by creating or applying SQL migration files.
+
+* Inspect the actual live schema, records, provenance, relationships, constraints, and relevant security rules before preparing SQL. Never assume that a table, column, or dataset identifier exists.
+* Use narrowly scoped SQL with verified keys and provenance, a preflight of expected affected rows, an explicit transaction, suitable fail closed assertions, and postflight queries. Commit only when all checks pass; otherwise roll back.
+* Prefer repeatable and idempotent statements. Preserve historical and official records, protected student identities, foreign keys, audit trails, RLS, authorization, and other unrelated data. Do not use uncontrolled broad updates or destructive cleanup.
+* **Do not generate separate SQL migration files for live data fixes.** Do not route an authorized data correction through a migration deployment workflow.
+* This is a standing **implementation method preference**, not blanket permission to modify the live database. Respect the scope and authorization of each task. If the requested change cannot safely be made through this approach, explain the concrete blocker and ask for explicit approval of a different method instead of silently using migrations or bypassing protections.
+* Report the SQL execution outcome, affected row counts, transaction result, integrity checks, and any remaining application or deployment verification limitations.

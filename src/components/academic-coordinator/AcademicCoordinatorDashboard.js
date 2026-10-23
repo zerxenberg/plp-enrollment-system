@@ -8,6 +8,7 @@ import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoor
 import { LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
 import { summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
 import { getBlockOccupancy } from "@/features/block-planning/block-planning-service";
+import { displayAcademicReference } from "@/features/academic/project-academic-display-aliases.mjs";
 
 export default function AcademicCoordinatorDashboard() {
   const liveData = useLiveAcademicCoordinator();
@@ -142,7 +143,7 @@ export default function AcademicCoordinatorDashboard() {
             columns={[
               { key: "dateTime", label: "Date & Time" },
               { key: "module", label: "Module" },
-              { key: "record", label: "Record" },
+              { key: "record", label: "Record", render: (item) => displayAcademicReference(item.record) },
               { key: "action", label: "Academic Action" },
             ]}
           />

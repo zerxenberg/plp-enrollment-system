@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
+import { displayCurriculumCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 function Notice({ children }) {
   return <div className="notice" role="note">{children}</div>;
@@ -51,7 +52,7 @@ export default function StudentDashboardLive({ enrollment, notices }) {
       <p>{data.student.number} · {data.student.program} · Year {data.student.yearLevel} · {String(data.student.type || "").replaceAll("_", " ")}</p>
       <div className="hero-meta">
         <span className="hero-chip">{data.term.label}</span>
-        <span className="hero-chip">{data.student.curriculum}</span>
+        <span className="hero-chip">{displayCurriculumCode(data.student.curriculum)}</span>
         <span className="hero-chip">PROJECT_ONLY</span>
       </div>
       <p style={{ marginTop: 12 }}>This is a fictional classroom student account. Project academic data is not institutionally verified.</p>

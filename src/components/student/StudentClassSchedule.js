@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import {
   Button, Card, DataTable, EmptyState, FilterControl, InternalTabs, Modal,
   PageHeader, StatusBadge,
@@ -58,7 +59,7 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
   });
   const visibleDays = dayFilter === "ALL" ? days : days.filter((day) => day === dayFilter);
   const subjects = [...new Map(classes.map((item) =>
-    [item.code, { value: item.code, label: `${item.code} · ${item.name}` }])).values()];
+    [item.code, { value: item.code, label: `${displaySubjectCode(item.code)} · ${displaySubjectCode(item.name)}` }])).values()];
   const filtered = classes.filter((item) =>
     (dayFilter === "ALL" || item.day === dayFilter) &&
     (subjectFilter === "ALL" || item.code === subjectFilter));
@@ -115,8 +116,8 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
                           <button key={item.key} type="button" className="schedule-event"
                             onClick={() => setSelected(item)}
                             style={{ display: "block", width: "100%", padding: 9, marginBottom: 7, textAlign: "left", border: "1px solid #a8d8ba", cursor: "pointer" }}
-                            aria-label={`View ${item.code} ${day} details`}>
-                            <strong>{item.code}</strong>
+                            aria-label={`View ${displaySubjectCode(item.code)} ${day} details`}>
+                            <strong>{displaySubjectCode(item.code)}</strong>
                             <span style={{ display: "block", fontWeight: 500 }}>{item.start} to {item.end}</span>
                             <span style={{ display: "block", fontWeight: 500 }}>{item.room}</span>
                           </button>
@@ -130,10 +131,10 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
               <DataTable rows={filtered} rowKey="key"
                 emptyMessage="No confirmed classes match the selected filters."
                 onRowClick={setSelected} rowTitle="View confirmed class details"
-                getRowAriaLabel={(row) => `View ${row.code} meeting details`}
+                getRowAriaLabel={(row) => `View ${displaySubjectCode(row.code)} meeting details`}
                 columns={[
-                  { key: "code", label: "Subject Code" },
-                  { key: "name", label: "Subject" },
+                  { key: "code", label: "Subject Code", render: (row) => displaySubjectCode(row.code) },
+                  { key: "name", label: "Subject", render: (row) => displaySubjectCode(row.name) },
                   { key: "day", label: "Day" },
                   { key: "time", label: "Time", render: (row) => `${row.start} to ${row.end}` },
                   { key: "room", label: "Room" },
@@ -142,11 +143,11 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
             )}
           </InternalTabs>
           <Modal open={Boolean(selected)} onClose={() => setSelected(null)}
-            title={selected ? `${selected.code} · ${selected.name}` : "Class details"}
+            title={selected ? `${displaySubjectCode(selected.code)} · ${displaySubjectCode(selected.name)}` : "Class details"}
             footer={<Button variant="secondary" onClick={() => setSelected(null)}>Close</Button>}>
             {selected && (
               <div className="info-grid">
-                <div className="info-item"><span>Subject</span><strong>{selected.name}</strong></div>
+                <div className="info-item"><span>Subject</span><strong>{displaySubjectCode(selected.name)}</strong></div>
                 <div className="info-item"><span>Day</span><strong>{selected.day}</strong></div>
                 <div className="info-item"><span>Time</span><strong>{selected.start} to {selected.end}</strong></div>
                 <div className="info-item"><span>Room</span><strong>{selected.room}</strong></div>

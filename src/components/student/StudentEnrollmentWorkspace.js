@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Button, Card, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton } from "@/components/ui/PortalUI";
 import { submitPreparedProjectEnrollment, getConfirmedProjectDemonstrationCor } from "@/features/students/student-portal-actions";
+import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const TABS = [
   { value: "current", label: "Current Enrollment" },
@@ -108,7 +109,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
 
           <div className="info-grid" style={{ marginTop: 16 }}>
             <Field label="Student" value={`${data.student.name} (${data.student.number})`} />
-            <Field label="Program and Curriculum" value={`${data.student.program} · ${data.student.curriculum}`} />
+            <Field label="Program and Curriculum" value={`${data.student.program} · ${displayCurriculumCode(data.student.curriculum)}`} />
             <Field label="Academic Term" value={data.term.label} />
             <Field label="Proposed Home Block" value={data.homeBlock || "No validated block"} />
             <Field label="Prepared Eligible Subjects" value={String(selectedCount)} />
@@ -137,8 +138,8 @@ export default function StudentEnrollmentWorkspace({ data }) {
             <p>Subjects with eligible status, a matching home block class section, and a validated timetable are prepared automatically. Other curriculum requirements remain visible with their restrictions.</p>
           </div></div>
           <DataTable rowKey="code" rows={data.subjects} columns={[
-            { key: "code", label: "Subject Code" },
-            { key: "name", label: "Subject Name" },
+            { key: "code", label: "Subject Code", render: (item) => displaySubjectCode(item.code) },
+            { key: "name", label: "Subject Name", render: (item) => displaySubjectCode(item.name) },
             { key: "units", label: "Units" },
             { key: "section", label: "Assigned Section", render: (item) => item.section || "Not assigned" },
             { key: "meetings", label: "Class Schedule", render: (item) => <ScheduleText meetings={item.meetings} /> },
@@ -180,7 +181,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
     <Modal open={Boolean(detail)} title={detail?.type === "history" ? "Project Enrollment Details" : "Subject Details"}
       onClose={() => setDetail(null)} footer={<Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>}>
       {detail?.type === "subject" ? <div className="detail-list">
-        <div className="detail-row"><span>Subject</span><strong>{detail.value.code} · {detail.value.name}</strong></div>
+        <div className="detail-row"><span>Subject</span><strong>{displaySubjectCode(detail.value.code)} · {displaySubjectCode(detail.value.name)}</strong></div>
         <div className="detail-row"><span>Units</span><strong>{detail.value.units}</strong></div>
         <div className="detail-row"><span>Estimated Subject Fee</span><strong>{(() => {
           const selectedFee = data.projectFeeEstimate?.subjects?.find((item) => item.code === detail.value.code);
@@ -224,7 +225,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <div className="detail-row"><span>Registrar Simulation</span><strong>{cor.registration_status}</strong></div>
         {(cor.projectFeeEstimate?.subjects || []).map((item) =>
           <div className="detail-row" key={item.code}>
-            <span>{item.code} · {item.name} ({item.units} units)</span>
+            <span>{displaySubjectCode(item.code)} · {displaySubjectCode(item.name)} ({item.units} units)</span>
             <strong>{formatProjectPeso(item.estimatedFee)}</strong>
           </div>)}
         <div className="detail-row"><span>Total Registered Units (Project Simulation)</span><strong>{cor.projectFeeEstimate?.totalUnits ?? "Not available"}</strong></div>

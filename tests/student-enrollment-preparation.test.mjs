@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import vm from "node:vm";
+import { estimateProjectSelectedSubjects, selectedProjectSubjectCodes } from "../src/features/students/project-fee-estimate.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadBindings, transform } = require("next/dist/build/swc");
@@ -22,6 +23,10 @@ vm.runInNewContext(compiled.code, {
   require: (name) => {
     if (name === "server-only") return {};
     if (name === "./student-context-server") return {};
+    if (name === "./project-fee-estimate.mjs") return {
+      estimateProjectSelectedSubjects, selectedProjectSubjectCodes,
+    };
+    if (name === "./project-fee-prices-server") return {};
     throw new Error(`Unexpected dependency: ${name}`);
   },
 }, { filename: "student-enrollment-server.compiled.js" });
@@ -55,6 +60,10 @@ function fixture({ status = null, ready = true, termStart = "2026-10-01",
       enrollment_start: termStart, enrollment_end: termEnd, status: "Open" },
     simulation: status ? { id: "sim-1", status, submitted_at: "2026-10-02" } : null,
     sectionCodes: new Map([ ["IT301", "BSIT-3A"], ["IT201", "BSIT-3A"], ["IT402", "BSIT-3A"] ]),
+    priceRows: [
+      { subject_code: "IT301", rate_per_unit: 100, classification: "SYNTHETIC_DEVELOPMENT_ONLY" },
+      { subject_code: "IT201", rate_per_unit: 100, classification: "SYNTHETIC_DEVELOPMENT_ONLY" },
+    ],
     asOfDate: "2026-10-23",
   };
 }
@@ -65,6 +74,7 @@ test("automatic preparation counts only eligible scheduled block subjects and re
   assert.equal(result.canSubmit, true);
   assert.equal(result.proposedSubjects.length, 2);
   assert.equal(result.proposedUnits, 6);
+  assert.equal(result.projectFeeEstimate.estimatedAmount, 600);
   assert.deepEqual(Array.from(result.proposedSubjects, (row) => row.code), ["IT301", "IT201"]);
   assert.equal(result.subjects.find((row) => row.code === "IT401").section, null);
   assert.equal(result.subjects.find((row) => row.code === "IT402").eligibility, "RESTRICTED");

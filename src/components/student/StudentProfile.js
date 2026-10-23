@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import AppIcon from "@/components/ui/AppIcon";
 import { Modal, PageHeader } from "@/components/ui/PortalUI";
+import { displayCurriculumCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import {
   changeStudentProfilePassword,
   removeStudentPhoto,
@@ -200,7 +201,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             <div><dt>Program</dt><dd>{missing(profile.program)}</dd></div>
             <div><dt>Year Level</dt><dd>{missing(profile.yearLevel)}</dd></div>
             <div><dt>Student Type</dt><dd>{missing(profile.studentType)}</dd></div>
-            <div><dt>Curriculum</dt><dd>{missing(profile.curriculum)}</dd></div>
+            <div><dt>Curriculum</dt><dd>{missing(displayCurriculumCode(profile.curriculum))}</dd></div>
             <div><dt>Academic Classification</dt><dd>{classification}</dd></div>
             <div><dt>Enrollment Eligibility</dt><dd>{missing(profile.enrollmentEligibility || (isProject ? "Not yet evaluated" : null))}</dd></div>
             <div><dt>Enrollment Status</dt><dd>{isProject ? missing(profile.projectEnrollmentStatus || "Project: Not started") : academicStatus}</dd></div>
@@ -222,7 +223,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
 
           <InfoCard icon="academic" title="Academic Information">
             <Detail label={isProject ? "Proposed Program" : "Program Code"} value={profile.program} />
-            <Detail label={isProject ? "Proposed Curriculum" : "Curriculum Code"} value={profile.curriculum} />
+            <Detail label={isProject ? "Proposed Curriculum" : "Curriculum Code"} value={displayCurriculumCode(profile.curriculum)} />
             <Detail label={isProject ? "Proposed Major" : "Academic Classification"}
               value={isProject ? profile.major : profile.academicClassification} />
             <Detail label="Academic Classification" value={classification} />

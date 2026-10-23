@@ -9,6 +9,7 @@ import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { DEPARTMENTS, YEARS, SEMESTERS, MOCK_ACADEMIC_YEARS, formatDemoPeso, summarizeCurriculum, getAcademicSubjectOptions, getPrerequisiteCandidates } from "@/features/academic/academic-reference";
 import { indexLiveAcademicSubjects, liveSubjectCandidates, liveTuitionEstimate, validateLiveCurriculumDraft } from "@/features/academic/academic-setup-normalized";
+import { displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const VIEWS = [
   { value: "programs", label: "Programs" },
@@ -25,6 +26,12 @@ const programMajors = (program) => program?.majors || program?.specializations?.
 const semesterKey = (yearLevel, semester) => `${yearLevel}|${semester}`;
 const semesterSections = YEARS.flatMap((yearLevel) => SEMESTERS.map((semester) => ({ yearLevel, semester, key: semesterKey(yearLevel, semester) })));
 const semesterIndex = (yearLevel, semester) => YEARS.indexOf(yearLevel) * SEMESTERS.length + SEMESTERS.indexOf(semester);
+const curriculumLabel = (curriculum) => {
+  const source = { code: curriculum?.id, name: curriculum?.version || curriculum?.name };
+  const label = displayCurriculumName(source);
+  return typeof label === "string" ? label : source.name || source.code || "";
+};
+const subjectListLabel = (codes) => (codes || []).map(displaySubjectCode).join(", ") || "None";
 // Render only the term groups carried by this curriculum, including configured
 // empty semesters. Other programs can have a different number of terms.
 const curriculumYearGroups = (curriculum) => {
@@ -135,13 +142,13 @@ export default function AcademicSetupWorkspace() {
     matchesContext(item) &&
     (year === "ALL" || (isOfficial ? item.livePlacements.some((placement) => placement.yearLevel === year) : item.yearLevel === year)) &&
     (semester === "ALL" || (isOfficial ? item.livePlacements.some((placement) => placement.semester === semester) : item.semester === semester)) &&
-    `${item.code} ${item.name}`.toLowerCase().includes(search.toLowerCase()));
+    `${item.code} ${displaySubjectCode(item.code)} ${item.name}`.toLowerCase().includes(search.toLowerCase()));
   const visibleCurricula = curricula.filter((item) =>
     (department === "ALL" || (item.department || programs.find((entry) => entry.code === item.program)?.department) === department) &&
     (program === "ALL" || item.program === program) &&
     (major === "ALL" || (item.major || "") === major) &&
     (status === "ALL" || item.status === status) &&
-    `${item.id} ${item.version} ${item.program} ${programs.find((entry) => entry.code === item.program)?.name || ""} ${item.department} ${departments.find((entry) => entry.id === item.department)?.name || ""} ${item.major || ""}`.toLowerCase().includes(search.toLowerCase()))
+    `${item.id} ${item.version} ${curriculumLabel(item)} ${item.program} ${programs.find((entry) => entry.code === item.program)?.name || ""} ${item.department} ${departments.find((entry) => entry.id === item.department)?.name || ""} ${item.major || ""}`.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => String(a[curriculumSort] || "").localeCompare(String(b[curriculumSort] || "")) || a.id.localeCompare(b.id));
   const visibleSemesterCount = visibleCurricula.reduce((count, item) =>
     count + (collapsedCurricula[item.id] ? 0 : curriculumYearGroups(item).reduce((total, group) => total + group.semesters.length, 0)), 0);
@@ -156,7 +163,7 @@ export default function AcademicSetupWorkspace() {
   const subjectPrograms = programs.filter((item) => subjectForm.department === "SHARED" || item.department === subjectForm.department);
   const subjectMajorChoices = subjectForm.programs.length === 1 ? programMajors(programs.find((item) => item.code === subjectForm.programs[0])) : [];
   const prerequisiteCandidates = (isOfficial ? [] : getPrerequisiteCandidates(catalog, subjectForm))
-    .filter((item) => `${item.code} ${item.name}`.toLowerCase().includes(prerequisiteSearch.toLowerCase()));
+    .filter((item) => `${item.code} ${displaySubjectCode(item.code)} ${item.name}`.toLowerCase().includes(prerequisiteSearch.toLowerCase()));
   const activeSection = semesterSections.find((section) => section.key === activeSemester) || semesterSections[0];
   const curriculumSummary = summarizeCurriculum(curriculumForm.assignments, subjects, activeSection.yearLevel, activeSection.semester);
   const curriculumEstimate = isOfficial ? liveTuitionEstimate(curriculumForm.assignments, subjects) : null;
@@ -182,7 +189,7 @@ export default function AcademicSetupWorkspace() {
     major: curriculumForm.major, yearLevel: section.yearLevel, semester: section.semester,
   }).filter((item) =>
     !curriculumForm.assignments.some((assignment) => assignment.subjectCode === item.code) &&
-    `${item.code} ${item.name}`.toLowerCase().includes((subjectSearch[section.key] || "").toLowerCase()));
+    `${item.code} ${displaySubjectCode(item.code)} ${item.name}`.toLowerCase().includes((subjectSearch[section.key] || "").toLowerCase()));
 
   function report(result, successText) {
     const ok = result === true || result?.ok === true;
@@ -445,13 +452,13 @@ export default function AcademicSetupWorkspace() {
             <>
               <div className="academic-list-heading"><span>{visibleSubjects.length} subjects</span><Button onClick={() => openSubject()}>Add Subject</Button></div>
               <DataTable rowKey="code" rows={shownSubjects} emptyMessage="No subjects match these academic filters." columns={[
-                { key: "code", label: "Subject Code" },
+                { key: "code", label: "Subject Code", render: (row) => displaySubjectCode(row.code) },
                 { key: "name", label: "Subject Name" },
                 { key: "department", label: "Department", render: (row) => isOfficial ? row.liveDepartments.length > 1 ? "Multiple departments" : departments.find((item) => item.id === row.department)?.code || "Not placed" : departments.find((item) => item.id === row.department)?.code || (row.department === "SHARED" ? "Shared" : row.department) },
                 { key: "programs", label: isOfficial ? "Curriculum Programs" : "Applicable Programs", render: (row) => (row.programs || [row.program].filter(Boolean)).join(", ") || "Not placed" },
                 { key: "units", label: "Units" },
                 { key: "placement", label: isOfficial ? "Curriculum Placements" : "Suggested Placement", render: (row) => isOfficial ? row.livePlacementLabel : `${row.yearLevel || "Any"} · ${row.semester || "Any"}` },
-                { key: "prerequisites", label: "Prerequisites", render: (row) => isOfficial ? row.livePrerequisitesLabel : row.prerequisites?.join(", ") || "None" },
+                { key: "prerequisites", label: "Prerequisites", render: (row) => isOfficial ? ["Not assigned", "Varies by curriculum"].includes(row.livePrerequisitesLabel) ? row.livePrerequisitesLabel : subjectListLabel(row.livePrerequisitesLabel?.split(", ").filter((code) => code !== "None")) : subjectListLabel(row.prerequisites) },
                 { key: "fee", label: "Estimated Subject Fee", render: (row) => displaySubjectFee(row.units, row.feePerUnit) },
                 { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status || "Active"} /> },
                 { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="edit" disabled={Boolean(isOfficial && row.isProjectOnly)} onClick={() => openSubject(row)}>{isOfficial ? "Edit Catalog / Prerequisites" : "Edit / Prerequisites"}</TableActionButton>{isOfficial && row.isProjectOnly && <TableActionButton tone="view" onClick={() => openSubject(row, true)}>View Details</TableActionButton>}</TableActions> },
@@ -488,7 +495,7 @@ export default function AcademicSetupWorkspace() {
                             <th scope="row" className="academic-version-cell">
                               <button type="button" className="academic-version-toggle" aria-expanded={expanded} aria-controls={yearGroupIds.length ? yearGroupIds.join(" ") : detailsId} onClick={() => setCollapsedCurricula((current) => ({ ...current, [curriculum.id]: !current[curriculum.id] }))}>
                                 <span className={`academic-version-chevron ${expanded ? "is-expanded" : ""}`}><AppIcon name="chevronRight" size={15} /></span>
-                                <span className="academic-curriculum-version">{curriculum.version}{isOfficial && curriculum.isProjectOnly ? " (Project Simulation)" : ""}</span>
+                                <span className="academic-curriculum-version">{curriculumLabel(curriculum)}{isOfficial && curriculum.isProjectOnly ? " (Project Simulation)" : ""}</span>
                               </button>
                             </th>
                             <td className="academic-program-info">
@@ -527,7 +534,7 @@ export default function AcademicSetupWorkspace() {
                             const section = { yearLevel, semester: term };
                             const metrics = summarizeCurriculum(curriculum.assignments || [], subjects, yearLevel, term).selected;
                             return <tr className="academic-semester-row" key={`${curriculum.id}-${yearLevel}-${term}`}>
-                              <td className="academic-curriculum-detail-spacer" colSpan={3} aria-label={`${curriculum.version} semester details`} />
+                              <td className="academic-curriculum-detail-spacer" colSpan={3} aria-label={`${curriculumLabel(curriculum)} semester details`} />
                               {termIndex === 0 && <th className="academic-year-cell" scope="rowgroup" rowSpan={semesters.length}>{yearLevel}</th>}
                               <th scope="row" className="academic-semester-cell">{term}</th>
                               <td className="academic-load-summary">
@@ -568,12 +575,12 @@ export default function AcademicSetupWorkspace() {
         </form>
       </Modal>
 
-      <Modal open={dialog === "subject" || isSubjectView} title={isSubjectView ? `Subject Details · ${selected?.code || ""}` : selected ? `Edit Subject · ${selected.code}` : isLive ? "Add Subject" : "Add Demo Subject"} onClose={closeDialog} className="academic-setup-wide-modal" footer={isSubjectView ? <Button variant="ghost" onClick={closeDialog}>Close</Button> : <><Button variant="ghost" disabled={saving} onClick={closeDialog}>Cancel</Button><Button disabled={saving || isSyntheticDemo} type="submit" form="academic-subject-form">{saving ? "Saving…" : "Save Subject"}</Button></>}>
+      <Modal open={dialog === "subject" || isSubjectView} title={isSubjectView ? `Subject Details · ${displaySubjectCode(selected?.code) || ""}` : selected ? `Edit Subject · ${displaySubjectCode(selected.code)}` : isLive ? "Add Subject" : "Add Demo Subject"} onClose={closeDialog} className="academic-setup-wide-modal" footer={isSubjectView ? <Button variant="ghost" onClick={closeDialog}>Close</Button> : <><Button variant="ghost" disabled={saving} onClick={closeDialog}>Cancel</Button><Button disabled={saving || isSyntheticDemo} type="submit" form="academic-subject-form">{saving ? "Saving…" : "Save Subject"}</Button></>}>
         <form className="academic-editor" id="academic-subject-form" onSubmit={saveSubject}>
           <h3>Subject Information</h3>
           <div className="form-grid">
             {!isOfficial && <label className="field">College Department<select value={subjectForm.department} onChange={(event) => setSubjectForm({ ...subjectForm, department: event.target.value, programs: event.target.value === "SHARED" ? programs.map((item) => item.code) : [], major: "" })}>{departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}<option value="SHARED">General Education (Shared Across Programs)</option></select></label>}
-            <label className="field">Subject Code<input required disabled={Boolean(selected)} value={subjectForm.code} onChange={(event) => setSubjectForm({ ...subjectForm, code: event.target.value.toUpperCase() })} /></label>
+            <label className="field">Subject Code<input required disabled={Boolean(selected)} value={selected ? displaySubjectCode(subjectForm.code) : subjectForm.code} onChange={(event) => setSubjectForm({ ...subjectForm, code: event.target.value.toUpperCase() })} /></label>
             <label className="field full">Subject Name<input required disabled={isSubjectView} value={subjectForm.name} onChange={(event) => setSubjectForm({ ...subjectForm, name: event.target.value })} /></label>
             {!isOfficial && <div className="field full"><span>Applicable Programs</span><div className="academic-check-grid">{subjectPrograms.map((item) => <label key={item.code}><input type="checkbox" disabled={subjectForm.department === "SHARED"} checked={subjectForm.department === "SHARED" || subjectForm.programs.includes(item.code)} onChange={(event) => setSubjectForm({ ...subjectForm, programs: event.target.checked ? [...subjectForm.programs, item.code] : subjectForm.programs.filter((code) => code !== item.code), major: "" })} /> {item.code}</label>)}</div>{subjectForm.department === "SHARED" && <small className="academic-helper">Shared General Education subjects are available to all supported programs.</small>}</div>}
             {!isOfficial && subjectMajorChoices.length > 0 && <label className="field full">Applicable Specialization<select value={subjectForm.major || ""} onChange={(event) => setSubjectForm({ ...subjectForm, major: event.target.value })}><option value="">All Specializations</option>{subjectMajorChoices.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>}
@@ -585,11 +592,11 @@ export default function AcademicSetupWorkspace() {
             <h3>Registered Curriculum Placements and Prerequisites</h3>
             <p className="academic-helper">{isSubjectView ? "Project simulation subject records and their curriculum placements are read only." : "Subjects are shared catalog records. A program, specialization, semester, and prerequisite rule is saved to a specific Draft curriculum in the Curriculum tab. Saving this form changes only the subject catalog."}</p>
             <DataTable rowKey="curriculumId" rows={selected?.livePlacements || []} emptyMessage="This subject has no curriculum placements yet. Save it, then add it to a Draft curriculum." columns={[
-              { key: "curriculumVersion", label: "Curriculum Version", render: (item) => item.curriculumVersion + (item.isProjectOnly ? " (Project Simulation)" : "") },
+              { key: "curriculumVersion", label: "Curriculum Version", render: (item) => curriculumLabel({ id: item.curriculumId, version: item.curriculumVersion }) + (item.isProjectOnly ? " (Project Simulation)" : "") },
               { key: "program", label: "Program" },
               { key: "major", label: "Specialization", render: (item) => item.major || "None" },
               { key: "term", label: "Academic Placement", render: (item) => item.yearLevel + ", " + item.semester },
-              { key: "prerequisites", label: "Prerequisites", render: (item) => item.prerequisites.join(", ") || "None" },
+              { key: "prerequisites", label: "Prerequisites", render: (item) => subjectListLabel(item.prerequisites) },
               { key: "actions", label: "Actions", render: (item) => !isSubjectView && curricula.some((record) => record.id === item.curriculumId && record.status === "Draft" && (!isOfficial || !record.isProjectOnly)) ? <TableActions><TableActionButton tone="edit" onClick={() => editSubjectPlacement(item)}>Edit Draft Rules</TableActionButton></TableActions> : "View only" },
             ]} />
           </> : <>
@@ -603,10 +610,10 @@ export default function AcademicSetupWorkspace() {
           <p className="academic-helper">Only compatible subjects from earlier academic semesters are available for the selected programs and suggested placement.</p>
           <div className="academic-choices" role="group" aria-label="Eligible earlier prerequisite subjects">
             {prerequisiteCandidates.length ? prerequisiteCandidates.map((item) => (
-              <label key={item.code}><input type="checkbox" checked={subjectForm.prerequisites.includes(item.code)} onChange={(event) => setSubjectForm({ ...subjectForm, prerequisites: event.target.checked ? [...new Set([...subjectForm.prerequisites, item.code])] : subjectForm.prerequisites.filter((code) => code !== item.code) })} /> {item.code} · {item.name} ({item.yearLevel}, {item.semester})</label>
+              <label key={item.code}><input type="checkbox" checked={subjectForm.prerequisites.includes(item.code)} onChange={(event) => setSubjectForm({ ...subjectForm, prerequisites: event.target.checked ? [...new Set([...subjectForm.prerequisites, item.code])] : subjectForm.prerequisites.filter((code) => code !== item.code) })} /> {displaySubjectCode(item.code)} · {item.name} ({item.yearLevel}, {item.semester})</label>
             )) : <span className="academic-helper">No compatible earlier subjects match this academic context or search.</span>}
           </div>
-          <p className="academic-helper">{subjectForm.prerequisites.length} selected prerequisites: {subjectForm.prerequisites.join(", ") || "None"}. Invalid or circular relationships are checked again when saved.</p>
+          <p className="academic-helper">{subjectForm.prerequisites.length} selected prerequisites: {subjectListLabel(subjectForm.prerequisites)}. Invalid or circular relationships are checked again when saved.</p>
           </>}
           <h3>Estimated Tuition From Units</h3>
           <div className="form-grid">
@@ -623,7 +630,7 @@ export default function AcademicSetupWorkspace() {
             <label className="field">Department<select disabled={Boolean(selected)} value={curriculumForm.department} onChange={(event) => { const nextPrograms = programs.filter((item) => item.department === event.target.value); setCurriculumForm({ ...curriculumForm, department: event.target.value, program: nextPrograms[0]?.code || "", major: "" }); setChosenSubjects({}); }}>{departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <label className="field">Academic Program<select disabled={Boolean(selected)} value={curriculumForm.program} onChange={(event) => { setCurriculumForm({ ...curriculumForm, program: event.target.value, major: "" }); setChosenSubjects({}); }}>{programs.filter((item) => item.department === curriculumForm.department).map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}</select></label>
             {curriculumMajors.length > 0 && <label className="field">Major or Specialization<select required disabled={Boolean(selected)} value={curriculumForm.major || ""} onChange={(event) => { setCurriculumForm({ ...curriculumForm, major: event.target.value }); setChosenSubjects({}); }}><option value="">Select Major</option>{curriculumMajors.map((value) => <option key={value}>{value}</option>)}</select></label>}
-            <label className="field">Curriculum Version<input required disabled={Boolean(selected)} value={curriculumForm.version} onChange={(event) => setCurriculumForm({ ...curriculumForm, version: event.target.value })} /></label>
+            <label className="field">Curriculum Version<input required disabled={Boolean(selected)} value={selected ? curriculumLabel({ id: curriculumForm.id, version: curriculumForm.version }) : curriculumForm.version} onChange={(event) => setCurriculumForm({ ...curriculumForm, version: event.target.value })} /></label>
             <label className="field">Effective Academic Year<select disabled={dialog === "curriculum-view"} value={curriculumForm.effectiveAcademicYear} onChange={(event) => setCurriculumForm({ ...curriculumForm, effectiveAcademicYear: event.target.value })}>{MOCK_ACADEMIC_YEARS.map((value) => <option key={value}>{value}</option>)}</select></label>
             <Info label="Curriculum Status" value={curriculumForm.status || "Draft"} />
           </div>
@@ -653,21 +660,21 @@ export default function AcademicSetupWorkspace() {
                       {candidates.length ? candidates.map((item) => <label key={item.code}><input type="checkbox" checked={choices.includes(item.code)} onChange={(event) => {
                         setActiveSemester(section.key);
                         setChosenSubjects((current) => ({ ...current, [section.key]: event.target.checked ? [...new Set([...(current[section.key] || []), item.code])] : (current[section.key] || []).filter((code) => code !== item.code) }));
-                      }} /> <span>{item.code} · {item.name} ({item.units} units, {displaySubjectFee(item.units, item.feePerUnit)} estimate)</span></label>) : <span className="academic-helper">No compatible unassigned subjects for this semester. Try another search or review subject placement in the catalog.</span>}
+                      }} /> <span>{displaySubjectCode(item.code)} · {item.name} ({item.units} units, {displaySubjectFee(item.units, item.feePerUnit)} estimate)</span></label>) : <span className="academic-helper">No compatible unassigned subjects for this semester. Try another search or review subject placement in the catalog.</span>}
                     </div>
                     <div className="academic-selector-actions"><span>{choices.length} selected</span><Button variant="ghost" disabled={!choices.length} onClick={() => setChosenSubjects((current) => ({ ...current, [section.key]: [] }))}>Clear Selection</Button><Button disabled={!choices.length} onClick={() => addSubjects(section)}>Add Selected Subjects</Button></div>
                   </div>}
                   <div className="academic-assignment-table">
                     <DataTable rowKey="subjectCode" rows={assignments} emptyMessage="No subjects assigned to this semester." columns={[
-                      { key: "subjectCode", label: "Code" },
+                      { key: "subjectCode", label: "Code", render: (item) => displaySubjectCode(item.subjectCode) },
                       { key: "name", label: "Subject Name", render: (item) => subjects.find((subject) => subject.code === item.subjectCode)?.name || "Missing subject" },
                       { key: "units", label: "Units", render: (item) => subjects.find((subject) => subject.code === item.subjectCode)?.units ?? 0 },
-                      { key: "prerequisites", label: "Prerequisites", render: (item) => <div><span>{(item.prerequisites || []).join(", ") || "None"}</span>
-                        {dialog === "curriculum" && <details className="academic-prerequisite-details"><summary>Edit prerequisites</summary><div className="academic-choices">{curriculumForm.assignments.filter((assigned) => semesterIndex(assigned.yearLevel, assigned.semester) < semesterIndex(item.yearLevel, item.semester)).map((entry) => <label key={entry.subjectCode}><input type="checkbox" checked={(item.prerequisites || []).includes(entry.subjectCode)} onChange={() => updateAssignmentPrerequisite(item.subjectCode, entry.subjectCode)} />{entry.subjectCode}</label>)}</div></details>}
+                      { key: "prerequisites", label: "Prerequisites", render: (item) => <div><span>{subjectListLabel(item.prerequisites)}</span>
+                        {dialog === "curriculum" && <details className="academic-prerequisite-details"><summary>Edit prerequisites</summary><div className="academic-choices">{curriculumForm.assignments.filter((assigned) => semesterIndex(assigned.yearLevel, assigned.semester) < semesterIndex(item.yearLevel, item.semester)).map((entry) => <label key={entry.subjectCode}><input type="checkbox" checked={(item.prerequisites || []).includes(entry.subjectCode)} onChange={() => updateAssignmentPrerequisite(item.subjectCode, entry.subjectCode)} />{displaySubjectCode(entry.subjectCode)}</label>)}</div></details>}
                       </div> },
-                      { key: "feePerUnit", label: isOfficial ? "Reference Rate Per Unit" : "Demo Rate Per Unit", render: (item) => dialog === "curriculum" && !isOfficial ? <input className="academic-rate-input" type="number" min="0" step="0.01" aria-label={`Demo fee per unit for ${item.subjectCode}`} value={item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit ?? 100} onFocus={() => setActiveSemester(section.key)} onChange={(event) => updateAssignment(item.subjectCode, { feePerUnit: Number(event.target.value) })} /> : isOfficial && (item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit) == null ? "No estimate configured" : formatDemoPeso(item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit ?? 100) },
+                      { key: "feePerUnit", label: isOfficial ? "Reference Rate Per Unit" : "Demo Rate Per Unit", render: (item) => dialog === "curriculum" && !isOfficial ? <input className="academic-rate-input" type="number" min="0" step="0.01" aria-label={`Demo fee per unit for ${displaySubjectCode(item.subjectCode)}`} value={item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit ?? 100} onFocus={() => setActiveSemester(section.key)} onChange={(event) => updateAssignment(item.subjectCode, { feePerUnit: Number(event.target.value) })} /> : isOfficial && (item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit) == null ? "No estimate configured" : formatDemoPeso(item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit ?? 100) },
                       { key: "tuition", label: "Estimated Fee", render: (item) => displaySubjectFee(item.unitsOverride ?? subjects.find((subject) => subject.code === item.subjectCode)?.units, item.feePerUnit ?? subjects.find((subject) => subject.code === item.subjectCode)?.feePerUnit) },
-                      ...(dialog === "curriculum" ? [{ key: "actions", label: "Actions", render: (item) => <div className="academic-assignment-actions"><label>Move to <select aria-label={`Move ${item.subjectCode} to semester`} value={semesterKey(item.yearLevel, item.semester)} onChange={(event) => {
+                      ...(dialog === "curriculum" ? [{ key: "actions", label: "Actions", render: (item) => <div className="academic-assignment-actions"><label>Move to <select aria-label={`Move ${displaySubjectCode(item.subjectCode)} to semester`} value={semesterKey(item.yearLevel, item.semester)} onChange={(event) => {
                         const destination = semesterSections.find((option) => option.key === event.target.value);
                         if (destination) { updateAssignment(item.subjectCode, { yearLevel: destination.yearLevel, semester: destination.semester }); setActiveSemester(destination.key); }
                       }}>{semesterSections.map((option) => <option key={option.key} value={option.key}>{option.yearLevel} · {option.semester}</option>)}</select></label><TableActions>{(!isOfficial || !selected?.assignments?.some((entry) => entry.subjectCode === item.subjectCode)) && <TableActionButton tone="danger" onClick={() => removeAssignment(item.subjectCode)}>Remove</TableActionButton>}</TableActions></div> }] : []),
@@ -681,14 +688,14 @@ export default function AcademicSetupWorkspace() {
           <p className="academic-helper">{isOfficial ? "Only Draft versions with no student or enrollment assignments can be edited. Existing Draft subject placements are retained by the database history guard. Create a separate curriculum to plan a different subject set." : "Only Draft versions can be edited. Duplicate any other version and modify the resulting Draft."}</p>
         </form>
       </Modal>
-      <Modal open={Boolean(semesterDetails)} title={semesterDetails ? `${semesterDetails.curriculum.version} · ${semesterDetails.section.yearLevel}, ${semesterDetails.section.semester}` : "Semester Subjects"} onClose={() => setSemesterDetails(null)} className="academic-setup-wide-modal" footer={<Button variant="ghost" onClick={() => setSemesterDetails(null)}>Close</Button>}>
+      <Modal open={Boolean(semesterDetails)} title={semesterDetails ? `${curriculumLabel(semesterDetails.curriculum)} · ${semesterDetails.section.yearLevel}, ${semesterDetails.section.semester}` : "Semester Subjects"} onClose={() => setSemesterDetails(null)} className="academic-setup-wide-modal" footer={<Button variant="ghost" onClick={() => setSemesterDetails(null)}>Close</Button>}>
         {semesterDetails && <div className="academic-editor">
           <p className="academic-helper">Read only semester assignments for {semesterDetails.curriculum.program}. All tuition values are demo estimates.</p>
           <DataTable rowKey="subjectCode" rows={semesterDetails.curriculum.assignments.filter((item) => item.yearLevel === semesterDetails.section.yearLevel && item.semester === semesterDetails.section.semester)} emptyMessage="No subjects assigned to this semester." columns={[
-            { key: "subjectCode", label: "Code" },
+            { key: "subjectCode", label: "Code", render: (item) => displaySubjectCode(item.subjectCode) },
             { key: "name", label: "Subject Name", render: (item) => subjects.find((subject) => subject.code === item.subjectCode)?.name || "Missing subject" },
             { key: "units", label: "Units", render: (item) => subjects.find((subject) => subject.code === item.subjectCode)?.units ?? 0 },
-            { key: "prerequisites", label: "Prerequisites", render: (item) => (item.prerequisites || []).join(", ") || "None" },
+            { key: "prerequisites", label: "Prerequisites", render: (item) => subjectListLabel(item.prerequisites) },
             { key: "fee", label: "Estimated Fee", render: (item) => { const subject = subjects.find((entry) => entry.code === item.subjectCode); return displaySubjectFee(item.unitsOverride ?? subject?.units, item.feePerUnit ?? subject?.feePerUnit); } },
             { key: "placement", label: "Academic Placement", render: (item) => `${item.yearLevel}, ${item.semester}` },
           ]} />
@@ -697,9 +704,9 @@ export default function AcademicSetupWorkspace() {
       </Modal>
       <Modal open={Boolean(versionConfirmation)} title={versionConfirmation ? `${CONFIRMABLE_CURRICULUM_ACTIONS[versionConfirmation.action].label} Curriculum Version` : "Confirm Curriculum Action"} onClose={closeVersionConfirmation} className="academic-lifecycle-modal" footer={<><Button variant="ghost" disabled={versionBusy} onClick={closeVersionConfirmation}>Cancel</Button><Button disabled={versionBusy} onClick={() => versionConfirmation && manageVersion(versionConfirmation.action, versionConfirmation.curriculum)}>{versionBusy ? "Processing…" : `Confirm ${versionConfirmation ? CONFIRMABLE_CURRICULUM_ACTIONS[versionConfirmation.action].label : "Action"}`}</Button></>}>
         {versionConfirmation && <div className="academic-lifecycle-confirmation">
-          <p><strong>{versionConfirmation.curriculum.version}</strong> ({versionConfirmation.curriculum.program}{versionConfirmation.curriculum.major ? ` · ${versionConfirmation.curriculum.major}` : ""}) will change from <strong>{versionConfirmation.curriculum.status}</strong> to <strong>{CONFIRMABLE_CURRICULUM_ACTIONS[versionConfirmation.action].to}</strong>.</p>
+          <p><strong>{curriculumLabel(versionConfirmation.curriculum)}</strong> ({versionConfirmation.curriculum.program}{versionConfirmation.curriculum.major ? ` · ${versionConfirmation.curriculum.major}` : ""}) will change from <strong>{versionConfirmation.curriculum.status}</strong> to <strong>{CONFIRMABLE_CURRICULUM_ACTIONS[versionConfirmation.action].to}</strong>.</p>
           {versionConfirmation.action === "activate" && <>
-            {activeForConfirmation ? <p className="academic-lifecycle-warning" role="note"><strong>Current Active: {activeForConfirmation.version}.</strong> Confirming will automatically change this version to Inactive while activating {versionConfirmation.curriculum.version} for the same program and major.</p> : <p className="academic-lifecycle-note">This version will become the Active curriculum for its program and major.</p>}
+            {activeForConfirmation ? <p className="academic-lifecycle-warning" role="note"><strong>Current Active: {curriculumLabel(activeForConfirmation)}.</strong> Confirming will automatically change this version to Inactive while activating {curriculumLabel(versionConfirmation.curriculum)} for the same program and major.</p> : <p className="academic-lifecycle-note">This version will become the Active curriculum for its program and major.</p>}
             <p className="academic-helper">All required semesters and subjects will be validated again before activation. Existing students retain their assigned curriculum versions.</p>
           </>}
           {versionConfirmation.action === "deactivate" && <p className="academic-lifecycle-warning" role="note"><strong>Enrollment setup warning:</strong> Deactivating this Active version will leave {versionConfirmation.curriculum.program}{versionConfirmation.curriculum.major ? ` · ${versionConfirmation.curriculum.major}` : ""} without an Active curriculum until another validated version is activated. Students already assigned to this version retain it.</p>}
@@ -708,7 +715,7 @@ export default function AcademicSetupWorkspace() {
           {versionActionError && <p className="academic-lifecycle-error" role="alert">{versionActionError}</p>}
         </div>}
       </Modal>
-      <Modal open={Boolean(curriculumHistory)} title={curriculumHistory ? `Version History · ${curriculumHistory.version}` : "Version History"} onClose={() => setCurriculumHistory(null)} className="academic-setup-wide-modal" footer={<Button variant="ghost" onClick={() => setCurriculumHistory(null)}>Close</Button>}>
+      <Modal open={Boolean(curriculumHistory)} title={curriculumHistory ? `Version History · ${curriculumLabel(curriculumHistory)}` : "Version History"} onClose={() => setCurriculumHistory(null)} className="academic-setup-wide-modal" footer={<Button variant="ghost" onClick={() => setCurriculumHistory(null)}>Close</Button>}>
         {curriculumHistory && <>
           {isLive && !isSyntheticDemo && <p className="academic-helper">This preview includes the 100 most recent academic changes. For older records, search Academic Change History under Reports & Monitoring.</p>}
           <DataTable rowKey="id" rows={(academicCoordinatorData.history || []).filter((entry) => entry.module === "Academic Setup" && (entry.recordId === curriculumHistory.id || entry.record === curriculumHistory.version || entry.previousValue === curriculumHistory.version || entry.newValue === curriculumHistory.version || entry.relatedCurriculum === curriculumHistory.version))} emptyMessage={isLive && !isSyntheticDemo ? "No matching version events in the recent history preview." : "No recorded demo history for this curriculum version."} columns={[

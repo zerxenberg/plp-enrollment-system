@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
+import { displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { getTrackCode } from "@/features/block-planning/block-planning-seed";
 import { getMeetingConflict, summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
 import { Details, Feedback, Metric } from "@/components/registrar/RegistrarShared";
@@ -21,6 +22,11 @@ const year = (value) => Number(String(value || "").match(/[1-4]/)?.[0]) || 1;
 const locked = (item) => Boolean(item?.registrarConfirmed || item?.isConfirmed || ["PUBLISHED", "CONFIRMED", "FINALIZED", "ARCHIVED"].includes(String(item?.status || "").toUpperCase()));
 const nameOf = (item) => item?.fullName || item?.name || item?.studentNumber || "Unknown";
 const options = (items, value, label) => items.map((item) => ({ value: value(item), label: label(item) }));
+const curriculumLabel = (curriculum) => {
+  const source = { code: curriculum?.id, name: curriculum?.version || curriculum?.name };
+  const label = displayCurriculumName(source);
+  return typeof label === "string" ? label : source.name || source.code || "";
+};
 const timeLabel = (value) => {
   if (!value) return "Not scheduled";
   const match = String(value).match(/^(\d\d?):(\d\d)/);
@@ -40,7 +46,7 @@ function SelectField({ value, onChange, choices, placeholder, required, disabled
 function MeetingSubject({ item, classes, subjects }) {
   const entry = classes.find((row) => row.id === item.subjectClassId);
   const subject = subjects.find((row) => row.code === entry?.subjectCode);
-  return <>{entry?.subjectCode || "Unknown"}{subject?.name ? " · " + subject.name : ""}</>;
+  return <>{displaySubjectCode(entry?.subjectCode) || "Unknown"}{subject?.name ? " · " + subject.name : ""}</>;
 }
 
 export default function AcademicCoordinatorSectionsSchedules() {
@@ -310,7 +316,10 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 </div>
               </div> },
               { key: "termId", label: "Academic Term", render: termLabel },
-              { key: "curriculum", label: "Curriculum", render: (item) => curriculumOf(item)?.version || curriculumOf(item)?.name || "Not assigned" },
+              { key: "curriculum", label: "Curriculum", render: (item) => {
+                const curriculum = curriculumOf(item);
+                return curriculum ? curriculumLabel(curriculum) : "Not assigned";
+              } },
               { key: "capacity", label: "Capacity Summary", render: (item) => <dl className="block-section-capacity">
                 <div className="block-section-capacity-item"><dt>Capacity</dt><dd>{item.capacity}</dd></div>
                 <div className="block-section-capacity-item"><dt>Proposed</dt><dd>{countStatus(item.id, "PROPOSED")}</dd></div>
@@ -357,7 +366,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             </div>
             <h3 className="block-title">Subject Classes</h3>
             <DataTable rowKey="id" rows={chosenClasses} emptyMessage="No subject classes are assigned to this block." columns={[
-              { key: "subjectCode", label: "Subject", render: (item) => item.subjectCode + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject") },
+              { key: "subjectCode", label: "Subject", render: (item) => displaySubjectCode(item.subjectCode) + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject") },
               { key: "professorId", label: "Professor", render: (item) => nameOf(professors.find((entry) => entry.id === item.professorId)) },
               { key: "meetingCount", label: "Weekly Meetings", render: (item) => chosenMeetings.filter((entry) => entry.subjectClassId === item.id).length },
               { key: "actions", label: "Actions", render: (item) => <TableActions><TableActionButton tone="schedule" disabled={isSyntheticDemo || protectedRecord(chosen)} onClick={() => editMeeting(null, item)}>Add Meeting</TableActionButton></TableActions> },
@@ -416,7 +425,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 letter: nextLetter(current.programCode, value, current.yearLevel, current.termId) };
             })} /></Field>}
           <Field label="Active Curriculum Version"><SelectField required disabled={Boolean(sectionId)} value={sectionForm.curriculumId} placeholder="Select active curriculum"
-            choices={options(availableCurricula, (item) => item.id, (item) => item.version || item.id)}
+            choices={options(availableCurricula, (item) => item.id, curriculumLabel)}
             onChange={(value) => setSectionForm((current) => ({ ...current, curriculumId: value }))} /></Field>
           <Field label="Year Level"><SelectField disabled={Boolean(sectionId)} value={String(sectionForm.yearLevel)}
             choices={options(YEARS, String, (item) => "Year " + item)}
@@ -435,7 +444,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <ul>
               {rows(formCurriculum?.assignments).filter((item) => year(item.yearLevel) === year(sectionForm.yearLevel)
                 && item.semester === terms.find((entry) => entry.id === sectionForm.termId)?.semester)
-                .map((item) => <li key={item.subjectCode}>{item.subjectCode} · {subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"}</li>)}
+                .map((item) => <li key={item.subjectCode}>{displaySubjectCode(item.subjectCode)} · {subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"}</li>)}
             </ul>
           </div>
           {formError && <p className="block-error" role="alert">{formError}</p>}
@@ -450,7 +459,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             ["Program", section.programCode + (section.major ? " · " + section.major : "")],
             ["Academic Term", termLabel(section)],
             ["Year Level", "Year " + year(section.yearLevel)],
-            ["Curriculum", curriculumOf(section)?.version || "Not assigned"],
+            ["Curriculum", curriculumOf(section) ? curriculumLabel(curriculumOf(section)) : "Not assigned"],
             ["Status", section.status],
             ["Capacity", section.capacity],
             ["Proposed Assignments", countStatus(section.id, "PROPOSED")],
@@ -460,7 +469,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
           <h3 className="block-title">Curriculum Subjects</h3>
           <DataTable rowKey="subjectCode" rows={curriculumSubjects(section)} emptyMessage="No subject allocations match the current curriculum and term."
             columns={[
-              { key: "subjectCode", label: "Subject Code" },
+              { key: "subjectCode", label: "Subject Code", render: (item) => displaySubjectCode(item.subjectCode) },
               { key: "subjectName", label: "Subject Name", render: (item) => subjects.find((row) => row.code === item.subjectCode)?.name || "Subject" },
               { key: "units", label: "Units", render: (item) => subjects.find((row) => row.code === item.subjectCode)?.units ?? "Not specified" },
             ]} />
@@ -541,7 +550,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
         footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button disabled={isSyntheticDemo || protectedRecord(chosen)} type="submit" form="block-meeting-form">Check Conflicts & Save</Button></>}>
         <form id="block-meeting-form" className="form-grid" onSubmit={saveMeeting}>
           <Field label="Subject Class"><SelectField required value={meetingForm.subjectClassId} onChange={(value) => setMeetingForm((current) => ({ ...current, subjectClassId: value, professorId: classes.find((entry) => entry.id === value)?.professorId || "" }))}
-            choices={options(chosenClasses, (item) => item.id, (item) => item.subjectCode + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"))} /></Field>
+            choices={options(chosenClasses, (item) => item.id, (item) => displaySubjectCode(item.subjectCode) + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"))} /></Field>
           <div className="field"><label htmlFor="block-professor-filter">{isLive && !isSyntheticDemo ? "Professor" : "Qualified Professor"}</label>
             <input id="block-professor-filter" type="search" aria-label="Search qualified professors" placeholder="Filter qualified professors"
               value={professorSearch} onChange={(event) => setProfessorSearch(event.target.value)} />
@@ -565,7 +574,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
       <Modal open={dialog === "meeting-details" && Boolean(meeting)} title="Meeting Details" onClose={close}
         footer={<Button variant="ghost" onClick={close}>Close</Button>}>
         {meeting && <Details items={[
-          ["Subject", classes.find((entry) => entry.id === meeting.subjectClassId)?.subjectCode],
+          ["Subject", displaySubjectCode(classes.find((entry) => entry.id === meeting.subjectClassId)?.subjectCode)],
           ["Day", meeting.day],
           ["Time", timeLabel(meeting.start) + " to " + timeLabel(meeting.end)],
           ["Professor", nameOf(professors.find((entry) => entry.id === classes.find((cls) => cls.id === meeting.subjectClassId)?.professorId))],

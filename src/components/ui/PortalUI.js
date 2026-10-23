@@ -5,6 +5,18 @@ import AppIcon from "@/components/ui/AppIcon";
 import { getStatusLabel } from "@/constants/statuses";
 import Topbar from "@/components/layout/Topbar";
 import { PortalHeaderContext } from "@/components/layout/PortalHeaderContext";
+import {
+  displayCurriculumCode,
+  displayCurriculumName,
+  displaySubjectCode,
+} from "@/features/academic/project-academic-display-aliases.mjs";
+
+// Presentation only. All row keys, field values and callbacks retain the
+// canonical database identifiers. Only known PROJECT_ONLY aliases change.
+function academicDisplayText(value) {
+  if (typeof value !== "string") return value;
+  return displayCurriculumName(displayCurriculumCode(displaySubjectCode(value)));
+}
 
 export function Card({ children, className = "", as: Tag = "section" }) {
   return <Tag className={`portal-card ${className}`}>{children}</Tag>;
@@ -142,7 +154,7 @@ export function FilterControl({ label, value, onChange, options }) {
     <label className="control-field select-field">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        {options.map((option) => <option key={option.value} value={option.value}>{academicDisplayText(option.label)}</option>)}
       </select>
     </label>
   );
@@ -227,7 +239,7 @@ export function DataTable({
                     className={column.key === "actions" || (column.key === "action" && column.render) ? "table-actions-cell" : undefined}
                     key={column.key}
                   >
-                    {column.render ? column.render(row) : row[column.key]}
+                    {column.render ? column.render(row) : academicDisplayText(row[column.key])}
                   </td>
                 ))}
               </tr>

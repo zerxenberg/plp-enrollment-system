@@ -9,6 +9,7 @@ import { Panel, Tabs, Info, Details, Feedback } from "./RegistrarShared";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
 import RegistrarProjectSimulationQueue from "./RegistrarProjectSimulationQueue";
+import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const QUEUES = [
   {value:"ALL",label:"All"}, {value:"PENDING",label:"Pending (Submitted)"},
@@ -134,13 +135,13 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
           <Info label="Student Number" value={enrollment.studentNumber} />
           <Info label="Student" value={enrollment.studentName} />
           <Info label="Program" value={enrollment.program} />
-          <Info label="Curriculum" value={enrollment.curriculum} />
+          <Info label="Curriculum" value={displayCurriculumCode(enrollment.curriculum)} />
           <Info label="Academic Term" value={enrollment.term} />
           <Info label="Total Units" value={enrollment.units} />
           <div className="info-item"><span>Current Enrollment Status</span><strong><StatusBadge value={enrollment.status} /></strong></div>
           <Info label="Submitted" value={enrollment.submittedDate} />
         </div>
-        {detailTab === "subjects" ? <DataTable rowKey="code" rows={enrollment.subjects} columns={[{key:"code",label:"Subject Code"},{key:"name",label:"Subject Name"},{key:"units",label:"Units"},{key:"section",label:"Section"},{key:"schedule",label:"Schedule"},{key:"room",label:"Room"}]} /> : null}
+        {detailTab === "subjects" ? <DataTable rowKey="code" rows={enrollment.subjects} columns={[{key:"code",label:"Subject Code",render:(row)=>displaySubjectCode(row.code)},{key:"name",label:"Subject Name",render:(row)=>displaySubjectCode(row.name)},{key:"units",label:"Units"},{key:"section",label:"Section"},{key:"schedule",label:"Schedule"},{key:"room",label:"Room"}]} /> : null}
         {detailTab === "validation" ? <>
           <div className="notice" style={{marginBottom:12}}>Demo validation uses the existing record validation preset. It does not independently verify live academic or section data.</div>
           <DataTable rowKey="rule" rows={CHECKS.map((rule) => ({rule,result:validationResult}))} columns={[{key:"rule",label:"Rule"},{key:"result",label:"Demo Validation Result",render:(row)=><StatusBadge value={row.result} />}]} />

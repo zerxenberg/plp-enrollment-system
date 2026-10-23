@@ -6,6 +6,7 @@ import { downloadGradeTemplate, GRADE_IMPORT_HEADERS, GRADE_IMPORT_SCOPE, parseG
 import { Button, DataTable, FilterControl, InternalTabs, Modal, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
 import { Feedback, Info, Metric, Panel } from "./RegistrarShared";
 import RegistrarGradeUploadPicker from "./RegistrarGradeUploadPicker";
+import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const INNER_TABS = [
   { value: "overview", label: "Overview" },
@@ -142,7 +143,7 @@ function ImportRowTable({ batch, onAmend, published = false, displayedRows }) {
       columns={[
         { key: "row", label: "Row", render: (row) => rowNumber(row, originalRows.indexOf(row)) },
         { key: "student", label: "Student", render: (row) => <><strong>{studentNumber(row)}</strong><div>{studentName(row)}</div></> },
-        { key: "subject", label: "Subject / Section", render: (row) => <>{row.subject_code || batch?.scope?.subjectCode || ""}<div>{row.section_code || batch?.scope?.sectionCode || ""}</div></> },
+        { key: "subject", label: "Subject / Section", render: (row) => <>{displaySubjectCode(row.subject_code || batch?.scope?.subjectCode || "")}<div>{row.section_code || batch?.scope?.sectionCode || ""}</div></> },
         { key: "grade", label: "Grade", render: gradeValue },
         { key: "completion", label: "Completion", render: (row) => <StatusBadge value={completionStatus(row)} /> },
         { key: "source", label: "Source Ref.", render: sourceReference },
@@ -164,7 +165,7 @@ function ImportRowTable({ batch, onAmend, published = false, displayedRows }) {
           <Info label="Spreadsheet Row" value={rowNumber(detailRow, originalRows.indexOf(detailRow))} />
           <Info label="Student Number" value={studentNumber(detailRow)} />
           <Info label="Student Name" value={studentName(detailRow)} />
-          <Info label="Subject Code" value={detailRow.subject_code || batch?.scope?.subjectCode} />
+          <Info label="Subject Code" value={displaySubjectCode(detailRow.subject_code || batch?.scope?.subjectCode)} />
           <Info label="Subject Name" value={detailRow.Subject_name || batch?.scope?.subjectName} />
           <Info label="Academic Year" value={detailRow.academic_year || batch?.scope?.academicYear} />
           <Info label="Semester" value={detailRow.semester || batch?.scope?.semester} />
@@ -364,7 +365,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
   const historyBatches = orderedBatches.filter((batch) =>
     (historyStatus === "ALL" || (historyStatus === "PUBLISHED" && isPublished(batch)) ||
       (historyStatus === "CANCELLED" && isCancelled(batch)) || (historyStatus === "OTHER" && isEditable(batch))) &&
-    `${batchReference(batch)} ${batch.filename || ""} ${batch.scope?.subjectCode || ""} ${batch.status || ""}`.toLowerCase().includes(historySearch.toLowerCase())
+    `${batchReference(batch)} ${batch.filename || ""} ${batch.scope?.subjectCode || ""} ${displaySubjectCode(batch.scope?.subjectCode || "")} ${batch.status || ""}`.toLowerCase().includes(historySearch.toLowerCase())
   );
   const summary = {
     total: batches.length,
@@ -394,7 +395,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
               columns={[
                 { key: "reference", label: "Batch Reference", render: batchReference },
                 { key: "term", label: "Academic Term", render: (batch) => [batch.scope?.semester, batch.scope?.academicYear].filter(Boolean).join(" · ") },
-                { key: "subject", label: "Subject", render: (batch) => <>{batch.scope?.subjectCode}<div>{batch.scope?.subjectName}</div></> },
+                { key: "subject", label: "Subject", render: (batch) => <>{displaySubjectCode(batch.scope?.subjectCode)}<div>{batch.scope?.subjectName}</div></> },
                 { key: "section", label: "Section", render: (batch) => batch.scope?.sectionCode || "Not recorded" },
                 { key: "faculty", label: "Faculty Source", render: (batch) => batch.scope?.facultyMember || "Not recorded" },
                 { key: "count", label: "Grade Rows", render: (batch) => batch.rows?.length || 0 },
@@ -469,7 +470,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
           columns={[
             { key: "reference", label: "Batch Ref.", render: batchReference },
             { key: "filename", label: "File" },
-            { key: "subject", label: "Subject / Section", render: (batch) => `${batch.scope?.subjectCode || ""} · ${batch.scope?.sectionCode || ""}` },
+            { key: "subject", label: "Subject / Section", render: (batch) => `${displaySubjectCode(batch.scope?.subjectCode || "")} · ${batch.scope?.sectionCode || ""}` },
             { key: "count", label: "Rows", render: (batch) => batch.rows?.length || 0 },
             { key: "status", label: "Status", render: (batch) => <StatusBadge value={batch.status} /> },
             { key: "created", label: "Uploaded", render: (batch) => displayDate(batch.createdAt) },
@@ -500,7 +501,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
             <Info label="Academic Year" value={selected.scope?.academicYear} />
             <Info label="Semester" value={selected.scope?.semester} />
             <Info label="Program" value={selected.scope?.program} />
-            <Info label="Subject / Section" value={`${selected.scope?.subjectCode || ""} · ${selected.scope?.sectionCode || ""}`} />
+            <Info label="Subject / Section" value={`${displaySubjectCode(selected.scope?.subjectCode || "")} · ${selected.scope?.sectionCode || ""}`} />
             <Info label="Faculty Member" value={selected.scope?.facultyMember} />
             <Info label="Demo Source Reference" value={selected.scope?.sourceReference} />
           </div>
@@ -576,7 +577,7 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
       <DataTable rows={historyBatches} rowKey="id" emptyMessage="No grade imports match the history filters."
         columns={[
           { key: "batch", label: "Batch", render: batchReference },
-          { key: "file", label: "File / Subject", render: (batch) => <>{batch.filename}<div>{batch.scope?.subjectCode} · {batch.scope?.sectionCode}</div></> },
+          { key: "file", label: "File / Subject", render: (batch) => <>{batch.filename}<div>{displaySubjectCode(batch.scope?.subjectCode)} · {batch.scope?.sectionCode}</div></> },
           { key: "rows", label: "Rows", render: (batch) => batch.rows?.length || 0 },
           { key: "status", label: "Status", render: (batch) => <StatusBadge value={batch.status} /> },
           { key: "date", label: "Uploaded / Published", render: (batch) => <>{displayDate(batch.createdAt)}<div>{batch.publishedAt ? displayDate(batch.publishedAt) : ""}</div></> },

@@ -16,6 +16,7 @@ import { Tabs, Details, Feedback, Info } from "@/components/registrar/RegistrarS
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { loadAuthorizedAcademicReviewCases } from "@/features/academic/academic-review-cases";
+import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import {
   ACADEMIC_REVIEW_STATUS,
   canDecideAcademicReview,
@@ -65,7 +66,7 @@ function getReviewSubject(record) {
 function getReviewScope(record) {
   const scope = `Student ${record.academicReviewScope?.studentReference || record.studentNumber}, enrollment ${record.academicReviewScope?.enrollmentReference || record.reference}`;
   return getReviewSubject(record) === "Not specified" ? `${scope}; no specific subject recorded`
-    : `${scope}, subject ${getReviewSubject(record)} only`;
+    : `${scope}, subject ${displaySubjectCode(getReviewSubject(record))} only`;
 }
 
 function getFailedRule(record) {
@@ -79,7 +80,7 @@ function getAcademicIssue(record) {
   if (record.academicIssue) return record.academicIssue;
   if (record.failedAcademicRule) return record.failedAcademicRule;
   if (record.correctionReason) return record.correctionReason;
-  return `Academic review requested for ${getReviewSubject(record)}; specific exception reason was not supplied.`;
+  return `Academic review requested for ${displaySubjectCode(getReviewSubject(record))}; specific exception reason was not supplied.`;
 }
 
 function getCaseSnapshot(record) {
@@ -172,7 +173,7 @@ export default function AcademicCoordinatorAcademicReview() {
       if (!query) return true;
       const searchable = [
         toCaseReference(record), record.reference, record.studentNumber, record.studentName,
-        record.program, getSubjectCodes(record), getReviewSubject(record), getAcademicIssue(record), getReviewStatus(record),
+        record.program, getSubjectCodes(record), getReviewSubject(record), displaySubjectCode(getReviewSubject(record)), getAcademicIssue(record), getReviewStatus(record),
         record.academicReviewReason, record.academicReviewCoordinator, record.academicReviewDate,
       ];
       return searchable.some((value) => String(value || "").toLowerCase().includes(query));
@@ -191,7 +192,7 @@ export default function AcademicCoordinatorAcademicReview() {
   const applicablePrerequisites = current?.subjects?.flatMap((item) => {
     if (current.reviewId && item.code !== current.academicReviewSubjectCode) return [];
     const subject = subjectCatalog.get(item.code);
-    return (subject?.prerequisites || []).map((prerequisite) => `${item.code}: ${prerequisite}`);
+    return (subject?.prerequisites || []).map((prerequisite) => `${displaySubjectCode(item.code)}: ${displaySubjectCode(prerequisite)}`);
   }) || [];
 
   useEffect(() => {
@@ -333,7 +334,7 @@ export default function AcademicCoordinatorAcademicReview() {
             label="Subject"
             value={subjectFilter}
             onChange={setSubjectFilter}
-            options={[{ value: ALL, label: "All Subjects" }, ...subjects.map((value) => ({ value, label: value }))]}
+            options={[{ value: ALL, label: "All Subjects" }, ...subjects.map((value) => ({ value, label: displaySubjectCode(value) }))]}
           />
           <FilterControl
             label={view === "pending" ? "Review Status" : "Decision Status"}
@@ -358,7 +359,7 @@ export default function AcademicCoordinatorAcademicReview() {
               { key: "caseReference", label: "Case Reference", render: toCaseReference },
               { key: "studentReference", label: "Student Reference", render: (record) => record.studentNumber },
               { key: "program", label: "Program" },
-              { key: "subject", label: "Subject", render: getReviewSubject },
+              { key: "subject", label: "Subject", render: (record) => displaySubjectCode(getReviewSubject(record)) },
               { key: "academicIssue", label: "Academic Issue", render: getAcademicIssue },
               { key: "dateSubmitted", label: "Date Submitted", render: (record) => record.submittedDate || "Not recorded" },
               { key: "status", label: "Status", render: (record) => <StatusBadge value={getReviewStatus(record)} label={getStatusDisplay(getReviewStatus(record))} /> },
@@ -378,7 +379,7 @@ export default function AcademicCoordinatorAcademicReview() {
               { key: "caseReference", label: "Case Reference", render: toCaseReference },
               { key: "studentReference", label: "Student Reference", render: (record) => record.studentNumber },
               { key: "program", label: "Program" },
-              { key: "subject", label: "Subject", render: getReviewSubject },
+              { key: "subject", label: "Subject", render: (record) => displaySubjectCode(getReviewSubject(record)) },
               { key: "decisionStatus", label: "Decision Status", render: (record) => <StatusBadge value={record.academicReviewDecision} label={getStatusDisplay(record.academicReviewDecision)} /> },
               { key: "decisionDate", label: "Decision Date", render: (record) => record.academicReviewDate || "Not recorded" },
               { key: "actions", label: "Action", render: (record) => (
@@ -432,10 +433,10 @@ export default function AcademicCoordinatorAcademicReview() {
                 <Info label="Case Reference" value={toCaseReference(current)} />
                 <Info label="Student Reference" value={current.studentNumber} />
                 <Info label="Program" value={current.program} />
-                <Info label="Curriculum Version" value={current.curriculum || "Not recorded"} />
+                <Info label="Curriculum Version" value={displayCurriculumCode(current.curriculum) || "Not recorded"} />
                 <Info label="Year Level" value={current.yearLevel || studentRecord?.yearLevel || "Not recorded"} />
                 <Info label="Academic Term" value={current.term || "Not recorded"} />
-                <Info label="Affected Subject" value={getReviewSubject(current)} />
+                <Info label="Affected Subject" value={displaySubjectCode(getReviewSubject(current))} />
                 <Info label="Date Submitted" value={current.submittedDate || "Not recorded"} />
               </div>
             </section>
@@ -445,7 +446,7 @@ export default function AcademicCoordinatorAcademicReview() {
                 ["Issue Requiring Review", getAcademicIssue(current)],
                 ["Failed Academic Rule", getFailedRule(current)],
                 ["Existing Academic Condition", current.academicCondition || current.existingAcademicCondition || "Not recorded"],
-                ["Curriculum Requirement", current.academicCurriculumRequirement || current.curriculum || "Not recorded"],
+                ["Curriculum Requirement", displayCurriculumCode(current.academicCurriculumRequirement || current.curriculum) || "Not recorded"],
                 ["Related Prerequisite Details", applicablePrerequisites.length ? applicablePrerequisites.join(", ") : "No prerequisite details supplied"],
                 ["Existing Clarification", current.academicReviewClarification || current.clarificationResponse || current.clarification || "No clarification submitted"],
                 ["Registrar or Enrollment Note", current.correctionReason || "No additional note recorded"],
