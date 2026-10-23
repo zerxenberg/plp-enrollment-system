@@ -31,19 +31,23 @@ function renderProfile(mode, profile) {
       "header", null, React.createElement("h1", null, title),
       React.createElement("p", null, description),
     ),
-    InternalTabs: ({ items, selected, children }) => React.createElement(
-      "section", null, React.createElement(
-        "nav", null, items.map((item) => React.createElement(
-          "span", { key: item.value, "aria-current": selected === item.value },
-          item.label,
-        )),
-      ), children,
-    ),
+    Modal: ({ open, title, children }) => open
+      ? React.createElement("section", null, React.createElement("h2", null, title), children)
+      : null,
   };
   const testRequire = (name) => {
     if (name === "react") return React;
     if (name === "react/jsx-runtime") return require("react/jsx-runtime");
     if (name === "@/components/ui/PortalUI") return elements;
+    if (name === "@/components/ui/AppIcon") return { __esModule: true,
+      default: () => React.createElement("span", { "aria-hidden": true }) };
+    if (name === "@/features/students/student-profile-actions") return {
+      saveStudentContact: async () => ({ ok: false }),
+      uploadStudentPhoto: async () => ({ ok: false }),
+      removeStudentPhoto: async () => ({ ok: false }),
+      changeStudentProfilePassword: async () => ({ ok: false }),
+    };
+    if (name === "./student-profile.module.css") return {};
     throw new Error(`Unexpected component dependency: ${name}`);
   };
   vm.runInNewContext(compiled.code, {
@@ -72,6 +76,13 @@ test("authenticated PROJECT_ONLY profile renders only linked fictional values", 
   assert.match(html, /Proposed Curriculum/);
   assert.match(html, /Not verified/);
   assert.match(html, /No official record/);
+  assert.match(html, /Contact Information/);
+  assert.match(html, /Academic Information/);
+  assert.match(html, /Admission Record/);
+  assert.match(html, /Account &amp; Security/);
+  assert.match(html, /Change Password/);
+  assert.doesNotMatch(html, /Preferences|Two-Factor Authentication|Enable Two-Factor/);
+  assert.doesNotMatch(html, /<nav|aria-current/);
   assert.doesNotMatch(html, /Juan Dela Cruz|APP-2024-01987|IN_PROGRESS|REGULAR/);
 });
 

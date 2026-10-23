@@ -29,10 +29,10 @@ export default function Topbar({
         <AppIcon name="menu" />
       </button>
       {showTerm && term ? (
-        <div className="term-pill" title={`Online Enrollment: ${term.shortLabel}, ${term.enrollmentStart} to ${term.enrollmentEnd}`}>
+        <div className="term-pill" title={`${term.isDemonstration ? "Demonstration Enrollment" : "Online Enrollment"}: ${term.shortLabel}, ${term.enrollmentStart} to ${term.enrollmentEnd}`}>
           <AppIcon name="calendar" />
           <span>
-            <strong>Online Enrollment</strong>
+            <strong>{term.isDemonstration ? "Demonstration Enrollment" : "Online Enrollment"}</strong>
             <small>{term.shortLabel} • {term.enrollmentStart} to {term.enrollmentEnd}</small>
           </span>
         </div>

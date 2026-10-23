@@ -4,8 +4,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getLiveSession } from "@/lib/auth/live-auth";
-import { loadLiveAcademicCoordinator, persistAcademicMaster } from "./live-academic-data";
+import {
+  loadLiveAcademicCoordinator,
+  persistAcademicMaster,
+} from "./live-academic-data";
 import { loadSupabaseAcademicDemo } from "./supabase-demo-academic-data";
+import { loadCoordinatorProjectAcademicHistoryPage } from "./coordinator-project-audit-actions";
+import { scopeCoordinatorProjectPreview } from "./coordinator-project-reads.mjs";
 
 const LiveCoordinatorContext = createContext(null);
 const unavailable = (name) => ({ ok: false,
@@ -33,10 +38,10 @@ export function LiveAcademicCoordinatorProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const datasetRef = useRef("official");
 
-  const loadSelectedDataset = useCallback(() =>
+  const loadSelectedDataset = useCallback(async () =>
     datasetRef.current === "synthetic"
       ? loadSupabaseAcademicDemo()
-      : loadLiveAcademicCoordinator(), []);
+      : scopeCoordinatorProjectPreview(await loadLiveAcademicCoordinator()), []);
 
   const refresh = useCallback(async () => {
     const user = await getLiveSession();
@@ -277,6 +282,7 @@ export function LiveAcademicCoordinatorProvider({ children }) {
     if (!isCoordinator || !snapshot) return null;
     const currentValue = {
       isSyntheticDemo: Boolean(snapshot.isSyntheticDemo),
+      loadAcademicHistoryPage: snapshot.isSyntheticDemo ? null : loadCoordinatorProjectAcademicHistoryPage,
       catalog: snapshot.catalog,
       academicCatalog: snapshot.catalog,
       academicCoordinatorData: snapshot.academicCoordinatorData,

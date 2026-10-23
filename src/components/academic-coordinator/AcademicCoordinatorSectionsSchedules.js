@@ -8,7 +8,9 @@ import {
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
+import { displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { getTrackCode } from "@/features/block-planning/block-planning-seed";
+import { getMeetingConflict, summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
 import { Details, Feedback, Metric } from "@/components/registrar/RegistrarShared";
 
 const TABS = [{ value: "sections", label: "Sections" }, { value: "schedules", label: "Class Schedule" }];
@@ -17,10 +19,14 @@ const DAY_NAMES = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thurs
 const YEARS = [1, 2, 3, 4];
 const rows = (value) => Array.isArray(value) ? value : [];
 const year = (value) => Number(String(value || "").match(/[1-4]/)?.[0]) || 1;
-const locked = (item) => Boolean(item?.registrarConfirmed || item?.isConfirmed || ["PUBLISHED", "CONFIRMED", "FINALIZED"].includes(String(item?.status || "").toUpperCase()));
-const confirmedRecord = (item) => Boolean(item?.registrarConfirmed || item?.isConfirmed);
+const locked = (item) => Boolean(item?.registrarConfirmed || item?.isConfirmed || ["PUBLISHED", "CONFIRMED", "FINALIZED", "ARCHIVED"].includes(String(item?.status || "").toUpperCase()));
 const nameOf = (item) => item?.fullName || item?.name || item?.studentNumber || "Unknown";
 const options = (items, value, label) => items.map((item) => ({ value: value(item), label: label(item) }));
+const curriculumLabel = (curriculum) => {
+  const source = { code: curriculum?.id, name: curriculum?.version || curriculum?.name };
+  const label = displayCurriculumName(source);
+  return typeof label === "string" ? label : source.name || source.code || "";
+};
 const timeLabel = (value) => {
   if (!value) return "Not scheduled";
   const match = String(value).match(/^(\d\d?):(\d\d)/);
@@ -40,7 +46,7 @@ function SelectField({ value, onChange, choices, placeholder, required, disabled
 function MeetingSubject({ item, classes, subjects }) {
   const entry = classes.find((row) => row.id === item.subjectClassId);
   const subject = subjects.find((row) => row.code === entry?.subjectCode);
-  return <>{entry?.subjectCode || "Unknown"}{subject?.name ? " · " + subject.name : ""}</>;
+  return <>{displaySubjectCode(entry?.subjectCode) || "Unknown"}{subject?.name ? " · " + subject.name : ""}</>;
 }
 
 export default function AcademicCoordinatorSectionsSchedules() {
@@ -66,6 +72,8 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const meetings = rows(source.classMeetings);
   const professors = rows(source.professors);
   const rooms = rows(source.rooms);
+  const blockCounts = summarizeBlockOccupancy(sections, assignments, students,
+    isLive && !isSyntheticDemo ? rows(liveData.registrar?.enrollments) : []);
 
   const [tab, setTab] = useState(query.get("view") === "schedules" ? "schedules" : "sections");
   const [search, setSearch] = useState("");
@@ -96,8 +104,11 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const collegeId = (item) => item?.collegeId || programRecord(item)?.departmentId || programRecord(item)?.collegeId || programRecord(item)?.department;
   const studentOf = (assignment) => students.find((entry) => entry.id === assignment.studentId);
   const rosterOf = (id) => assignments.filter((item) => item.sectionId === id && ["PROPOSED", "CONFIRMED"].includes(String(item.status).toUpperCase()));
-  const count = (id) => rosterOf(id).length;
-  const countStatus = (id, status) => rosterOf(id).filter((item) => item.status === status).length;
+  const count = (id) => blockCounts.get(id)?.occupied || 0;
+  const countStatus = (id, status) => blockCounts.get(id)?.[status === "CONFIRMED" ? "confirmed" : "proposed"] || 0;
+  const confirmedRecord = (item) => Boolean(item?.registrarConfirmed || item?.isConfirmed ||
+    (isLive && !isSyntheticDemo && countStatus(item?.id, "CONFIRMED") > 0));
+  const protectedRecord = (item) => locked(item) || confirmedRecord(item);
   const occupancyStatus = (item) => count(item.id) >= Number(item.capacity) ? "FULL"
     : count(item.id) >= Number(item.capacity) * 0.9 ? "NEAR_FULL" : "OPEN";
   const curriculumOf = (item) => curricula.find((entry) => entry.id === item?.curriculumId)
@@ -123,10 +134,18 @@ export default function AcademicCoordinatorSectionsSchedules() {
     (isLive && !isSyntheticDemo || item.qualifiedSubjectCodes?.includes(meetingClass?.subjectCode)) &&
     item.name.toLowerCase().includes(professorSearch.toLowerCase()));
   const matchingRooms = rooms.filter((item) => item.status === "AVAILABLE" &&
-    (isLive && !isSyntheticDemo || item.capacity >= Number(chosen?.capacity || 0) &&
-    item.types?.includes(meetingClass?.roomType)));
+    (isLive && !isSyntheticDemo
+      ? (item.capacity == null || item.capacity === "" ||
+        (Number.isFinite(Number(item.capacity)) && Number(item.capacity) >= Number(chosen?.capacity || 0)))
+      : item.capacity >= Number(chosen?.capacity || 0) && item.types?.includes(meetingClass?.roomType)));
   const chosenMeetings = meetings.filter((item) => chosenClasses.some((entry) => entry.id === item.subjectClassId))
     .sort((a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || String(a.start).localeCompare(String(b.start)));
+  const meetingStatus = (item) => {
+    const sourceClass = classes.find((entry) => entry.id === item.subjectClassId);
+    const block = sections.find((entry) => entry.id === sourceClass?.sectionId);
+    return block?.status === "PUBLISHED" || ["FINALIZED", "PUBLISHED"].includes(sourceClass?.status)
+      ? "PUBLISHED" : "PROPOSED";
+  };
   const formCurricula = curricula.filter((item) => (item.program || item.programCode) === sectionForm.programCode);
   const formCurriculum = formCurricula.find((item) => item.id === sectionForm.curriculumId)
     || formCurricula.find((item) => (item.major || "") === sectionForm.major && item.status === "Active")
@@ -154,13 +173,20 @@ export default function AcademicCoordinatorSectionsSchedules() {
 
   function close() { setDialog(""); setFormError(""); }
   async function result(response, fallback) {
-    response = await response;
-    const success = Boolean(response?.ok);
-    const message = response?.message || (success ? fallback : "Unable to complete this action.");
-    setFeedback({ message, warning: !success });
-    setFormError(success ? "" : message);
-    if (success) close();
-    return success;
+    try {
+      const outcome = await response;
+      const success = Boolean(outcome?.ok);
+      const message = outcome?.message || (success ? fallback : "Unable to complete this action.");
+      setFeedback({ message, warning: !success });
+      setFormError(success ? "" : message);
+      if (success) close();
+      return success;
+    } catch {
+      const message = "The academic planning change could not be saved. Check your connection and try again.";
+      setFeedback({ message, warning: true });
+      setFormError(message);
+      return false;
+    }
   }
   function openSection(item = null) {
     const first = item?.programCode || programs[0]?.code || "";
@@ -183,6 +209,10 @@ export default function AcademicCoordinatorSectionsSchedules() {
   function submitSection(event) {
     event.preventDefault();
     const edit = sections.find((item) => item.id === sectionId);
+    if (edit && protectedRecord(edit)) {
+      setFormError("Published or Registrar-confirmed blocks require a separate authorized correction.");
+      return;
+    }
     const selectedCurriculum = availableCurricula.find((item) => item.id === sectionForm.curriculumId);
     const values = { ...sectionForm, yearLevel: Number(sectionForm.yearLevel), capacity: Number(sectionForm.capacity),
       code: edit?.code || generatedCode, curriculumId: edit?.curriculumId || selectedCurriculum?.id,
@@ -224,7 +254,14 @@ export default function AcademicCoordinatorSectionsSchedules() {
   }
   function saveMeeting(event) {
     event.preventDefault();
-    result(saveBlockMeeting({ ...meetingForm, ...(meetingId ? { id: meetingId, meetingId } : {}) }), "Proposed class meeting saved.");
+    if (protectedRecord(chosen)) {
+      setFormError("This schedule is published or contains confirmed enrollment.");
+      return;
+    }
+    const payload = { ...meetingForm, ...(meetingId ? { id: meetingId, meetingId } : {}) };
+    const conflict = getMeetingConflict(payload, meetings, classes);
+    if (conflict) { setFormError(conflict); return; }
+    result(saveBlockMeeting(payload), "Proposed class meeting saved.");
   }
   function openTransfer(studentId) {
     setTransferId(studentId);
@@ -239,7 +276,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
     <div className="block-planning">
       <PageHeader title="Sections & Schedules" description="Plan block sections, student assignments, subject classes and weekly meeting times across academic terms." />
       <InternalTabs items={TABS} selected={tab} onSelect={(value) => { setTab(value); close(); setFeedback(null); }} label="Sections and class schedule navigation" panelCard>
-      <p className="portal-demo-caption block-note"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Planning (Read Only)" : isLive ? "Live Academic Planning" : "Demo Planning"}</strong> · Schedules and proposed assignments are not official until authorized enrollment processing.</p>
+      <p className="portal-demo-caption block-note"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Planning (Read Only)" : isLive ? "Live Academic Planning" : "Demo Planning"}</strong> · Proposed block assignments and planned schedules are separate from Registrar-confirmed enrollment.</p>
         {feedback && <Feedback message={feedback.message} warning={feedback.warning} />}
         <div className="toolbar block-filters">
           <SearchControl value={search} onChange={setSearch} label="Search block sections" placeholder="Search block, program or major" />
@@ -260,14 +297,14 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <Metric label="Block Sections" value={filtered.length} />
             <Metric label="Planned Capacity" value={filtered.reduce((sum, item) => sum + Number(item.capacity), 0)} />
             <Metric label="Proposed Assignments" value={filtered.reduce((sum, item) => sum + countStatus(item.id, "PROPOSED"), 0)} />
-            <Metric label="Confirmed Assignments" value={isLive && !isSyntheticDemo ? "Not verified" : filtered.reduce((sum, item) => sum + countStatus(item.id, "CONFIRMED"), 0)} />
+            <Metric label="Confirmed Assignments" value={filtered.reduce((sum, item) => sum + countStatus(item.id, "CONFIRMED"), 0)} />
             <Metric label="Available Places" value={filtered.reduce((sum, item) => sum + Math.max(0, Number(item.capacity) - count(item.id)), 0)} />
             <Metric label="Full Sections" value={filtered.filter((item) => occupancyStatus(item) === "FULL").length} />
             <Metric label="Needs Attention" value={filtered.filter((item) => occupancyStatus(item) === "NEAR_FULL").length} hint="At least 90% occupied" />
           </div>
           <div className="section-header block-heading"><h2>Block Section Management</h2>
             <div className="action-row">{!isLive && <Button variant="secondary" onClick={() => setDialog("reset")}>Reset Demo Planning</Button>}
-              <Button onClick={() => openSection()}>Create Block Section</Button></div></div>
+              <Button disabled={isSyntheticDemo} onClick={() => openSection()}>Create Block Section</Button></div></div>
           <div className="block-section-table">
             <DataTable rowKey="id" rows={filtered} emptyMessage="No block sections match your filters." columns={[
               { key: "identity", label: "Block Identity", render: (item) => <div className="block-section-identity">
@@ -286,7 +323,10 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 </div>
               </div> },
               { key: "termId", label: "Academic Term", render: termLabel },
-              { key: "curriculum", label: "Curriculum", render: (item) => curriculumOf(item)?.version || curriculumOf(item)?.name || "Not assigned" },
+              { key: "curriculum", label: "Curriculum", render: (item) => {
+                const curriculum = curriculumOf(item);
+                return curriculum ? curriculumLabel(curriculum) : "Not assigned";
+              } },
               { key: "capacity", label: "Capacity Summary", render: (item) => <dl className="block-section-capacity">
                 <div className="block-section-capacity-item"><dt>Capacity</dt><dd>{item.capacity}</dd></div>
                 <div className="block-section-capacity-item"><dt>Proposed</dt><dd>{countStatus(item.id, "PROPOSED")}</dd></div>
@@ -298,9 +338,9 @@ export default function AcademicCoordinatorSectionsSchedules() {
               { key: "status", label: "Section Status", render: (item) => <StatusBadge value={item.status} label={item.status === "DRAFT" ? "Draft" : item.status === "PUBLISHED" ? "Published" : item.status} /> },
               { key: "actions", label: "Actions", render: (item) => <TableActions>
                 <TableActionButton tone="view" onClick={() => showSection(item)}>Details</TableActionButton>
-                <TableActionButton tone="edit" disabled={locked(item)} onClick={() => openSection(item)}>Edit</TableActionButton>
-                <TableActionButton tone="review" disabled={confirmedRecord(item)} onClick={() => showSection(item, "roster")}>Roster</TableActionButton>
-                <TableActionButton tone="review" disabled={confirmedRecord(item) || countStatus(item.id, "PROPOSED") === 0}
+                <TableActionButton tone="edit" disabled={isSyntheticDemo || protectedRecord(item)} onClick={() => openSection(item)}>Edit</TableActionButton>
+                <TableActionButton tone="review" disabled={isSyntheticDemo || confirmedRecord(item) || item.status === "ARCHIVED"} onClick={() => showSection(item, "roster")}>Roster</TableActionButton>
+                <TableActionButton tone="review" disabled={isSyntheticDemo || confirmedRecord(item) || item.status === "ARCHIVED" || countStatus(item.id, "PROPOSED") === 0}
                   onClick={() => { setSectionId(item.id); openTransfer(""); }}>Transfer</TableActionButton>
                 <TableActionButton tone="schedule" onClick={() => openSchedule(item)}>Schedule</TableActionButton>
               </TableActions> },
@@ -312,7 +352,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <div><h2>Class Schedule Planning</h2><p>Assign professors, rooms and multiple weekly meetings for each subject class.</p></div>
             <div className="action-row">
               <Button variant="secondary" disabled={!chosen} onClick={() => showSection(chosen, "timetable")}>View Timetable</Button>
-              <Button disabled={!chosen || locked(chosen) || !chosenClasses.length} onClick={() => editMeeting()}>Add Meeting</Button>
+              <Button disabled={isSyntheticDemo || !chosen || protectedRecord(chosen) || !chosenClasses.length} onClick={() => editMeeting()}>Add Meeting</Button>
             </div>
           </div>
           <div className="block-schedule-select">
@@ -321,7 +361,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             {chosen && <div className="block-selected-description">
               <strong>{chosen.code}</strong>
               <span>{chosen.programCode + (chosen.major ? " · " + chosen.major : "")} · Year {year(chosen.yearLevel)} · {termLabel(chosen)}</span>
-              <StatusBadge value={chosen.status} label={chosen.status === "PUBLISHED" ? "Published" : "Draft"} />
+              <StatusBadge value={chosen.status} label={chosen.status === "PUBLISHED" ? "Published" : chosen.status === "DRAFT" ? "Draft" : chosen.status} />
             </div>}
           </div>
           {chosen ? <>
@@ -329,14 +369,14 @@ export default function AcademicCoordinatorSectionsSchedules() {
               <Metric label="Subject Classes" value={chosenClasses.length} />
               <Metric label="Weekly Meetings" value={chosenMeetings.length} />
               <Metric label="Subjects Scheduled" value={new Set(chosenMeetings.map((item) => classes.find((entry) => entry.id === item.subjectClassId)?.subjectCode)).size} />
-              <Metric label="Plan Status" value={locked(chosen) ? "Published" : "Draft"} />
+              <Metric label="Plan Status" value={chosen.status === "PUBLISHED" ? "Published" : confirmedRecord(chosen) ? "Protected" : chosen.status === "DRAFT" ? "Draft" : chosen.status} />
             </div>
             <h3 className="block-title">Subject Classes</h3>
             <DataTable rowKey="id" rows={chosenClasses} emptyMessage="No subject classes are assigned to this block." columns={[
-              { key: "subjectCode", label: "Subject", render: (item) => item.subjectCode + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject") },
+              { key: "subjectCode", label: "Subject", render: (item) => displaySubjectCode(item.subjectCode) + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject") },
               { key: "professorId", label: "Professor", render: (item) => nameOf(professors.find((entry) => entry.id === item.professorId)) },
               { key: "meetingCount", label: "Weekly Meetings", render: (item) => chosenMeetings.filter((entry) => entry.subjectClassId === item.id).length },
-              { key: "actions", label: "Actions", render: (item) => <TableActions><TableActionButton tone="schedule" disabled={locked(chosen)} onClick={() => editMeeting(null, item)}>Add Meeting</TableActionButton></TableActions> },
+              { key: "actions", label: "Actions", render: (item) => <TableActions><TableActionButton tone="schedule" disabled={isSyntheticDemo || protectedRecord(chosen)} onClick={() => editMeeting(null, item)}>Add Meeting</TableActionButton></TableActions> },
             ]} />
             <h3 className="block-title">Weekly Meeting Plan</h3>
             <DataTable rowKey="id" rows={chosenMeetings} emptyMessage="No meeting times have been planned." columns={[
@@ -346,15 +386,15 @@ export default function AcademicCoordinatorSectionsSchedules() {
               { key: "end", label: "End", render: (item) => timeLabel(item.end) },
               { key: "roomId", label: "Room", render: (item) => rooms.find((entry) => entry.id === item.roomId)?.name || "Unassigned" },
               { key: "professor", label: "Professor", render: (item) => nameOf(professors.find((entry) => entry.id === classes.find((cls) => cls.id === item.subjectClassId)?.professorId)) },
-              { key: "record", label: "Record", render: () => <StatusBadge value="PENDING" label="Proposed" /> },
+              { key: "record", label: "Record", render: (item) => <StatusBadge value={meetingStatus(item)} label={meetingStatus(item) === "PUBLISHED" ? "Published" : "Proposed"} /> },
               { key: "actions", label: "Actions", render: (item) => <TableActions>
                 <TableActionButton tone="view" onClick={() => { setMeetingId(item.id); setDialog("meeting-details"); }}>View</TableActionButton>
-                <TableActionButton tone="edit" disabled={locked(chosen)} onClick={() => editMeeting(item)}>Edit</TableActionButton>
-                <TableActionButton tone="danger" disabled={locked(chosen)} onClick={() => { setMeetingId(item.id); setDialog("remove"); }}>Delete</TableActionButton>
+                <TableActionButton tone="edit" disabled={isSyntheticDemo || protectedRecord(chosen)} onClick={() => editMeeting(item)}>Edit</TableActionButton>
+                <TableActionButton tone="danger" disabled={isSyntheticDemo || protectedRecord(chosen)} onClick={() => { setMeetingId(item.id); setDialog("remove"); }}>Delete</TableActionButton>
               </TableActions> },
             ]} />
             <div className="block-footer"><p>Finalized class schedules remain planning records. Official student enrollment requires Registrar confirmation.</p>
-              <Button variant="secondary" disabled={locked(chosen) || !chosenMeetings.length} onClick={() => showSection(chosen, "finalize")}>Finalize Block Schedule</Button></div>
+              <Button variant="secondary" disabled={isSyntheticDemo || protectedRecord(chosen) || !chosenMeetings.length} onClick={() => showSection(chosen, "finalize")}>Finalize Block Schedule</Button></div>
           </> : <div className="block-empty">Select a block section to begin schedule planning.</div>}
         </>}
       </InternalTabs>
@@ -392,7 +432,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
                 letter: nextLetter(current.programCode, value, current.yearLevel, current.termId) };
             })} /></Field>}
           <Field label="Active Curriculum Version"><SelectField required disabled={Boolean(sectionId)} value={sectionForm.curriculumId} placeholder="Select active curriculum"
-            choices={options(availableCurricula, (item) => item.id, (item) => item.version || item.id)}
+            choices={options(availableCurricula, (item) => item.id, curriculumLabel)}
             onChange={(value) => setSectionForm((current) => ({ ...current, curriculumId: value }))} /></Field>
           <Field label="Year Level"><SelectField disabled={Boolean(sectionId)} value={String(sectionForm.yearLevel)}
             choices={options(YEARS, String, (item) => "Year " + item)}
@@ -411,7 +451,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <ul>
               {rows(formCurriculum?.assignments).filter((item) => year(item.yearLevel) === year(sectionForm.yearLevel)
                 && item.semester === terms.find((entry) => entry.id === sectionForm.termId)?.semester)
-                .map((item) => <li key={item.subjectCode}>{item.subjectCode} · {subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"}</li>)}
+                .map((item) => <li key={item.subjectCode}>{displaySubjectCode(item.subjectCode)} · {subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"}</li>)}
             </ul>
           </div>
           {formError && <p className="block-error" role="alert">{formError}</p>}
@@ -426,7 +466,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             ["Program", section.programCode + (section.major ? " · " + section.major : "")],
             ["Academic Term", termLabel(section)],
             ["Year Level", "Year " + year(section.yearLevel)],
-            ["Curriculum", curriculumOf(section)?.version || "Not assigned"],
+            ["Curriculum", curriculumOf(section) ? curriculumLabel(curriculumOf(section)) : "Not assigned"],
             ["Status", section.status],
             ["Capacity", section.capacity],
             ["Proposed Assignments", countStatus(section.id, "PROPOSED")],
@@ -436,12 +476,12 @@ export default function AcademicCoordinatorSectionsSchedules() {
           <h3 className="block-title">Curriculum Subjects</h3>
           <DataTable rowKey="subjectCode" rows={curriculumSubjects(section)} emptyMessage="No subject allocations match the current curriculum and term."
             columns={[
-              { key: "subjectCode", label: "Subject Code" },
+              { key: "subjectCode", label: "Subject Code", render: (item) => displaySubjectCode(item.subjectCode) },
               { key: "subjectName", label: "Subject Name", render: (item) => subjects.find((row) => row.code === item.subjectCode)?.name || "Subject" },
               { key: "units", label: "Units", render: (item) => subjects.find((row) => row.code === item.subjectCode)?.units ?? "Not specified" },
             ]} />
-          <h3 className="block-title">Proposed Student Roster</h3>
-          <DataTable rowKey="id" rows={roster} emptyMessage="No students have been proposed for this section."
+          <h3 className="block-title">Block Student Roster</h3>
+          <DataTable rowKey="id" rows={roster} emptyMessage="No proposed or confirmed block assignments are recorded."
             columns={[
               { key: "studentNumber", label: "Student Number", render: (item) => studentOf(item)?.studentNumber },
               { key: "fullName", label: "Student", render: (item) => nameOf(studentOf(item)) },
@@ -450,7 +490,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
               { key: "status", label: "Assignment", render: (item) => <StatusBadge value={item.status} label={item.status || "Proposed"} /> },
             ]} />
           <div className="action-row block-dialog-actions">
-            <Button variant="secondary" disabled={confirmedRecord(section)} onClick={() => showSection(section, "roster")}>Manage Roster</Button>
+            <Button variant="secondary" disabled={isSyntheticDemo || confirmedRecord(section) || section.status === "ARCHIVED"} onClick={() => showSection(section, "roster")}>Manage Roster</Button>
             <Button variant="secondary" onClick={() => openSchedule(section)}>Open Class Schedule</Button>
           </div>
         </>}
@@ -458,7 +498,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
 
       <Modal open={dialog === "roster" && Boolean(section)} title={section ? "Proposed Roster · " + section.code : "Proposed Roster"}
         className="academic-setup-wide-modal" onClose={close}
-        footer={<><Button variant="ghost" onClick={close}>Close</Button><Button disabled={!studentIds.length || confirmedRecord(section)}
+        footer={<><Button variant="ghost" onClick={close}>Close</Button><Button disabled={isSyntheticDemo || !studentIds.length || confirmedRecord(section) || section?.status === "ARCHIVED"}
           onClick={() => result(assignBlockStudents({ sectionId, studentIds }), "Proposed assignments saved.")}>Assign Selected ({studentIds.length})</Button></>}>
         {section && <>
           <p className="academic-demo-note">Remaining capacity: {Math.max(0, Number(section.capacity) - count(section.id))}. Only proposed assignments are edited here. Eligibility is checked again when assigning.</p>
@@ -474,7 +514,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <h3>Eligible Student Selection ({allowed.length})</h3>
             <div className="action-row">
               <Button variant="secondary" disabled={!studentIds.length} onClick={() => setStudentIds([])}>Deselect All</Button>
-              <Button variant="secondary" disabled={!allowed.length || confirmedRecord(section)}
+              <Button variant="secondary" disabled={isSyntheticDemo || !allowed.length || confirmedRecord(section) || section?.status === "ARCHIVED"}
                 onClick={() => setStudentIds(allowed.filter((item) => (nameOf(item) + " " + item.studentNumber).toLowerCase().includes(rosterSearch.toLowerCase()))
                   .slice(0, Math.max(0, Number(section.capacity) - count(section.id))).map((item) => item.id))}>Select Available</Button>
             </div>
@@ -485,7 +525,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
               (nameOf(item) + " " + item.studentNumber).toLowerCase().includes(rosterSearch.toLowerCase())).map((item) => {
               const eligible = allowed.some((entry) => entry.id === item.id);
               return <label className="block-student-choice" key={item.id}>
-                <input type="checkbox" disabled={!eligible || confirmedRecord(section)} checked={studentIds.includes(item.id)}
+                <input type="checkbox" disabled={isSyntheticDemo || !eligible || confirmedRecord(section) || section?.status === "ARCHIVED"} checked={studentIds.includes(item.id)}
                   onChange={(event) => setStudentIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} />
                 <span><strong>{nameOf(item)}</strong><small>{item.studentNumber} · {item.classification || "Unclassified"}
                   {" · " + (item.progression || "Progression pending")}
@@ -498,7 +538,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
       </Modal>
 
       <Modal open={dialog === "transfer" && Boolean(section)} title="Transfer Proposed Student" onClose={close}
-        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button type="submit" form="block-transfer-form">Transfer</Button></>}>
+        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button disabled={isSyntheticDemo || confirmedRecord(section) || section?.status === "ARCHIVED"} type="submit" form="block-transfer-form">Transfer</Button></>}>
         <form id="block-transfer-form" className="form-grid" onSubmit={(event) => {
           event.preventDefault();
           result(transferBlockStudent({ studentId: transferId, fromSectionId: sectionId, toSectionId: destinationId, reason: transferReason }), "Proposed transfer saved.");
@@ -514,23 +554,26 @@ export default function AcademicCoordinatorSectionsSchedules() {
       </Modal>
 
       <Modal open={dialog === "meeting-form"} title={meetingId ? "Edit Class Meeting" : "Add Class Meeting"} onClose={close}
-        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button type="submit" form="block-meeting-form">Check Conflicts & Save</Button></>}>
+        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button disabled={isSyntheticDemo || protectedRecord(chosen)} type="submit" form="block-meeting-form">Check Conflicts & Save</Button></>}>
         <form id="block-meeting-form" className="form-grid" onSubmit={saveMeeting}>
           <Field label="Subject Class"><SelectField required value={meetingForm.subjectClassId} onChange={(value) => setMeetingForm((current) => ({ ...current, subjectClassId: value, professorId: classes.find((entry) => entry.id === value)?.professorId || "" }))}
-            choices={options(chosenClasses, (item) => item.id, (item) => item.subjectCode + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"))} /></Field>
-          <div className="field"><label htmlFor="block-professor-filter">Qualified Professor</label>
+            choices={options(chosenClasses, (item) => item.id, (item) => displaySubjectCode(item.subjectCode) + " · " + (subjects.find((entry) => entry.code === item.subjectCode)?.name || "Subject"))} /></Field>
+          <div className="field"><label htmlFor="block-professor-filter">{isLive && !isSyntheticDemo ? "Professor" : "Qualified Professor"}</label>
             <input id="block-professor-filter" type="search" aria-label="Search qualified professors" placeholder="Filter qualified professors"
               value={professorSearch} onChange={(event) => setProfessorSearch(event.target.value)} />
             <SelectField required value={meetingForm.professorId} placeholder="Choose professor" onChange={(value) => setMeetingForm((current) => ({ ...current, professorId: value }))}
               choices={options(qualifiedProfessors, (item) => item.id, (item) => item.name)} />
           </div>
           <Field label="Room"><SelectField required value={meetingForm.roomId} placeholder="Choose room" onChange={(value) => setMeetingForm((current) => ({ ...current, roomId: value }))}
-            choices={options(matchingRooms, (item) => item.id, (item) => item.name + " · " + item.capacity + " seats")} /></Field>
+              choices={options(matchingRooms, (item) => item.id, (item) => item.name + " · " +
+                (Number(item.capacity) > 0 ? item.capacity + " seats" : "Capacity unverified"))} /></Field>
           <Field label="Day"><SelectField value={meetingForm.day} onChange={(value) => setMeetingForm((current) => ({ ...current, day: value }))}
-            choices={options(DAYS, String, (item) => DAY_NAMES[item])} /></Field>
+            choices={options(isLive && !isSyntheticDemo ? DAYS.slice(0, 5) : DAYS, String, (item) => DAY_NAMES[item])} /></Field>
           <Field label="Start"><input type="time" required value={meetingForm.start} onChange={(event) => setMeetingForm((current) => ({ ...current, start: event.target.value }))} /></Field>
           <Field label="End"><input type="time" required value={meetingForm.end} onChange={(event) => setMeetingForm((current) => ({ ...current, end: event.target.value }))} /></Field>
-          <p className="academic-helper block-form-note">The demo data provider validates room, instructor and overlapping class meetings when saved.</p>
+          <p className="academic-helper block-form-note">{isLive && !isSyntheticDemo
+            ? "The protected academic database checks block, room and instructor conflicts again when saving."
+            : "The demo data provider validates room, instructor and overlapping class meetings when saved."}</p>
           {formError && <p className="block-error" role="alert">{formError}</p>}
         </form>
       </Modal>
@@ -538,28 +581,28 @@ export default function AcademicCoordinatorSectionsSchedules() {
       <Modal open={dialog === "meeting-details" && Boolean(meeting)} title="Meeting Details" onClose={close}
         footer={<Button variant="ghost" onClick={close}>Close</Button>}>
         {meeting && <Details items={[
-          ["Subject", classes.find((entry) => entry.id === meeting.subjectClassId)?.subjectCode],
+          ["Subject", displaySubjectCode(classes.find((entry) => entry.id === meeting.subjectClassId)?.subjectCode)],
           ["Day", meeting.day],
           ["Time", timeLabel(meeting.start) + " to " + timeLabel(meeting.end)],
           ["Professor", nameOf(professors.find((entry) => entry.id === classes.find((cls) => cls.id === meeting.subjectClassId)?.professorId))],
           ["Room", rooms.find((entry) => entry.id === meeting.roomId)?.name || "Unassigned"],
-          ["Record", "Proposed planning record"],
+          ["Record", meetingStatus(meeting) === "PUBLISHED" ? "Published academic schedule" : "Proposed planning record"],
         ]} />}
       </Modal>
       <Modal open={dialog === "remove" && Boolean(meeting)} title="Delete Class Meeting" onClose={close}
-        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button variant="danger" onClick={() => result(removeBlockMeeting(meeting.id), "Meeting removed.")}>Delete Meeting</Button></>}>
+        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button variant="danger" disabled={isSyntheticDemo || protectedRecord(chosen)} onClick={() => result(removeBlockMeeting(meeting.id), "Meeting removed.")}>Delete Meeting</Button></>}>
         <p>Delete this proposed {meeting?.day} meeting from {timeLabel(meeting?.start)} to {timeLabel(meeting?.end)}?</p>
         {formError && <p className="block-error" role="alert">{formError}</p>}
       </Modal>
       <Modal open={dialog === "finalize" && Boolean(section)} title="Finalize Block Schedule" onClose={close}
-        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button disabled={locked(section)} onClick={() => result(finalizeBlockSchedule(section.id), "Block schedule finalized.")}>Finalize Schedule</Button></>}>
+        footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button disabled={isSyntheticDemo || protectedRecord(section)} onClick={() => result(finalizeBlockSchedule(section.id), "Block schedule finalized.")}>Finalize Schedule</Button></>}>
         <p>Finalize the proposed class schedule for <strong>{section?.code}</strong>? Conflict checks run before publishing. Registrar confirmed records remain protected.</p>
         {formError && <p className="block-error" role="alert">{formError}</p>}
       </Modal>
       <Modal open={dialog === "reset"} title="Reset Block Planning Demo Data" onClose={close}
         footer={<><Button variant="ghost" onClick={close}>Cancel</Button><Button variant="danger"
-          onClick={() => {
-            if (result(resetBlockDemoData(), "Demo planning restored.")) {
+          onClick={async () => {
+            if (await result(resetBlockDemoData(), "Demo planning restored.")) {
               setScheduleId(""); setSectionId(""); setStudentIds([]); setMeetingId("");
             }
           }}>Reset Demo Planning</Button></>}>

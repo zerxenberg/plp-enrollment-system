@@ -1,5 +1,7 @@
 import StudentClassSchedule from "@/components/student/StudentClassSchedule";
+import { loadStudentAcademicForPage } from "@/features/students/student-academic-server";
 
-export default function StudentClassSchedulePage() {
-  return <StudentClassSchedule />;
+export default async function StudentClassSchedulePage() {
+  const academicView = await loadStudentAcademicForPage();
+  return <StudentClassSchedule {...academicView} />;
 }

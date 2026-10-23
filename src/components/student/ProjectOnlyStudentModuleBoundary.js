@@ -1,17 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
 import { Card, EmptyState, PageHeader } from "@/components/ui/PortalUI";
-
-const PROFILE_ROUTE = "/student/student-profile";
-
-const MODULE_TITLES = Object.freeze({
-  "/student/dashboard": "Student Dashboard",
-  "/student/enrollment": "Enrollment",
-  "/student/academic-records": "Academic Records",
-  "/student/class-schedule": "Class Schedule",
-  "/student/notifications": "Notifications",
-});
 
 /**
  * Wrap the existing Student page children inside PortalLayout so that the
@@ -28,23 +17,9 @@ export default function ProjectOnlyStudentModuleBoundary({
   authenticatedProfile,
   children,
 }) {
-  const pathname = usePathname();
-  const currentPath = typeof pathname === "string"
-    ? pathname.replace(/\/+$/, "") || "/"
-    : "";
-
-  // The separately authenticated Student Profile page has its own exact
-  // identity-to-profile lookup and an unavailable state when verification fails.
-  if (currentPath === PROFILE_ROUTE) return children;
-
   const mode = authenticatedProfile?.mode;
   const kind = authenticatedProfile?.kind;
   const isProject = mode === "project" || kind === "complete";
-  const isLegacy = (mode === "demo" || kind === "legacy") &&
-    (mode === undefined || mode === "demo") &&
-    (kind === undefined || kind === "legacy");
-
-  if (isLegacy && !isProject) return children;
 
   if (!isProject || mode === "demo" || kind === "legacy") {
     return (
@@ -60,18 +35,7 @@ export default function ProjectOnlyStudentModuleBoundary({
     );
   }
 
-  return (
-    <>
-      <PageHeader
-        title={MODULE_TITLES[currentPath] || "Student Portal"}
-        description="Classroom demonstration account"
-      />
-      <Card>
-        <EmptyState
-          title="Not yet available from verified academic source"
-          description="This PROJECT_ONLY account is fictional. This module currently uses shared demonstration records that do not belong to your authenticated student profile. Verified admission, grades, enrollment details, schedules, and personal notifications are not available on this page."
-        />
-      </Card>
-    </>
-  );
+  // The actual modules now perform server-side identity and ownership checks
+  // before loading database-backed student content.
+  return children;
 }

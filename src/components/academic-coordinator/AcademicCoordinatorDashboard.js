@@ -6,7 +6,9 @@ import { DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
+import { summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
 import { getBlockOccupancy } from "@/features/block-planning/block-planning-service";
+import { displayAcademicReference } from "@/features/academic/project-academic-display-aliases.mjs";
 
 export default function AcademicCoordinatorDashboard() {
   const liveData = useLiveAcademicCoordinator();
@@ -17,19 +19,42 @@ export default function AcademicCoordinatorDashboard() {
   const activePrograms = catalog.programs.filter((item) => item.status === "Active").length;
   const activeCurricula = academicCoordinatorData.curricula.filter((item) => item.status === "Active").length;
   const activeSubjects = catalog.subjects.filter((item) => item.status !== "Inactive").length;
-  const prerequisiteRules = catalog.subjects.reduce((sum, item) => sum + (item.prerequisites?.length || 0), 0);
+  const prerequisiteRules = isLive && !liveData?.isSyntheticDemo
+    ? new Set(academicCoordinatorData.curricula.flatMap((curriculum) =>
+      (curriculum.assignments || []).flatMap((subject) =>
+        (subject.prerequisites || []).map((prerequisite) =>
+          `${curriculum.id}:${subject.subjectCode}:${prerequisite}`)))).size
+    : catalog.subjects.reduce((sum, item) => sum + (item.prerequisites?.length || 0), 0);
   const planningSections = blockPlanning?.blockSections || [];
   const activePlanningTerm = blockPlanning?.terms?.find((item) =>
     isLive && !liveData?.isSyntheticDemo ? item.status === "Open" : item.status === "CURRENT");
   const currentSections = planningSections.filter((item) => item.termId === activePlanningTerm?.id);
-  const fullSections = currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "FULL");
-  const nearSections = currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "NEAR_FULL");
-  const pendingReviews = registrar.enrollments.filter((item) => item.status === "NEEDS_ACADEMIC_REVIEW");
-  const resolvedReviews = registrar.enrollments.filter((item) => item.academicReviewDecision);
+  const occupancy = isLive && !liveData?.isSyntheticDemo
+    ? summarizeBlockOccupancy(planningSections, blockPlanning.assignments || [],
+        blockPlanning.students || [], registrar.enrollments || [])
+    : null;
+  const occupied = (item) => occupancy
+    ? occupancy.get(item.id)?.occupied ?? 0
+    : getBlockOccupancy(blockPlanning, item.id)?.occupied ?? 0;
+  const fullSections = currentSections.filter((item) =>
+    Number(item.capacity) > 0 && occupied(item) >= Number(item.capacity));
+  const nearSections = currentSections.filter((item) =>
+    Number(item.capacity) > 0 && occupied(item) < Number(item.capacity) &&
+    occupied(item) >= Number(item.capacity) * 0.9);
+  const reviewRecords = isLive && !liveData?.isSyntheticDemo
+    ? (academicCoordinatorData.reviews || []) : [];
+  const pendingReviews = isLive && !liveData?.isSyntheticDemo
+    ? reviewRecords.filter((item) => item.status === "PENDING")
+    : registrar.enrollments.filter((item) => item.status === "NEEDS_ACADEMIC_REVIEW");
+  const resolvedReviews = isLive && !liveData?.isSyntheticDemo
+    ? reviewRecords.filter((item) => ["APPROVED", "REJECTED", "APPLIED", "RETURNED_FOR_CLARIFICATION"]
+      .includes(item.status))
+    : registrar.enrollments.filter((item) => item.academicReviewDecision);
   const highDemandSubjects = [...new Set(blockPlanning?.subjectClasses?.filter((item) =>
     [...fullSections, ...nearSections].some((section) => section.id === item.sectionId)
   ).map((item) => item.subjectCode) || [])];
-  const recentBlockChanges = (blockPlanning?.history || []).map((item) => ({
+  const recentBlockChanges = (isLive && !liveData?.isSyntheticDemo
+    ? [] : (blockPlanning?.history || [])).map((item) => ({
     id: item.id, dateTime: item.at, module: "Sections & Schedules",
     record: item.record, action: item.action,
   }));
@@ -52,7 +77,7 @@ export default function AcademicCoordinatorDashboard() {
       </section>
 
       <div className="stats-grid" style={{ margin: "16px 0" }}>
-        <Metric label="Active Programs" value={activePrograms} hint="Approved programs" />
+        <Metric label="Active Programs" value={activePrograms} hint="Active catalog records" />
         <Metric label="Active Curriculum Versions" value={activeCurricula} hint="Current academic structures" />
         <Metric label="Active Subjects" value={activeSubjects} hint="Subject catalog" />
         <Metric label="Prerequisite Rules" value={prerequisiteRules} hint="Active relationships" />
@@ -86,8 +111,8 @@ export default function AcademicCoordinatorDashboard() {
 
         <Panel title="Section Planning Summary" className="span-6">
           <div className="detail-list">
-            <div className="detail-row"><span>Future Draft Sections</span><strong>{planningSections.filter((item) => item.status === "DRAFT").length}</strong></div>
-            <div className="detail-row"><span>Open Current Blocks</span><strong>{currentSections.filter((item) => getBlockOccupancy(blockPlanning, item.id)?.status === "OPEN").length}</strong></div>
+            <div className="detail-row"><span>Future Draft Sections</span><strong>{planningSections.filter((item) => item.status === "DRAFT" && item.termId !== activePlanningTerm?.id).length}</strong></div>
+            <div className="detail-row"><span>Current Blocks with Slots</span><strong>{currentSections.filter((item) => occupied(item) < Number(item.capacity)).length}</strong></div>
             <div className="detail-row"><span>Full Sections</span><strong>{fullSections.length}</strong></div>
             <div className="detail-row"><span>Near Capacity Sections</span><strong>{nearSections.length}</strong></div>
           </div>
@@ -112,11 +137,13 @@ export default function AcademicCoordinatorDashboard() {
         <Panel title="Recent Academic Activity" className="span-7">
           <DataTable
             rowKey="id"
-            rows={[...recentBlockChanges, ...academicCoordinatorData.history].slice(0, 5)}
+            rows={[...recentBlockChanges, ...academicCoordinatorData.history]
+              .sort((a, b) => String(b.dateTime || "").localeCompare(String(a.dateTime || "")))
+              .slice(0, 5)}
             columns={[
               { key: "dateTime", label: "Date & Time" },
               { key: "module", label: "Module" },
-              { key: "record", label: "Record" },
+              { key: "record", label: "Record", render: (item) => displayAcademicReference(item.record) },
               { key: "action", label: "Academic Action" },
             ]}
           />
