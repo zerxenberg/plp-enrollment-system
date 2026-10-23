@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
+import { loadAuthorizedAcademicReviewCases } from "@/features/academic/academic-review-cases";
 import { Details, Feedback, LinkButton, Metric } from "@/components/registrar/RegistrarShared";
 import {
   ACADEMIC_REPORT_TYPES, buildAcademicReviewSummary, buildCapacityRows,
@@ -44,6 +45,13 @@ function displayDetail(value) {
     .map(([key, item]) => key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase()) + ": " + item)
     .join(" · ") || "Not specified";
 }
+function displayHistoryDate(value) {
+  const parsed = Date.parse(value || "");
+  return Number.isNaN(parsed) ? value || "Not available" :
+    new Date(parsed).toLocaleString("en-PH", {
+      dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila",
+    });
+}
 const PAGE_SIZE = 25;
 const DEFAULT_BREAKDOWN = (type) => type === ACADEMIC_REPORT_TYPES[2] ? "subject" : "program";
 const COLUMNS = {
@@ -52,7 +60,7 @@ const COLUMNS = {
   subjects: ["program", "curriculum", "subject", "name", "units", "yearLevel", "semester", "prerequisites", "offering", "status"],
   subjectDemand: ["program", "subject", "academicTerm", "sections", "registrarRequests", "registrarConfirmed", "capacity", "proposed", "confirmed", "available"],
   sectionCapacity: ["program", "section", "academicTerm", "yearLevel", "capacity", "proposed", "confirmed", "available", "capacityStatus", "scheduleStatus"],
-  schedule: ["program", "section", "academicTerm", "subject", "dayTime", "room", "professor", "scheduleStatus"],
+  schedule: ["program", "section", "academicTerm", "subject", "dayTime", "room", "professor", "scheduleStatus", "conflictStatus", "conflictDetails"],
   review: ["program", "category", "pending", "approved", "rejected", "applied", "returned", "total"],
 };
 const MANAGEMENT_ROUTE = "/academic-coordinator/sections-schedules";
@@ -71,12 +79,12 @@ function getReportColumns(type, breakdown) {
   return COLUMNS.review;
 }
 
-function getReportRows(type, breakdown, catalog, academicData, blockPlanning, registrar) {
+function getReportRows(type, breakdown, catalog, academicData, blockPlanning, registrar, reviewCases = registrar.enrollments) {
   if (type === ACADEMIC_REPORT_TYPES[0]) return buildProgramCurriculumRows(catalog, academicData, breakdown);
   if (type === ACADEMIC_REPORT_TYPES[1]) return buildSubjectPrerequisiteRows(catalog, academicData);
   if (type === ACADEMIC_REPORT_TYPES[2]) return buildCapacityRows(blockPlanning, registrar, breakdown);
   if (type === ACADEMIC_REPORT_TYPES[3]) return buildScheduleRows(blockPlanning);
-  return buildAcademicReviewSummary(registrar.enrollments);
+  return buildAcademicReviewSummary(reviewCases);
 }
 
 function exportCsv(rows, fields, filename) {
@@ -104,9 +112,7 @@ function exportCsv(rows, fields, filename) {
 const historyRow = (row, index, planning = false) => ({
   ...row,
   id: (planning ? "planning:" : "setup:") + (row.id || index),
-  dateTime: planning && row.at
-    ? new Date(row.at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" })
-    : row.dateTime || "Not available",
+  dateTime: displayHistoryDate(planning ? row.at : row.dateTime),
   sortDate: row.at || row.dateTime || "",
   coordinator: planning ? row.actor || "Academic Coordinator (demo)" : row.coordinator || "Academic Coordinator",
   module: planning ? "Sections & Schedules" : row.module,
@@ -119,6 +125,7 @@ export default function AcademicCoordinatorReports() {
   const liveData = useLiveAcademicCoordinator();
   const isLive = Boolean(liveData);
   const isSyntheticDemo = Boolean(liveData?.isSyntheticDemo);
+  const isOfficial = isLive && !isSyntheticDemo;
   const { catalog, registrar, academicCoordinatorData, blockPlanning } = useDemoData();
   const [tab, setTab] = useState("reports");
   const [reportType, setReportType] = useState(ACADEMIC_REPORT_TYPES[0]);
@@ -132,14 +139,57 @@ export default function AcademicCoordinatorReports() {
   const [printAll, setPrintAll] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [feedback, setFeedback] = useState("");
+  const [officialReviews, setOfficialReviews] = useState({ rows: [], loading: true, error: "" });
+  useEffect(() => {
+    if (!isOfficial) return undefined;
+    let cancelled = false;
+    loadAuthorizedAcademicReviewCases(registrar.enrollments, blockPlanning.students)
+      .then((rows) => {
+        if (!cancelled) setOfficialReviews({ rows, loading: false, error: "" });
+      })
+      .catch(() => {
+        if (!cancelled) setOfficialReviews({ rows: [], loading: false,
+          error: "Unable to load authorized academic review totals. Refresh to retry." });
+      });
+    return () => { cancelled = true; };
+  }, [isOfficial, registrar.enrollments, blockPlanning.students]);
+  const reviewCases = isOfficial ? officialReviews.rows : registrar.enrollments;
+  const [remoteHistory, setRemoteHistory] = useState({
+    page: 0, search: "", rows: [], total: 0, byModule: {},
+    loading: false, error: "",
+  });
+  const usesRemoteHistory = isLive && !isSyntheticDemo;
+  const historyLoader = liveData?.loadAcademicHistoryPage;
+
+  useEffect(() => {
+    if (tab !== "history" || !usesRemoteHistory) return undefined;
+    let cancelled = false;
+    const load = async () => {
+      setRemoteHistory((previous) => ({ ...previous, loading: true, error: "" }));
+      try {
+        const result = await historyLoader({ page: historyPage, search });
+        if (!cancelled) setRemoteHistory({
+          ...result, page: historyPage, search, loading: false, error: "",
+        });
+      } catch {
+        if (!cancelled) setRemoteHistory({
+          page: historyPage, search, rows: [], total: 0, byModule: {},
+          loading: false, error: "Unable to load authorized academic history. Retry the search or page.",
+        });
+      }
+    };
+    // Search stays responsive without starting one database request per keypress.
+    const handle = setTimeout(load, search.trim() ? 300 : 0);
+    return () => { cancelled = true; clearTimeout(handle); };
+  }, [historyLoader, historyPage, search, tab, usesRemoteHistory]);
 
   const terms = blockPlanning?.terms || [];
   const needsTerm = [ACADEMIC_REPORT_TYPES[2], ACADEMIC_REPORT_TYPES[3]].includes(reportType);
   const needsSubject = [ACADEMIC_REPORT_TYPES[1], ACADEMIC_REPORT_TYPES[2], ACADEMIC_REPORT_TYPES[3]].includes(reportType);
   const fields = getReportColumns(reportType, breakdown);
   const reportRows = useMemo(() =>
-    getReportRows(reportType, breakdown, catalog, academicCoordinatorData, blockPlanning, registrar),
-  [reportType, breakdown, catalog, academicCoordinatorData, blockPlanning, registrar]);
+    getReportRows(reportType, breakdown, catalog, academicCoordinatorData, blockPlanning, registrar, reviewCases),
+  [reportType, breakdown, catalog, academicCoordinatorData, blockPlanning, registrar, reviewCases]);
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return reportRows.filter((row) =>
@@ -152,25 +202,36 @@ export default function AcademicCoordinatorReports() {
     (program === "ALL" || row.program === program) &&
     (!needsTerm || term === "ALL" || row.termId === term))
     .map((row) => row.subject), [reportRows, program, needsTerm, term]);
+  const planningHistory = blockPlanning?.history;
+  const setupHistory = academicCoordinatorData?.history;
   const history = useMemo(() =>
-    [...(blockPlanning?.history || []).map((item, index) => historyRow(item, index, true)),
-      ...(academicCoordinatorData?.history || []).map((item, index) => historyRow(item, index))]
+    [...(planningHistory || []).map((item, index) => historyRow(item, index, true)),
+      ...(setupHistory || []).map((item, index) => historyRow(item, index))]
       .filter((item) => ["Academic Setup", "Sections & Schedules", "Academic Review"].includes(item.module))
       .sort((a, b) => dateValue(b.sortDate) - dateValue(a.sortDate)),
-  [blockPlanning?.history, academicCoordinatorData?.history]);
-  const filteredHistory = useMemo(() => {
+  [planningHistory, setupHistory]);
+  const localFilteredHistory = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return !keyword ? history : history.filter((row) =>
       ["dateTime", "coordinator", "module", "record", "action", "previousValue", "newValue"]
         .some((field) => String(row[field] || "").toLowerCase().includes(keyword)));
   }, [history, search]);
+  const remoteHistoryCurrent = remoteHistory.page === historyPage && remoteHistory.search === search;
+  const filteredHistory = usesRemoteHistory
+    ? (remoteHistoryCurrent ? remoteHistory.rows.map((row, index) => historyRow(row, index)) : [])
+    : localFilteredHistory;
+  const historyTotal = usesRemoteHistory
+    ? (remoteHistoryCurrent ? remoteHistory.total : 0) : filteredHistory.length;
+  const historyCounts = usesRemoteHistory
+    ? (remoteHistoryCurrent ? remoteHistory.byModule : {}) : null;
   const reportPageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const activeReportPage = Math.min(reportPage, reportPageCount);
   const visibleReportRows = printAll ? filteredRows :
     filteredRows.slice((activeReportPage - 1) * PAGE_SIZE, activeReportPage * PAGE_SIZE);
-  const historyPageCount = Math.max(1, Math.ceil(filteredHistory.length / PAGE_SIZE));
+  const historyPageCount = Math.max(1, Math.ceil(historyTotal / PAGE_SIZE));
   const activeHistoryPage = Math.min(historyPage, historyPageCount);
-  const visibleHistory = filteredHistory.slice((activeHistoryPage - 1) * PAGE_SIZE, activeHistoryPage * PAGE_SIZE);
+  const visibleHistory = usesRemoteHistory ? filteredHistory
+    : filteredHistory.slice((activeHistoryPage - 1) * PAGE_SIZE, activeHistoryPage * PAGE_SIZE);
 
   useEffect(() => {
     const afterPrint = () => setPrintAll(false);
@@ -178,8 +239,7 @@ export default function AcademicCoordinatorReports() {
     return () => window.removeEventListener("afterprint", afterPrint);
   }, []);
 
-  const reportFields = reportType === ACADEMIC_REPORT_TYPES[3]
-    ? [...fields, "conflictStatus", "conflictDetails"] : [...fields];
+  const reportFields = fields;
   const showManagement = [ACADEMIC_REPORT_TYPES[2], ACADEMIC_REPORT_TYPES[3]].includes(reportType);
   const capacityMetrics = useMemo(() => {
     if (reportType !== ACADEMIC_REPORT_TYPES[2]) return [];
@@ -205,21 +265,23 @@ export default function AcademicCoordinatorReports() {
     if (selectedSections) for (const sectionKey of selectedSections) availableSections.add(sectionKey);
     const capacitySections = capacitySectionRows.filter((row) =>
       availableSections.has(row.termId + "|" + row.section));
+    const selectedTerms = new Set(capacitySections.map((row) => row.termId));
     const matchingRequests = (registrar.enrollments || []).filter((enrollment) =>
+      selectedTerms.has(enrollment.term) &&
       (enrollment.subjects || []).some((item) => capacityScope.has(enrollment.program + "|" + item.code)));
     const uniqueRequesters = new Set(matchingRequests.map((enrollment) =>
       enrollment.studentNumber || enrollment.reference));
     const uniqueConfirmed = new Set(matchingRequests.filter((enrollment) => enrollment.status === "CONFIRMED")
       .map((enrollment) => enrollment.studentNumber || enrollment.reference));
     return [
-      { label: "Student Requests (Demo)", value: uniqueRequesters.size },
+      { label: isLive ? "Recorded Student Requests" : "Student Requests (Demo)", value: uniqueRequesters.size },
       { label: "Available Sections", value: capacitySections.filter((row) => row.available > 0).length },
       { label: "Total Section Capacity", value: capacitySections.reduce((sum, row) => sum + row.capacity, 0) },
-      { label: "Confirmed Enrollments (Registrar Demo)", value: uniqueConfirmed.size },
+      { label: isLive ? "Registrar Confirmed Enrollments" : "Confirmed Enrollments (Registrar Demo)", value: uniqueConfirmed.size },
       { label: "Proposed Block Assignments", value: capacitySections.reduce((sum, row) => sum + row.proposed, 0) },
       { label: "Actually Available Slots", value: capacitySections.reduce((sum, row) => sum + row.available, 0) },
     ];
-  }, [reportType, breakdown, filteredRows, blockPlanning, registrar]);
+  }, [reportType, breakdown, filteredRows, blockPlanning, registrar, isLive]);
   const metrics = reportType === ACADEMIC_REPORT_TYPES[2]
     ? capacityMetrics
     : reportType === ACADEMIC_REPORT_TYPES[3]
@@ -239,7 +301,7 @@ export default function AcademicCoordinatorReports() {
     const previousUsesSubject = [ACADEMIC_REPORT_TYPES[1], ACADEMIC_REPORT_TYPES[2], ACADEMIC_REPORT_TYPES[3]].includes(reportType);
     const nextUsesTerm = [ACADEMIC_REPORT_TYPES[2], ACADEMIC_REPORT_TYPES[3]].includes(next);
     const previousUsesTerm = [ACADEMIC_REPORT_TYPES[2], ACADEMIC_REPORT_TYPES[3]].includes(reportType);
-    const nextRows = getReportRows(next, nextBreakdown, catalog, academicCoordinatorData, blockPlanning, registrar);
+    const nextRows = getReportRows(next, nextBreakdown, catalog, academicCoordinatorData, blockPlanning, registrar, reviewCases);
     const nextTerm = nextUsesTerm && previousUsesTerm && term !== "ALL" &&
       nextRows.some((row) => row.termId === term && (program === "ALL" || row.program === program))
       ? term : "ALL";
@@ -267,6 +329,9 @@ export default function AcademicCoordinatorReports() {
     setFeedback("");
   }
   function exportReport() {
+    if (reportType === ACADEMIC_REPORT_TYPES[4] && isOfficial && (officialReviews.loading || officialReviews.error)) {
+      setFeedback("Academic review records are still unavailable. Retry after reloading the report."); return;
+    }
     if (!filteredRows.length) { setFeedback("No report records match the selected filters."); return; }
     try {
       exportCsv(filteredRows, reportFields, reportType.toLowerCase().replaceAll(" ", "-") + ".csv");
@@ -276,6 +341,9 @@ export default function AcademicCoordinatorReports() {
     }
   }
   function openPrint() {
+    if (reportType === ACADEMIC_REPORT_TYPES[4] && isOfficial && (officialReviews.loading || officialReviews.error)) {
+      setFeedback("Academic review records are still unavailable. Retry after reloading the report."); return;
+    }
     if (!filteredRows.length) { setFeedback("No report records match the selected filters."); return; }
     try {
       flushSync(() => setPrintAll(true));
@@ -323,6 +391,10 @@ export default function AcademicCoordinatorReports() {
               {showManagement && <LinkButton href={MANAGEMENT_ROUTE + (reportType === ACADEMIC_REPORT_TYPES[3] ? "?view=schedules" : "")}>Open Sections & Schedules</LinkButton>}
             </div>
             <Feedback message={feedback} />
+            {isOfficial && reportType === ACADEMIC_REPORT_TYPES[4] && officialReviews.loading &&
+              <p role="status">Loading normalized academic review cases...</p>}
+            {isOfficial && reportType === ACADEMIC_REPORT_TYPES[4] && officialReviews.error &&
+              <p className="notice warning" role="alert">{officialReviews.error}</p>}
             <section className="academic-report-print">
               <div className="section-header">
                 <div><h2>{reportType}{reportType === ACADEMIC_REPORT_TYPES[0]
@@ -341,7 +413,8 @@ export default function AcademicCoordinatorReports() {
               {reportType === ACADEMIC_REPORT_TYPES[3] && <p className="academic-helper">Published means the Academic Coordinator published a schedule proposal. Conflicts reflect overlapping room, instructor, or block meetings and recorded resource unavailability.</p>}
               {reportType === ACADEMIC_REPORT_TYPES[4] && <p className="academic-helper">Returned for clarification remains pending until a final academic decision. Returned is included in Pending and is not added again to Total Cases. Applied appears only when explicitly recorded.</p>}
               <DataTable rowKey={(row) => row.id || [row.program, row.curriculum, row.subject, row.section, row.academicTerm, row.category].join(":")}
-                rows={visibleReportRows} emptyMessage="No records meet the current report filters."
+                rows={visibleReportRows} emptyMessage={isOfficial && reportType === ACADEMIC_REPORT_TYPES[4] && officialReviews.loading
+                  ? "Loading academic review totals..." : "No records meet the current report filters."}
                 columns={[...fields.map((field) => ({ key: field, label: FIELDS[field] || field,
                   ...(field === "scheduleStatus" && reportType === ACADEMIC_REPORT_TYPES[3]
                     ? { render: (row) => <><StatusBadge value={row.scheduleStatus} label={row.scheduleStatus} />{" "}
@@ -360,20 +433,25 @@ export default function AcademicCoordinatorReports() {
           <>
             <div className="toolbar"><SearchControl value={search} onChange={(value) => { setSearch(value); setHistoryPage(1); }} label="Search academic change history"
               placeholder="Search coordinator, module, record or action" /></div>
+            {usesRemoteHistory && (remoteHistory.loading || !remoteHistoryCurrent) &&
+              <p role="status">Loading authorized academic change history...</p>}
+            {usesRemoteHistory && remoteHistoryCurrent && remoteHistory.error &&
+              <p role="alert">{remoteHistory.error}</p>}
             <div className="stats-grid" style={{ marginBottom: 16 }}>
-              <Metric label="Academic Changes" value={filteredHistory.length} />
-              <Metric label="Academic Setup" value={filteredHistory.filter((row) => row.module === "Academic Setup").length} />
-              <Metric label="Sections & Schedules" value={filteredHistory.filter((row) => row.module === "Sections & Schedules").length} />
-              <Metric label="Academic Review" value={filteredHistory.filter((row) => row.module === "Academic Review").length} />
+              <Metric label="Academic Changes" value={historyTotal} />
+              <Metric label="Academic Setup" value={historyCounts ? historyCounts["Academic Setup"] ?? 0 : filteredHistory.filter((row) => row.module === "Academic Setup").length} />
+              <Metric label="Sections & Schedules" value={historyCounts ? historyCounts["Sections & Schedules"] ?? 0 : filteredHistory.filter((row) => row.module === "Sections & Schedules").length} />
+              <Metric label="Academic Review" value={historyCounts ? historyCounts["Academic Review"] ?? 0 : filteredHistory.filter((row) => row.module === "Academic Review").length} />
             </div>
-            <DataTable rowKey="id" rows={visibleHistory} emptyMessage="No academic changes match your search."
+            <DataTable rowKey="id" rows={visibleHistory} emptyMessage={usesRemoteHistory && (!remoteHistoryCurrent || remoteHistory.loading)
+              ? "Loading history records..." : "No academic changes match your search."}
               columns={[
                 ...["dateTime", "coordinator", "module", "record", "action"].map((key) => ({ key, label: FIELDS[key] })),
                 { key: "actions", label: "Actions", render: (row) => <TableActions><TableActionButton tone="view"
                   onClick={() => setSelectedDetail({ kind: "history", row })}>View Details</TableActionButton></TableActions> },
               ]} />
-            {filteredHistory.length > PAGE_SIZE &&
-              <TablePagination page={activeHistoryPage} pageSize={PAGE_SIZE} total={filteredHistory.length}
+            {historyTotal > PAGE_SIZE &&
+              <TablePagination page={activeHistoryPage} pageSize={PAGE_SIZE} total={historyTotal}
                 onPageChange={setHistoryPage} label="Academic change history pagination" />}
           </>
         )}

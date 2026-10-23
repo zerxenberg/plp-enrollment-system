@@ -15,6 +15,7 @@ import {
 import { Tabs, Details, Feedback, Info } from "@/components/registrar/RegistrarShared";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
+import { loadAuthorizedAcademicReviewCases } from "@/features/academic/academic-review-cases";
 import {
   ACADEMIC_REVIEW_STATUS,
   canDecideAcademicReview,
@@ -54,12 +55,17 @@ function getSubjectCodes(record) {
 }
 
 function getReviewSubject(record) {
+  if (record.reviewId && !record.academicReviewScope?.subjectCode && !record.academicReviewSubjectCode) {
+    return "Not specified";
+  }
   return record.academicReviewScope?.subjectCode ||
     record.academicReviewSubjectCode || record.subjects?.[0]?.code || "Not specified";
 }
 
 function getReviewScope(record) {
-  return `Student ${record.academicReviewScope?.studentReference || record.studentNumber}, enrollment ${record.academicReviewScope?.enrollmentReference || record.reference}, subject ${getReviewSubject(record)} only`;
+  const scope = `Student ${record.academicReviewScope?.studentReference || record.studentNumber}, enrollment ${record.academicReviewScope?.enrollmentReference || record.reference}`;
+  return getReviewSubject(record) === "Not specified" ? `${scope}; no specific subject recorded`
+    : `${scope}, subject ${getReviewSubject(record)} only`;
 }
 
 function getFailedRule(record) {
@@ -77,11 +83,12 @@ function getAcademicIssue(record) {
 }
 
 function getCaseSnapshot(record) {
-  return [record.status, record.academicReviewDecision, record.academicReviewDate].join("|");
+  return [record.status, record.academicReviewDecision, record.academicReviewDate, record.reviewId].join("|");
 }
 
+const caseKey = (record) => record.reviewId || record.reference;
 function toCaseReference(record) {
-  return `ACR-${record.reference}`;
+  return `ACR-${caseKey(record)}`;
 }
 
 function getStatusDisplay(value) {
@@ -92,8 +99,11 @@ function getStatusDisplay(value) {
 }
 
 export default function AcademicCoordinatorAcademicReview() {
-  const isLive = Boolean(useLiveAcademicCoordinator());
-  const { registrar, catalog, decideAcademicReview } = useDemoData();
+  const liveData = useLiveAcademicCoordinator();
+  const isLive = Boolean(liveData);
+  const isOfficial = isLive && !liveData.isSyntheticDemo;
+  const { registrar, catalog, blockPlanning, decideAcademicReview } = useDemoData();
+  const [officialCases, setOfficialCases] = useState({ rows: [], loading: true, error: "" });
   const [view, setView] = useState("pending");
   const [search, setSearch] = useState("");
   const [programFilter, setProgramFilter] = useState(ALL);
@@ -113,13 +123,29 @@ export default function AcademicCoordinatorAcademicReview() {
   const confirmationRef = useRef(null);
   const keepEditingRef = useRef(null);
 
+  useEffect(() => {
+    if (!isOfficial) return undefined;
+    let cancelled = false;
+    loadAuthorizedAcademicReviewCases(registrar.enrollments, blockPlanning.students)
+      .then((rows) => {
+        if (!cancelled) setOfficialCases({ rows, loading: false, error: "" });
+      })
+      .catch(() => {
+        if (!cancelled) setOfficialCases({ rows: [], loading: false,
+          error: "Unable to load authorized academic reviews. Refresh the page to retry." });
+      });
+    return () => { cancelled = true; };
+  }, [isOfficial, registrar.enrollments, blockPlanning.students]);
+
+  const reviewCases = isOfficial ? officialCases.rows : registrar.enrollments;
+
   const pendingCases = useMemo(
-    () => registrar.enrollments.filter(isPendingAcademicReview),
-    [registrar.enrollments],
+    () => reviewCases.filter(isPendingAcademicReview),
+    [reviewCases],
   );
   const resolvedCases = useMemo(
-    () => registrar.enrollments.filter(isResolvedReview),
-    [registrar.enrollments],
+    () => reviewCases.filter(isResolvedReview),
+    [reviewCases],
   );
   const cases = view === "pending" ? pendingCases : resolvedCases;
 
@@ -128,7 +154,8 @@ export default function AcademicCoordinatorAcademicReview() {
     [cases],
   );
   const subjects = useMemo(
-    () => [...new Set(cases.flatMap((record) => (record.subjects || []).map((subject) => subject.code)).filter(Boolean))].sort(),
+    () => [...new Set(cases.flatMap((record) => [getReviewSubject(record),
+      ...(record.subjects || []).map((subject) => subject.code)]).filter((value) => value && value !== "Not specified"))].sort(),
     [cases],
   );
   const statusOptions = view === "pending"
@@ -139,7 +166,8 @@ export default function AcademicCoordinatorAcademicReview() {
     const query = search.trim().toLowerCase();
     return cases.filter((record) => {
       if (programFilter !== ALL && record.program !== programFilter) return false;
-      if (subjectFilter !== ALL && !(record.subjects || []).some((subject) => subject.code === subjectFilter)) return false;
+      if (subjectFilter !== ALL && getReviewSubject(record) !== subjectFilter &&
+        !(record.subjects || []).some((subject) => subject.code === subjectFilter)) return false;
       if (statusFilter !== ALL && getReviewStatus(record) !== statusFilter) return false;
       if (!query) return true;
       const searchable = [
@@ -151,15 +179,17 @@ export default function AcademicCoordinatorAcademicReview() {
     });
   }, [cases, programFilter, subjectFilter, statusFilter, search]);
 
-  const current = registrar.enrollments.find((record) => record.reference === selectedReference);
+  const current = reviewCases.find((record) => caseKey(record) === selectedReference);
   const studentRecord = registrar.students.find((record) => record.studentNumber === current?.studentNumber);
   const isStale = current && selectedSnapshot !== getCaseSnapshot(current);
-  const isEditable = current && dialogMode === "review" && canDecideAcademicReview(current) && !isStale;
+  const isEditable = current && dialogMode === "review" && canDecideAcademicReview(current) &&
+    !current.academicReviewActionBlocked && !isStale;
   const subjectCatalog = useMemo(
     () => new Map(catalog.subjects.map((subject) => [subject.code, subject])),
     [catalog.subjects],
   );
   const applicablePrerequisites = current?.subjects?.flatMap((item) => {
+    if (current.reviewId && item.code !== current.academicReviewSubjectCode) return [];
     const subject = subjectCatalog.get(item.code);
     return (subject?.prerequisites || []).map((prerequisite) => `${item.code}: ${prerequisite}`);
   }) || [];
@@ -208,8 +238,8 @@ export default function AcademicCoordinatorAcademicReview() {
   }
 
   function openCase(record, readOnly = false) {
-    const actionable = !readOnly && canDecideAcademicReview(record);
-    setSelectedReference(record.reference);
+    const actionable = !readOnly && canDecideAcademicReview(record) && !record.academicReviewActionBlocked;
+    setSelectedReference(caseKey(record));
     setSelectedSnapshot(getCaseSnapshot(record));
     setDialogMode(actionable ? "review" : "details");
     setDiscardPrompt(false);
@@ -245,7 +275,12 @@ export default function AcademicCoordinatorAcademicReview() {
     }
 
     inFlightRef.current = true;
-    const result = await decideAcademicReview(current.reference, { decision, note: reason.trim() });
+    let result;
+    try {
+      result = await decideAcademicReview(current.reference, { decision, note: reason.trim() });
+    } catch {
+      result = { ok: false, message: "The academic decision could not be saved. Refresh the case and retry." };
+    }
     if (result.ok) {
       setFeedback({
         message: `Decision recorded for ${toCaseReference(current)}. The enrollment is now ${result.nextStatus.replaceAll("_", " ")}; Registrar confirmation remains separate.`,
@@ -266,6 +301,9 @@ export default function AcademicCoordinatorAcademicReview() {
         title="Academic Review"
         description="Decide defined academic exceptions using the minimum student and enrollment context required for review."
       />
+
+      {isOfficial && officialCases.loading && <p role="status">Loading authorized academic review cases...</p>}
+      {isOfficial && officialCases.error && <p role="alert" className="notice warning">{officialCases.error}</p>}
 
       <Tabs
         selected={view}
@@ -313,9 +351,9 @@ export default function AcademicCoordinatorAcademicReview() {
 
         {view === "pending" ? (
           <DataTable
-            rowKey="reference"
+            rowKey={caseKey}
             rows={displayedCases}
-            emptyMessage="No pending reviews match the current filters."
+            emptyMessage={isOfficial && officialCases.loading ? "Loading reviews..." : "No pending reviews match the current filters."}
             columns={[
               { key: "caseReference", label: "Case Reference", render: toCaseReference },
               { key: "studentReference", label: "Student Reference", render: (record) => record.studentNumber },
@@ -326,16 +364,16 @@ export default function AcademicCoordinatorAcademicReview() {
               { key: "status", label: "Status", render: (record) => <StatusBadge value={getReviewStatus(record)} label={getStatusDisplay(getReviewStatus(record))} /> },
               { key: "actions", label: "Action", render: (record) => (
                 <TableActions>
-                  <TableActionButton tone="review" onClick={() => openCase(record)}>Review Case</TableActionButton>
+                  <TableActionButton tone="review" onClick={() => openCase(record)}>{record.academicReviewActionBlocked ? "View Case" : "Review Case"}</TableActionButton>
                 </TableActions>
               ) },
             ]}
           />
         ) : (
           <DataTable
-            rowKey="reference"
+            rowKey={caseKey}
             rows={displayedCases}
-            emptyMessage="No resolved reviews match the current filters."
+            emptyMessage={isOfficial && officialCases.loading ? "Loading reviews..." : "No resolved reviews match the current filters."}
             columns={[
               { key: "caseReference", label: "Case Reference", render: toCaseReference },
               { key: "studentReference", label: "Student Reference", render: (record) => record.studentNumber },
@@ -429,6 +467,9 @@ export default function AcademicCoordinatorAcademicReview() {
                       This case is awaiting clarification. Further decisions are unavailable until the clarification is received.
                     </p>
                   ) : null}
+                  {current.academicReviewActionBlocked && <p className="notice warning" style={{ marginTop: 12 }}>
+                    This enrollment has multiple pending review records. A specific review must be selected by the database decision transaction before a decision can be made.
+                  </p>}
                   {isStale ? <p className="notice warning" role="alert" style={{ marginTop: 12 }}>The case changed while this dialog was open. Close and reopen it for the latest details.</p> : null}
                 </>
               ) : step === "confirm" ? (

@@ -4,7 +4,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { getLiveSession } from "@/lib/auth/live-auth";
-import { loadLiveAcademicCoordinator, persistAcademicMaster } from "./live-academic-data";
+import {
+  loadAuthorizedAcademicHistoryPage, loadLiveAcademicCoordinator,
+  persistAcademicMaster,
+} from "./live-academic-data";
 import { loadSupabaseAcademicDemo } from "./supabase-demo-academic-data";
 
 const LiveCoordinatorContext = createContext(null);
@@ -277,6 +280,7 @@ export function LiveAcademicCoordinatorProvider({ children }) {
     if (!isCoordinator || !snapshot) return null;
     const currentValue = {
       isSyntheticDemo: Boolean(snapshot.isSyntheticDemo),
+      loadAcademicHistoryPage: snapshot.isSyntheticDemo ? null : loadAuthorizedAcademicHistoryPage,
       catalog: snapshot.catalog,
       academicCatalog: snapshot.catalog,
       academicCoordinatorData: snapshot.academicCoordinatorData,

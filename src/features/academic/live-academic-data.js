@@ -1,5 +1,10 @@
 import { supabase } from "@/lib/supabase/client";
 import { getLiveSession } from "@/lib/auth/live-auth";
+import { loadCoordinatorCurriculumProvenance } from "./coordinator-curriculum-provenance";
+import {
+  ACADEMIC_HISTORY_MODULES, ACADEMIC_HISTORY_PREVIEW_SIZE,
+  queryAcademicHistoryPage, toAcademicHistoryRow,
+} from "./academic-history-pagination.mjs";
 
 // Backend-to-existing-GUI adapter. It contains no synthetic fallback records.
 // The caller must display loading/error states when the authorized read fails.
@@ -22,9 +27,14 @@ function rows(result, table) {
 async function loadAllRows(table, sortBy = "id", descending = false) {
   const complete = [];
   const pageSize = 1000;
-  for (let offset = 0; offset < 20000; offset += pageSize) {
-    let query = supabase.from(table).select("*").order(sortBy, { ascending: !descending });
-    if (sortBy !== "id") query = query.order("id", { ascending: !descending });
+  // Composite relationship tables have no id. Order by their key columns so
+  // pages remain stable at the Supabase response limit.
+  const orderFields = Array.isArray(sortBy) ? sortBy : [sortBy];
+  for (let offset = 0; offset < 100000; offset += pageSize) {
+    let query = supabase.from(table).select("*");
+    for (const field of orderFields) {
+      query = query.order(field, { ascending: !descending });
+    }
     const page = rows(await query.range(offset, offset + pageSize - 1), table);
     complete.push(...page);
     if (page.length < pageSize) return { data: complete, error: null };
@@ -41,6 +51,14 @@ async function loadSyntheticStudentLabels() {
     if (page.length < pageSize) return complete;
   }
   throw new Error("Synthetic student labels exceeded the supported pagination limit.");
+}
+export async function loadAuthorizedAcademicHistoryPage(options = {}) {
+  const current = await getLiveSession();
+  if (current?.role !== "academic-coordinator") {
+    throw new Error("Academic Coordinator authentication is required.");
+  }
+  // The browser client retains its existing RLS-bound authenticated session.
+  return queryAcademicHistoryPage(supabase, options);
 }
 function yearLabel(value) {
   return Number.isInteger(value) ? `${value}-${value + 1}` : "";
@@ -61,35 +79,41 @@ export async function loadLiveAcademicCoordinator() {
     instructorsResult, roomsResult, sectionInstructorsResult, historyResult, reviewsResult,
     enrollmentsResult, enrollmentSubjectsResult, notificationsResult,
     userNotificationsResult,pricesResult,curriculumRatesResult,syntheticNamesResult,
-    curriculumEstimatesResult,
+    curriculumEstimatesResult, provenanceResult,
   ] = await Promise.all([
     supabase.from("organizational_units").select("*"),
     supabase.from("programs").select("*"),
     supabase.from("program_tracks").select("*"),
-    supabase.from("subjects").select("*"),
+    loadAllRows("subjects", "code"),
     supabase.from("curricula").select("*"),
-    supabase.from("curriculum_subjects").select("*"),
-    supabase.from("subject_prerequisites").select("*"),
+    loadAllRows("curriculum_subjects", ["curriculum_code", "subject_code", "year_level", "semester"]),
+    loadAllRows("subject_prerequisites", ["curriculum_code", "subject_code", "prerequisite_subject_code"]),
     supabase.from("academic_terms").select("*"),
     supabase.from("subject_offerings").select("*"),
     supabase.from("block_sections").select("*"),
-    supabase.from("block_subject_sections").select("*"),
+    loadAllRows("block_subject_sections", ["block_id", "section_id"]),
     loadAllRows("block_student_assignments"),
-    supabase.from("sections").select("*"),
-    supabase.from("section_meetings").select("*"),
+    loadAllRows("sections"),
+    loadAllRows("section_meetings"),
     supabase.from("instructors").select("*"),
     supabase.from("rooms").select("*"),
-    supabase.from("section_instructors").select("section_id,instructor_id,assignment_role"),
-    loadAllRows("academic_change_history", "occurred_at", true),
-    supabase.from("academic_reviews").select("*"),
-    supabase.from("enrollments").select("*"),
-    supabase.from("enrollment_subjects").select("*"),
+    loadAllRows("section_instructors", ["section_id", "instructor_id"]),
+    supabase.from("academic_change_history")
+      .select("id,occurred_at,actor_user_id,actor_role_code,module,record_reference,action,previous_value,new_value,reason")
+      .in("module", ACADEMIC_HISTORY_MODULES)
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(ACADEMIC_HISTORY_PREVIEW_SIZE),
+    loadAllRows("academic_reviews"),
+    loadAllRows("enrollments"),
+    loadAllRows("enrollment_subjects", ["enrollment_id", "subject_code"]),
     supabase.from("notifications").select("*"),
     supabase.from("user_notifications").select("*").eq("user_id", current.id),
-    supabase.from("academic_estimated_subject_prices").select("*"),
-    supabase.from("academic_estimated_curriculum_rates").select("*"),
+    loadAllRows("academic_estimated_subject_prices", "subject_code"),
+    loadAllRows("academic_estimated_curriculum_rates", ["curriculum_code", "subject_code"]),
     loadSyntheticStudentLabels(),
     supabase.from("academic_estimated_curriculum_tuition").select("*"),
+    loadCoordinatorCurriculumProvenance(),
   ]);
   const organizationalUnits = rows(unitsResult, "organizational unit");
   const programRecords = rows(programsResult, "program");
@@ -128,6 +152,7 @@ export async function loadLiveAcademicCoordinator() {
   const syntheticNames = new Map(syntheticNamesResult.map((item) => [item.id, item.display_name]));
   const curriculumEstimateMap = new Map(rows(curriculumEstimatesResult, "curriculum tuition completeness")
     .map((item) => [item.curriculum_code, item]));
+  const provenanceMap = new Map(provenanceResult.map((item) => [item.curriculumCode, item]));
 
   const departments = organizationalUnits.map((unit) => ({
     id: unit.code, code: unit.code, name: unit.name, status: unit.is_active ? "Active" : "Inactive",
@@ -137,7 +162,7 @@ export async function loadLiveAcademicCoordinator() {
     department: record.organizational_unit_code, departmentId: record.organizational_unit_code,
     status: titleStatus(record.status),
     majors: trackRecords.filter((row) => row.program_code === record.code).map((row) => row.name),
-    reference: "Registered Academic Record",
+    reference: "Academic program catalog record",
     enrolled: enrollmentRecords.filter((row) => row.program_code === record.code && row.status === "CONFIRMED").length,
   }));
   const curriculumMap = new Map(curriculumRecords.map((record) => [record.code, record]));
@@ -153,7 +178,14 @@ export async function loadLiveAcademicCoordinator() {
     const assignments = placementsBySubject.get(record.code) || [];
     const applicablePrograms = [...new Set(assignments.map((item) =>
       curriculumMap.get(item.curriculum_code)?.program_code).filter(Boolean))];
-    const placement = assignments[0];
+    const uniquePlacements = [...new Set(assignments.map((item) =>
+      `${item.year_level}:${item.semester}`))];
+    const placement = uniquePlacements.length === 1 ? assignments[0] : null;
+    const departments = [...new Set(applicablePrograms.map((code) =>
+      programMap.get(code)?.department).filter(Boolean))];
+    const estimatedRate = priceMap.get(record.code);
+    const isProjectOnly = assignments.some((item) =>
+      provenanceMap.get(item.curriculum_code)?.isOfficial === false);
     return {
       id: `subject-${record.code.toLowerCase()}`, code: record.code,
       name: record.name, units: record.units, description: record.description || "",
@@ -162,21 +194,30 @@ export async function loadLiveAcademicCoordinator() {
       yearLevel: placement?.year_level || "", semester: placement?.semester || "",
       prerequisites: [...new Set(prerequisites.filter((rule) => rule.subject_code === record.code && rule.is_active)
         .map((rule) => rule.prerequisite_subject_code))],
-      department: programMap.get(applicablePrograms[0])?.department || "",
-      departmentId: programMap.get(applicablePrograms[0])?.departmentId || "",
-      reference: "Registered Academic Record",
-      feePerUnit: Number(priceMap.get(record.code)?.rate_per_unit ?? 0),
-      fee: Number(record.units || 0) * Number(priceMap.get(record.code)?.rate_per_unit ?? 0),
+      department: departments.length === 1 ? departments[0] : "",
+      departmentId: departments.length === 1 ? departments[0] : "",
+      departments, curriculumPlacements: assignments.map((item) => ({
+        curriculumCode: item.curriculum_code, yearLevel: item.year_level,
+        semester: item.semester,
+      })),
+      isProjectOnly,
+      reference: isProjectOnly ? "PROJECT_ONLY simulated subject" : "Academic subject catalog record",
+      feePerUnit: estimatedRate ? Number(estimatedRate.rate_per_unit) : null,
+      fee: estimatedRate ? Number(record.units) * Number(estimatedRate.rate_per_unit) : null,
+      feeClassification: estimatedRate?.classification || null,
     };
   });
   const curricula = curriculumRecords.map((record) => {
+    const provenance = provenanceMap.get(record.code);
     const assigned = placementRecords.filter((item) => item.curriculum_code === record.code)
       .map((placement) => ({
         subjectCode: placement.subject_code, yearLevel: placement.year_level,
         semester: placement.semester, isRequired: placement.is_required,
         unitsOverride: placement.units_override,
-        feePerUnit: Number(curriculumRateMap.get(`${placement.curriculum_code}:${placement.subject_code}`)
-          ?? priceMap.get(placement.subject_code)?.rate_per_unit ?? 0),
+        feePerUnit: curriculumRateMap.has(`${placement.curriculum_code}:${placement.subject_code}`)
+          ? Number(curriculumRateMap.get(`${placement.curriculum_code}:${placement.subject_code}`))
+          : priceMap.has(placement.subject_code)
+            ? Number(priceMap.get(placement.subject_code).rate_per_unit) : null,
         prerequisites: prerequisites.filter((rule) =>
           rule.curriculum_code === record.code && rule.subject_code === placement.subject_code && rule.is_active)
           .map((rule) => rule.prerequisite_subject_code),
@@ -194,7 +235,10 @@ export async function loadLiveAcademicCoordinator() {
       assignedSubjects: assigned.length,
       totalUnits: assigned.reduce((sum, item) =>
         sum + Number(item.unitsOverride ?? subjectMap.get(item.subjectCode)?.units ?? 0), 0),
-      reference: "Registered Academic Record",
+      isProjectOnly: provenance?.isOfficial === false,
+      provenance: provenance?.sourceType || null,
+      reference: provenance?.isOfficial === false
+        ? "PROJECT_ONLY simulated curriculum" : "Registered curriculum record",
     };
   });
   const terms = termRecords.map((record) => ({
@@ -266,17 +310,7 @@ export async function loadLiveAcademicCoordinator() {
       })),
     };
   });
-  const history = academicHistory.map((row) => ({
-    // SQL backfills have no authenticated actor. Never attribute those to an
-    // Academic Coordinator merely because the history is shown in this portal.
-    id: row.id, dateTime: row.occurred_at,
-    coordinator: row.actor_user_id
-      ? (row.actor_role_code || "Authenticated Staff")
-      : (row.actor_role_code || "System / Unattributed"),
-    module: row.module, record: row.record_reference,
-    action: row.action, previousValue: row.previous_value || "",
-    newValue: row.new_value || "", reason: row.reason || "",
-  }));
+  const history = academicHistory.map(toAcademicHistoryRow);
   return {
     catalog: { departments, programs, subjects,
       sections: sectionRecords.map((row) => ({ id: row.id, subjectCode: row.subject_code,
@@ -287,7 +321,14 @@ export async function loadLiveAcademicCoordinator() {
         id: record.id, termId: record.term_id, program: record.program_code,
         curriculum: record.curriculum_code, subjectCode: record.subject_code,
         status: titleStatus(record.status), plannedSections: record.planned_sections,
-      })), history, prerequisiteRules: [],
+      })), history, prerequisiteRules: [], reviews: reviewRecords.map((review) => ({
+        id: review.id, enrollmentId: review.enrollment_id,
+        reference: enrollmentRecords.find((entry) => entry.id === review.enrollment_id)?.reference || "",
+        subjectCode: review.subject_code, status: review.review_status,
+        submittedAt: review.created_at, decidedAt: review.decided_at,
+        reason: review.decision_reason || review.academic_reason || "",
+        exceptionType: review.exception_type, failedRuleCode: review.failed_rule_code,
+      })),
     },
     blockPlanning: {
       terms, colleges: departments, programs, curricula, subjects,
@@ -336,6 +377,7 @@ export async function loadLiveAcademicCoordinator() {
         } : null;
       }).filter(Boolean),
     },
+    student: { profile: {}, term: liveTerm, enrollment: {}, academicResults: [] },
     term: liveTerm,
   };
 }
