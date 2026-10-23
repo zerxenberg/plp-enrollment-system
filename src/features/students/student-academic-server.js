@@ -47,11 +47,15 @@ export async function loadStudentAcademicForPage() {
         snapshot.student_number !== student.student_number ||
         !snapshot.curriculum_code) return UNAVAILABLE;
 
-    const { data: provenance, error: provenanceError } = await admin
-      .from("phase8_fictional_curriculum_provenance")
-      .select("is_official")
-      .eq("curriculum_code", snapshot.curriculum_code).maybeSingle();
-    if (provenanceError || !provenance || provenance.is_official !== false) {
+    // The provenance table deliberately denies direct SELECT even to the
+    // application's service-role client. Use its owner-checked read contract.
+    const { data: provenance, error: provenanceError } = await client.rpc(
+      "project_phase8_student_portal_status_v1", { p_student_id: student.id },
+    );
+    if (provenanceError || provenance?.project_only !== true ||
+        provenance?.verified_institutionally !== false ||
+        provenance?.curriculum_is_official !== false ||
+        provenance?.curriculum_code !== snapshot.curriculum_code) {
       return UNAVAILABLE;
     }
 

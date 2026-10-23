@@ -13,14 +13,17 @@ function refreshStudentEnrollmentViews() {
 
 export async function submitPreparedProjectEnrollment() {
   const context = await assertCanSubmitProjectEnrollment();
-  const previous = await context.admin.from("project_phase8_enrollment_simulations")
-    .select("status").eq("student_id", context.studentId)
-    .eq("term_id", "TERM-2026-1").maybeSingle();
-  if (previous.error) throw new Error("Could not verify current enrollment status.");
+  const previous = await context.client.rpc("project_phase8_student_portal_status_v1", {
+    p_student_id: context.studentId,
+  });
+  if (previous.error || previous.data?.project_only !== true ||
+      previous.data?.verified_institutionally !== false) {
+    throw new Error("Could not verify current enrollment status.");
+  }
 
   // OPEN reuses an existing draft under the database's unique(student,term)
   // constraint. Only a deliberate confirmation can invoke SUBMIT.
-  if (!previous.data) {
+  if (!previous.data.simulation) {
     const opened = await context.client.rpc("project_phase8_simulated_enrollment_action_v1", {
       p_student_id: context.studentId, p_action: "OPEN", p_reason: null,
     });
@@ -38,11 +41,12 @@ export async function submitPreparedProjectEnrollment() {
 
 export async function getConfirmedProjectDemonstrationCor() {
   const context = await requireStudentContext();
-  const { data: simulation, error } = await context.admin
-    .from("project_phase8_enrollment_simulations")
-    .select("id,status").eq("student_id", context.studentId)
-    .eq("term_id", "TERM-2026-1").maybeSingle();
-  if (error || simulation?.status !== "CONFIRMED_SIMULATION") {
+  const { data: status, error } = await context.client.rpc(
+    "project_phase8_student_portal_status_v1", { p_student_id: context.studentId },
+  );
+  const simulation = status?.simulation;
+  if (error || status?.project_only !== true ||
+      simulation?.status !== "CONFIRMED_SIMULATION") {
     throw new Error("A Registrar confirmed project simulation is required before a demonstration registration document can be viewed.");
   }
   const result = await context.client.rpc("project_phase8_demonstration_cor_v1", {

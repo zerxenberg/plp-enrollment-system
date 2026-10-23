@@ -72,11 +72,9 @@ export async function loadStudentProfileForPage() {
     }
     // Academic values are fictional and are displayed as simulated only when
     // the trusted owner-scoped project snapshot validates its provenance.
-    const [{ data: snapshot, error: snapshotError }, { data: simulation }] = await Promise.all([
+    const [{ data: snapshot, error: snapshotError }, { data: portalStatus }] = await Promise.all([
       ctx.client.rpc("project_phase8_student_snapshot_v2", { p_student_id: ctx.studentId }),
-      ctx.admin.from("project_phase8_enrollment_simulations")
-        .select("status").eq("student_id", ctx.studentId)
-        .eq("term_id", "TERM-2026-1").maybeSingle(),
+      ctx.client.rpc("project_phase8_student_portal_status_v1", { p_student_id: ctx.studentId }),
     ]);
     const validSnapshot = !snapshotError && snapshot?.project_only === true &&
       snapshot.data_origin === "GENERATED_PROJECT" &&
@@ -93,7 +91,8 @@ export async function loadStudentProfileForPage() {
       enrollmentEligibility: validSnapshot
         ? (projectEligible ? "Prepared for project enrollment" : "Project validation pending")
         : "Not yet evaluated",
-      projectEnrollmentStatus: simulation?.status ? `Project: ${simulation.status}` : "Project: Not started",
+      projectEnrollmentStatus: portalStatus?.simulation?.status
+        ? `Project: ${portalStatus.simulation.status}` : "Project: Not started",
       contactEditingReady,
       contact: {
         contactNumber: contact.contact_number || "",

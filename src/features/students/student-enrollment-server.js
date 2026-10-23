@@ -114,14 +114,14 @@ export async function loadStudentEnrollmentForPage() {
   const context = await getStudentContext();
   if (context.kind !== "project") return { kind: "unavailable" };
   try {
-    const [snapshotResult, termResult, simulationResult, placementResult] = await Promise.all([
+    const [snapshotResult, termResult, statusResult, placementResult] = await Promise.all([
       context.client.rpc("project_phase8_student_snapshot_v2", { p_student_id: context.studentId }),
       context.admin.from("academic_terms")
         .select("id,label,academic_year,semester,enrollment_start,enrollment_end,status")
         .eq("id", TERM_ID).maybeSingle(),
-      context.admin.from("project_phase8_enrollment_simulations")
-        .select("id,status,submitted_at,confirmed_at")
-        .eq("student_id", context.studentId).eq("term_id", TERM_ID).maybeSingle(),
+      context.client.rpc("project_phase8_student_portal_status_v1", {
+        p_student_id: context.studentId,
+      }),
       context.admin.from("project_student_academic_placements")
         .select("home_block_id").eq("student_id", context.studentId)
         .eq("term_id", TERM_ID).maybeSingle(),
@@ -131,7 +131,11 @@ export async function loadStudentEnrollmentForPage() {
         snapshotResult.data?.data_origin !== "GENERATED_PROJECT" ||
         snapshotResult.data?.student_number !== context.studentNumber ||
         snapshotResult.data?.term_id !== TERM_ID ||
-        termResult.error || !termResult.data || simulationResult.error ||
+        termResult.error || !termResult.data || statusResult.error ||
+        statusResult.data?.project_only !== true ||
+        statusResult.data?.verified_institutionally !== false ||
+        statusResult.data?.curriculum_is_official !== false ||
+        statusResult.data?.curriculum_code !== snapshotResult.data?.curriculum_code ||
         placementResult.error || !placementResult.data) {
       return { kind: "unavailable" };
     }
@@ -155,20 +159,10 @@ export async function loadStudentEnrollmentForPage() {
         }
       }
     }
-    let correctionReason = null;
-    if (simulationResult.data?.status === "RETURNED") {
-      const { data: lastReturn } = await context.admin
-        .from("project_phase8_enrollment_simulation_events")
-        .select("reason")
-        .eq("simulation_id", simulationResult.data.id)
-        .eq("action", "RETURN")
-        .order("occurred_at", { ascending: false })
-        .limit(1).maybeSingle();
-      correctionReason = lastReturn?.reason || null;
-    }
+    const simulation = statusResult.data.simulation || null;
     return buildStudentEnrollmentSummary({ context, snapshot: snapshotResult.data,
-      term: termResult.data, simulation: simulationResult.data, sectionCodes,
-      correctionReason });
+      term: termResult.data, simulation, sectionCodes,
+      correctionReason: simulation?.correction_reason || null });
   } catch {
     return { kind: "unavailable" };
   }

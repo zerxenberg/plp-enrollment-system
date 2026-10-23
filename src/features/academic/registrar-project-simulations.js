@@ -22,49 +22,26 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function loadRegistrarProjectSimulationQueue() {
   await requireRole("registrar");
   try {
-    const admin = createAdminClient();
-    const { data: simulations, error } = await admin
-      .from("project_phase8_enrollment_simulations")
-      .select("id,student_id,term_id,status,source_provenance,verified_institutionally,created_at,submitted_at,validated_at,confirmed_at")
-      .eq("term_id", PROJECT_TERM)
-      .eq("source_provenance", "GENERATED_PROJECT")
-      .eq("verified_institutionally", false)
-      .order("created_at", { ascending: false })
-      .limit(MAX_PROJECT_RECORDS + 1);
-    if (error || !simulations || simulations.length > MAX_PROJECT_RECORDS) {
+    const client = await createClient();
+    const { data: result, error } = await client.rpc(
+      "project_phase8_registrar_simulation_queue_v1",
+    );
+    const simulations = result?.records;
+    if (error || result?.fictional_only !== true ||
+        result?.verified_institutionally !== false ||
+        !Array.isArray(simulations) || simulations.length > MAX_PROJECT_RECORDS) {
       return { kind: "unavailable", records: [] };
     }
     if (!simulations.length) return { kind: "ready", records: [] };
-
-    const studentIds = [...new Set(simulations.map((row) => row.student_id))];
-    const { data: profiles, error: profileError } = await admin.from("student_profiles")
-      .select("id,user_id,student_number")
-      .in("id", studentIds)
-      .eq("record_kind", "PROJECT_ONLY")
-      .eq("project_cohort_id", PROJECT_COHORT);
-    if (profileError || !profiles) return { kind: "unavailable", records: [] };
-    const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
-
-    const accountIds = [...new Set(profiles.map((profile) => profile.user_id))];
-    if (!accountIds.length) return { kind: "ready", records: [] };
-    const { data: accounts, error: accountError } = await admin.from("app_users")
-      .select("id,role_code,is_synthetic_demo,source_account_key,full_name")
-      .in("id", accountIds)
-      .eq("role_code", "student")
-      .eq("is_synthetic_demo", true);
-    if (accountError || !accounts) return { kind: "unavailable", records: [] };
-    const accountsById = new Map(accounts.map((account) => [account.id, account]));
-
     const records = simulations.flatMap((sim) => {
-      const profile = profilesById.get(sim.student_id);
-      const account = profile && accountsById.get(profile.user_id);
-      if (!profile || !account ||
-          account.source_account_key !== PROJECT_SOURCE_PREFIX + profile.student_number ||
-          !profile.student_number || !account.full_name) return [];
+      if (sim.term_id !== PROJECT_TERM ||
+          sim.source_provenance !== "GENERATED_PROJECT" ||
+          sim.verified_institutionally !== false ||
+          !sim.student_number || !sim.student_name) return [];
       return [{
         id: sim.id,
-        studentNumber: profile.student_number,
-        studentName: account.full_name,
+        studentNumber: sim.student_number,
+        studentName: sim.student_name,
         term: sim.term_id,
         status: sim.status,
         submittedAt: sim.submitted_at,
@@ -96,16 +73,23 @@ export async function performRegistrarProjectSimulationAction(simulationId, acti
     return { ok: false, message: "Provide a reason of up to 1,000 characters." };
   }
   try {
+    const client = await createClient();
+    // The simulation table is intentionally not readable through the service
+    // role. Registrar's authenticated, role-scoped RPC provides its metadata.
+    const { data: queue, error: queueError } = await client.rpc(
+      "project_phase8_registrar_simulation_queue_v1",
+    );
+    if (queueError || queue?.fictional_only !== true ||
+        !Array.isArray(queue.records) || queue.records.length > MAX_PROJECT_RECORDS) {
+      return { ok: false, message: "Project simulation queue is unavailable." };
+    }
+    const sim = queue.records.find((record) => record.id === simulationId);
+    if (!sim || sim.term_id !== PROJECT_TERM ||
+        sim.source_provenance !== "GENERATED_PROJECT" ||
+        sim.verified_institutionally !== false) {
+      return { ok: false, message: "Project simulation not found." };
+    }
     const admin = createAdminClient();
-    const { data: sim, error: simError } = await admin
-      .from("project_phase8_enrollment_simulations")
-      .select("id,student_id,term_id,home_block_id,status")
-      .eq("id", simulationId)
-      .eq("term_id", PROJECT_TERM)
-      .eq("source_provenance", "GENERATED_PROJECT")
-      .eq("verified_institutionally", false)
-      .maybeSingle();
-    if (simError || !sim) return { ok: false, message: "Project simulation not found." };
     if (!allowedFrom[sim.status]) {
       return { ok: false, message: "This simulated enrollment is no longer in the required state. Refresh the queue." };
     }
@@ -134,7 +118,6 @@ export async function performRegistrarProjectSimulationAction(simulationId, acti
       return { ok: false, message: "Project student identity could not be verified." };
     }
 
-    const client = await createClient();
     const { data: result, error: transitionError } = await client
       .rpc("project_phase8_simulated_enrollment_action_v1", {
         p_student_id: sim.student_id,
