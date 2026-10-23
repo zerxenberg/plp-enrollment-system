@@ -91,14 +91,15 @@ export async function loadStudentAcademicForPage() {
       .order("confirmed_at", { ascending: false }).limit(1);
     if (enrollmentError) return UNAVAILABLE;
     let officialSchedule = null;
-    if (enrollments?.length) {
+    if (enrollments?.length && enrollments[0].confirmed_at) {
       const { data: cor, error: corError } = await client.rpc(
         "official_enrollment_cor_v1", { p_enrollment_id: enrollments[0].id },
       );
       if (corError) return UNAVAILABLE;
       if (cor?.official === true && cor.schedule_complete === true &&
           cor.ready_to_print === true && cor.enrollment_id === enrollments[0].id &&
-          cor.student_number === student.student_number) {
+          cor.student_number === student.student_number &&
+          Boolean(cor.confirmation_reference) && Boolean(cor.confirmed_at)) {
         officialSchedule = {
           term: cor.academic_term || cor.term_id,
           reference: cor.confirmation_reference,

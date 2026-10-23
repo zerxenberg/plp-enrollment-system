@@ -13,6 +13,12 @@ function Field({ label, value }) {
   return <div className="info-item"><span>{label}</span><strong>{value ?? "Not available"}</strong></div>;
 }
 
+function formatProjectPeso(amount) {
+  return typeof amount === "number" && Number.isFinite(amount)
+    ? new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(amount)
+    : "Not available";
+}
+
 function ScheduleText({ meetings }) {
   if (!meetings?.length) return "Awaiting timetable";
   return <span>{meetings.map((m) => `${m.day} ${String(m.start || "").slice(0, 5)} to ${String(m.end || "").slice(0, 5)}`).join("; ")}</span>;
@@ -107,6 +113,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
             <Field label="Proposed Home Block" value={data.homeBlock || "No validated block"} />
             <Field label="Prepared Eligible Subjects" value={String(selectedCount)} />
             <Field label="Proposed Units" value={String(data.proposedUnits)} />
+            <Field label="Estimated Tuition (Project Only)" value={formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)} />
             <Field label="Academic Classification" value={<StatusBadge value={data.student.classification || "NOT_VERIFIED"} />} />
             <Field label="Current Eligibility" value={<StatusBadge value={eligibility} />} />
           </div>
@@ -175,6 +182,10 @@ export default function StudentEnrollmentWorkspace({ data }) {
       {detail?.type === "subject" ? <div className="detail-list">
         <div className="detail-row"><span>Subject</span><strong>{detail.value.code} · {detail.value.name}</strong></div>
         <div className="detail-row"><span>Units</span><strong>{detail.value.units}</strong></div>
+        <div className="detail-row"><span>Estimated Subject Fee</span><strong>{(() => {
+          const selectedFee = data.projectFeeEstimate?.subjects?.find((item) => item.code === detail.value.code);
+          return selectedFee ? formatProjectPeso(selectedFee.estimatedFee) : "Not included in prepared registration";
+        })()}</strong></div>
         <div className="detail-row"><span>Proposed Section</span><strong>{detail.value.section || "Not assigned"}</strong></div>
         <div className="detail-row"><span>Eligibility</span><StatusBadge value={detail.value.eligibility} /></div>
         <p>{detail.value.reason || "No additional academic restriction was supplied."}</p>
@@ -211,6 +222,13 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <div className="detail-row"><span>Student Number</span><strong>{cor.student?.student_number}</strong></div>
         <div className="detail-row"><span>Program and Term</span><strong>{cor.student?.program_code} · {cor.student?.term_id}</strong></div>
         <div className="detail-row"><span>Registrar Simulation</span><strong>{cor.registration_status}</strong></div>
+        {(cor.projectFeeEstimate?.subjects || []).map((item) =>
+          <div className="detail-row" key={item.code}>
+            <span>{item.code} · {item.name} ({item.units} units)</span>
+            <strong>{formatProjectPeso(item.estimatedFee)}</strong>
+          </div>)}
+        <div className="detail-row"><span>Total Registered Units (Project Simulation)</span><strong>{cor.projectFeeEstimate?.totalUnits ?? "Not available"}</strong></div>
+        <div className="detail-row"><span>Estimated Tuition (Not Official)</span><strong>{formatProjectPeso(cor.projectFeeEstimate?.estimatedAmount)}</strong></div>
       </div> : null}
     </Modal>
   </>;

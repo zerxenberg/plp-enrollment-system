@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { requireStudentContext } from "./student-context-server";
 import { assertCanSubmitProjectEnrollment } from "./student-enrollment-server";
+import {
+  estimateProjectSnapshotSelection,
+  selectedProjectSnapshotSubjects,
+} from "./project-fee-estimate.mjs";
+import { loadVerifiedProjectSubjectPrices } from "./project-fee-prices-server";
 
 function refreshStudentEnrollmentViews() {
   for (const path of ["/student/dashboard", "/student/enrollment",
@@ -46,16 +51,32 @@ export async function getConfirmedProjectDemonstrationCor() {
   );
   const simulation = status?.simulation;
   if (error || status?.project_only !== true ||
+      status?.verified_institutionally !== false ||
+      status?.curriculum_is_official !== false ||
       simulation?.status !== "CONFIRMED_SIMULATION") {
     throw new Error("A Registrar confirmed project simulation is required before a demonstration registration document can be viewed.");
   }
   const result = await context.client.rpc("project_phase8_demonstration_cor_v1", {
     p_simulation_id: simulation.id,
   });
-  if (result.error || !result.data?.simulation_only || result.data.official !== false) {
+  if (result.error || result.data?.simulation_only !== true ||
+      result.data.official !== false ||
+      result.data.certificate_of_official_registration !== false ||
+      result.data.student?.student_number !== context.studentNumber ||
+      result.data.student?.curriculum_code !== status.curriculum_code) {
     throw new Error("The demonstration registration document could not be loaded.");
   }
-  return result.data;
+  // Only the current eligible, timetable-linked fictional subjects are
+  // estimated. Real official COR creation remains entirely separate and
+  // requires a confirmed official enrollment through its own guarded RPC.
+  const selected = selectedProjectSnapshotSubjects(result.data.student);
+  const prices = await loadVerifiedProjectSubjectPrices(
+    context.admin, status.curriculum_code, selected);
+  const projectFeeEstimate = estimateProjectSnapshotSelection(result.data.student, prices);
+  if (!projectFeeEstimate.subjectCount) {
+    throw new Error("No eligible, scheduled project subjects are available for this registration demonstration.");
+  }
+  return { ...result.data, projectFeeEstimate };
 }
 
 function validNotificationId(value) {

@@ -1,6 +1,11 @@
 import "server-only";
 
 import { requireStudentContext, getStudentContext } from "./student-context-server";
+import {
+  estimateProjectSelectedSubjects,
+  selectedProjectSubjectCodes,
+} from "./project-fee-estimate.mjs";
+import { loadVerifiedProjectSubjectPrices } from "./project-fee-prices-server";
 
 const TERM_ID = "TERM-2026-1";
 
@@ -30,26 +35,33 @@ function mapSchedule(meetings) {
   return bySubject;
 }
 
-export function buildStudentEnrollmentSummary({
-  context, snapshot, term, simulation, sectionCodes, correctionReason = null,
-  asOfDate = manilaCalendarDate(),
-}) {
+function preparedSubjects(snapshot, sectionCodes) {
   const meetings = mapSchedule(snapshot.class_schedule);
   const subjects = (snapshot.subjects || []).map((item) => ({
     code: item.subject_code,
     name: item.subject_name,
-    units: Number(item.academic_units) || 0,
+    units: item.academic_units,
     eligibility: item.eligibility || "RESTRICTED",
     reason: item.reason || null,
     section: sectionCodes.get(item.subject_code) || null,
     meetings: meetings.get(item.subject_code) || [],
   }));
-  // An eligible subject elsewhere in the curriculum is not automatically a
-  // registered class. Only sections present in this student's validated home
-  // block timetable form the prepared selection.
   const eligible = subjects.filter((item) =>
     ["ELIGIBLE", "RETAKE"].includes(item.eligibility) &&
     Boolean(item.section) && item.meetings.length > 0);
+  return { subjects, eligible };
+}
+
+export function buildStudentEnrollmentSummary({
+  context, snapshot, term, simulation, sectionCodes, correctionReason = null,
+  priceRows,
+  asOfDate = manilaCalendarDate(),
+}) {
+  const { subjects, eligible } = preparedSubjects(snapshot, sectionCodes);
+  // An eligible subject elsewhere in the curriculum is not automatically a
+  // registered class. Only sections present in this student's validated home
+  // block timetable form the prepared selection.
+  const projectFeeEstimate = estimateProjectSelectedSubjects(eligible, priceRows);
   const termEnd = term?.enrollment_end || null;
   const termStart = term?.enrollment_start || null;
   const today = asOfDate;
@@ -101,7 +113,8 @@ export function buildStudentEnrollmentSummary({
     officialStatus: "NOT_CONFIRMED",
     subjects,
     proposedSubjects: eligible,
-    proposedUnits: eligible.reduce((sum, item) => sum + item.units, 0),
+    proposedUnits: projectFeeEstimate.totalUnits,
+    projectFeeEstimate,
     previousResults: snapshot.previous_results || [],
     transferCredits: snapshot.transfer_credits || [],
     blockingReasons,
@@ -160,9 +173,17 @@ export async function loadStudentEnrollmentForPage() {
       }
     }
     const simulation = statusResult.data.simulation || null;
+    const { eligible } = preparedSubjects(snapshotResult.data, sectionCodes);
+    const selectedCodes = selectedProjectSubjectCodes(eligible);
+    // Server-only price SELECT for exactly the signed student's eligible,
+    // section-linked and scheduled subjects. Missing/mismatched prices fail
+    // closed rather than falling back to an illustrative constant.
+    const priceRows = await loadVerifiedProjectSubjectPrices(
+      context.admin, snapshotResult.data.curriculum_code, eligible);
+    if (priceRows.length !== selectedCodes.length) return { kind: "unavailable" };
     return buildStudentEnrollmentSummary({ context, snapshot: snapshotResult.data,
       term: termResult.data, simulation, sectionCodes,
-      correctionReason: simulation?.correction_reason || null });
+      priceRows, correctionReason: simulation?.correction_reason || null });
   } catch {
     return { kind: "unavailable" };
   }

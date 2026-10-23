@@ -3,6 +3,10 @@ import { getLiveSession } from "@/lib/auth/live-auth";
 import { loadCoordinatorCurriculumProvenance } from "./coordinator-curriculum-provenance";
 import { scopeCoordinatorPhase8Records } from "./coordinator-phase8-scope.mjs";
 import {
+  projectPhase8SubjectEstimate, projectPhase8PlacementEstimate,
+  verifyProjectPhase8CurriculumTuition,
+} from "./coordinator-phase8-pricing.mjs";
+import {
   ACADEMIC_HISTORY_MODULES, ACADEMIC_HISTORY_PREVIEW_SIZE,
   toAcademicHistoryRow,
 } from "./academic-history-pagination.mjs";
@@ -232,11 +236,15 @@ export async function loadLiveAcademicCoordinator() {
   const priceMap = new Map(scope.prices
     .map((item) => [item.subject_code, item]));
   const curriculumRateMap = new Map(scope.curriculumRates
-    .map((item) => [`${item.curriculum_code}:${item.subject_code}`, item.rate_per_unit]));
+    .map((item) => [`${item.curriculum_code}:${item.subject_code}`, item]));
   const projectNames = new Map([...scope.memberById].map(([id, person]) => [id, person.full_name]));
   const curriculumEstimateMap = new Map(scope.estimates
     .map((item) => [item.curriculum_code, item]));
   const provenanceMap = new Map(provenanceResult.map((item) => [item.curriculumCode, item]));
+  // Prices and units are sourced from today's normalized PROJECT_ONLY rows:
+  // do not synthesize a fee or silently change units in the browser.
+  const projectPriceMap = new Map(subjectRecords.map((record) =>
+    [record.code, projectPhase8SubjectEstimate(record, priceMap.get(record.code))]));
 
   const departments = organizationalUnits.map((unit) => ({
     id: unit.code, code: unit.code, name: unit.name, status: unit.is_active ? "Active" : "Inactive",
@@ -267,12 +275,15 @@ export async function loadLiveAcademicCoordinator() {
     const placement = uniquePlacements.length === 1 ? assignments[0] : null;
     const departments = [...new Set(applicablePrograms.map((code) =>
       programMap.get(code)?.department).filter(Boolean))];
-    const estimatedRate = priceMap.get(record.code);
     const isProjectOnly = assignments.some((item) =>
       provenanceMap.get(item.curriculum_code)?.isOfficial === false);
+    if (!isProjectOnly) {
+      throw new Error("Unclassified subject entered the PROJECT_ONLY coordinator catalog.");
+    }
+    const priced = projectPriceMap.get(record.code);
     return {
       id: `subject-${record.code.toLowerCase()}`, code: record.code,
-      name: record.name, units: record.units, description: record.description || "",
+      name: record.name, units: priced.units, description: record.description || "",
       status: titleStatus(record.status), programs: applicablePrograms,
       program: applicablePrograms[0] || "", programIds: applicablePrograms.map((code) => `program-${code.toLowerCase()}`),
       yearLevel: placement?.year_level || "", semester: placement?.semester || "",
@@ -286,9 +297,9 @@ export async function loadLiveAcademicCoordinator() {
       })),
       isProjectOnly,
       reference: isProjectOnly ? "PROJECT_ONLY simulated subject" : "Academic subject catalog record",
-      feePerUnit: estimatedRate ? Number(estimatedRate.rate_per_unit) : null,
-      fee: estimatedRate ? Number(record.units) * Number(estimatedRate.rate_per_unit) : null,
-      feeClassification: estimatedRate?.classification || null,
+      feePerUnit: priced.feePerUnit,
+      fee: priced.fee,
+      feeClassification: priced.feeClassification,
     };
   });
   const curricula = curriculumRecords.map((record) => {
@@ -297,15 +308,15 @@ export async function loadLiveAcademicCoordinator() {
       .map((placement) => ({
         subjectCode: placement.subject_code, yearLevel: placement.year_level,
         semester: placement.semester, isRequired: placement.is_required,
-        unitsOverride: placement.units_override,
-        feePerUnit: curriculumRateMap.has(`${placement.curriculum_code}:${placement.subject_code}`)
-          ? Number(curriculumRateMap.get(`${placement.curriculum_code}:${placement.subject_code}`))
-          : priceMap.has(placement.subject_code)
-            ? Number(priceMap.get(placement.subject_code).rate_per_unit) : null,
+        ...projectPhase8PlacementEstimate(placement,
+          projectPriceMap.get(placement.subject_code),
+          curriculumRateMap.get(`${placement.curriculum_code}:${placement.subject_code}`)),
         prerequisites: prerequisites.filter((rule) =>
           rule.curriculum_code === record.code && rule.subject_code === placement.subject_code && rule.is_active)
           .map((rule) => rule.prerequisite_subject_code),
       }));
+    const verifiedEstimate = verifyProjectPhase8CurriculumTuition(
+      assigned, projectPriceMap, curriculumEstimateMap.get(record.code));
     const program = programMap.get(record.program_code);
     return {
       id: record.code, version: record.version_label || record.name,
@@ -314,11 +325,10 @@ export async function loadLiveAcademicCoordinator() {
       major: trackRecords.find((track) => track.code === record.program_track_code)?.name || "",
       effectiveAcademicYear: record.effective_academic_year || yearLabel(record.effective_year_start),
       status: titleStatus(record.status), assignments: assigned,
-      estimatedTuitionComplete: curriculumEstimateMap.get(record.code)?.is_complete === true,
-      estimatedTuitionCoverage: curriculumEstimateMap.get(record.code)?.semesters_represented ?? 0,
+      estimatedTuitionComplete: verifiedEstimate.estimatedTuitionComplete,
+      estimatedTuitionCoverage: verifiedEstimate.estimatedTuitionCoverage,
       assignedSubjects: assigned.length,
-      totalUnits: assigned.reduce((sum, item) =>
-        sum + Number(item.unitsOverride ?? subjectMap.get(item.subjectCode)?.units ?? 0), 0),
+      totalUnits: verifiedEstimate.totalUnits,
       isProjectOnly: provenance?.isOfficial === false,
       provenance: provenance?.sourceType || null,
       reference: provenance?.isOfficial === false
