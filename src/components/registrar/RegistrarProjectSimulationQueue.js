@@ -11,20 +11,20 @@ import { performRegistrarProjectSimulationAction } from "@/features/academic/reg
 
 const PAGE_SIZE = 20;
 const STATUSES = [
-  { value: "ALL", label: "All project statuses" },
+  { value: "ALL", label: "All review statuses" },
   { value: "SUBMITTED", label: "Submitted" },
   { value: "VALIDATED", label: "Validated" },
   { value: "RETURNED", label: "Returned" },
-  { value: "CONFIRMED_SIMULATION", label: "Confirmed simulation" },
+  { value: "CONFIRMED_SIMULATION", label: "Confirmed (demo only)" },
   { value: "DRAFT", label: "Draft" },
 ];
 
 const LABELS = {
-  SUBMITTED: "Submitted (simulation)",
-  VALIDATED: "Validated (simulation)",
-  RETURNED: "Returned (simulation)",
-  CONFIRMED_SIMULATION: "Confirmed simulation",
-  DRAFT: "Draft (simulation)",
+  SUBMITTED: "Submitted",
+  VALIDATED: "Validated",
+  RETURNED: "Returned",
+  CONFIRMED_SIMULATION: "Confirmed (demo only)",
+  DRAFT: "Draft",
 };
 
 function readableDate(value) {
@@ -64,7 +64,7 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
       }
       setDialog(null);
       setReason("");
-      setFeedback(`${row.studentNumber}: ${LABELS[result.status] || result.status}. This is a classroom simulation only.`);
+      setFeedback(`${row.studentNumber}: ${LABELS[result.status] || result.status}. This is a classroom demonstration only, not official enrollment.`);
       router.refresh();
     } catch {
       setFeedback("The project action could not be completed. Refresh the page and try again.");
@@ -87,36 +87,36 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
 
   return (
     <div style={{ marginBottom: 18 }}>
-      <Panel title="Project Enrollment Simulation Queue"
-        subtitle="Registrar review of authenticated fictional cohort submissions. These records are separate from official enrollments and the existing demonstration queue.">
+      <Panel title="Enrollment Review Queue"
+        subtitle="Registrar review of fictional classroom submissions. These records are separate from official enrollments and the existing demonstration queue.">
         <div className="notice" role="note" style={{ marginBottom: 14 }}>
-          PROJECT_ONLY · GENERATED_PROJECT. A simulated confirmation means CONFIRMED_SIMULATION, not an official enrollment, confirmation reference or certificate of registration.
+          Classroom demonstration only. A recorded review confirmation is not an official enrollment, confirmation reference, or certificate of registration.
         </div>
         {queue?.kind !== "ready" ? (
-          <EmptyState title="Project simulation queue unavailable"
-            description="Verified project enrollment records could not be loaded. Confirm the authenticated Registrar session and Phase 8 database setup." />
+          <EmptyState title="Enrollment review queue unavailable"
+            description="Classroom enrollment records could not be loaded. Confirm the authenticated Registrar session and demonstration data setup." />
         ) : !rows.length ? (
-          <EmptyState title="No project simulation submissions"
-            description="There are currently no stored project enrollment simulations to review. Submitted records will appear here when students complete the authorized project submission process." />
+          <EmptyState title="No enrollment submissions to review"
+            description="There are currently no classroom enrollment submissions to review. Submitted records will appear here when students complete the demonstration submission process." />
         ) : (
           <>
             <div className="toolbar">
-              <SearchControl label="Search project student" value={search}
+              <SearchControl label="Search student" value={search}
                 onChange={(value) => { setSearch(value); setPage(1); }}
                 placeholder="Search fictional student name or number" />
-              <FilterControl label="Simulation status" value={filter}
+              <FilterControl label="Review status" value={filter}
                 onChange={(value) => { setFilter(value); setPage(1); }} options={STATUSES} />
             </div>
             <DataTable rowKey="id" rows={visibleRows}
-              emptyMessage="No project simulations match the current filters."
+              emptyMessage="No enrollment reviews match the current filters."
               columns={[
-                { key: "studentNumber", label: "Project Student No." },
+                { key: "studentNumber", label: "Student No." },
                 { key: "studentName", label: "Fictional Student" },
-                { key: "term", label: "Project Term" },
-                { key: "status", label: "Simulated Status",
+                { key: "term", label: "Academic Term" },
+                { key: "status", label: "Review Status",
                   render: (row) => <StatusBadge value={row.status} label={LABELS[row.status] || row.status} /> },
                 { key: "submittedAt", label: "Submitted", render: (row) => readableDate(row.submittedAt) },
-                { key: "actions", label: "Registrar Project Actions", render: (row) => (
+                { key: "actions", label: "Registrar Actions", render: (row) => (
                   <TableActions>
                     {row.status === "SUBMITTED" ? (
                       <>
@@ -131,18 +131,18 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
                         <Button variant="secondary" disabled={working}
                           onClick={() => openReasonDialog(row, "RETURN")}>Return</Button>
                         <Button disabled={working}
-                          onClick={() => openReasonDialog(row, "CONFIRM")}>Confirm simulation</Button>
+                          onClick={() => openReasonDialog(row, "CONFIRM")}>Confirm demo review</Button>
                       </>
                     ) : null}
                     {row.status === "RETURNED" ? "Awaiting resubmission" : null}
                     {row.status === "DRAFT" ? "Awaiting student submission" : null}
-                    {row.status === "CONFIRMED_SIMULATION" ? "Simulation completed" : null}
+                    {row.status === "CONFIRMED_SIMULATION" ? "Demo review completed" : null}
                   </TableActions>
                 ) },
               ]} />
             {filtered.length > PAGE_SIZE ? (
               <TablePagination page={safePage} pageSize={PAGE_SIZE} total={filtered.length}
-                onPageChange={setPage} label="Project enrollment simulation pagination" />
+                onPageChange={setPage} label="Enrollment review pagination" />
             ) : null}
           </>
         )}
@@ -151,7 +151,7 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
         ) : null}
       </Panel>
       <Modal open={Boolean(dialog)}
-        title={dialog?.action === "CONFIRM" ? "Confirm Project Simulation" : "Return Project Simulation"}
+        title={dialog?.action === "CONFIRM" ? "Confirm Demonstration Review" : "Return Enrollment Review"}
         onClose={() => { if (!working) setDialog(null); }}
         footer={
           <>
@@ -159,7 +159,7 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
               onClick={() => setDialog(null)}>Cancel</Button>
             <Button type="submit" form="project-simulation-reason-form"
               disabled={working || !reason.trim()}>{working ? "Processing..." :
-                dialog?.action === "CONFIRM" ? "Confirm simulation" : "Return simulation"}</Button>
+                dialog?.action === "CONFIRM" ? "Confirm demo review" : "Return enrollment"}</Button>
           </>
         }>
         {dialog ? (
@@ -169,14 +169,14 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
             </p>
             <form id="project-simulation-reason-form" className="form-grid" onSubmit={submitReason}>
               <label className="field full">
-                {dialog.action === "CONFIRM" ? "Registrar confirmation source or reason" : "Reason for returning to student"}
+                {dialog.action === "CONFIRM" ? "Demonstration review reason or source" : "Reason for returning to student"}
                 <textarea required maxLength={1000} value={reason} disabled={working}
                   onChange={(event) => setReason(event.target.value)}
-                  placeholder="Document the reason for this project action" />
+                  placeholder="Document the reason for this review action" />
               </label>
             </form>
             <p className="notice" style={{ marginTop: 12 }}>
-              This action updates fictional project records and their audit events only.
+              This action updates fictional classroom records and their audit events only.
               It does not approve or confirm official university enrollment.
             </p>
           </>

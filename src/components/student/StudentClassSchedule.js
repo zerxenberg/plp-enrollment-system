@@ -75,8 +75,8 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
           description="Your authenticated student record could not be verified. Sign in again or contact the System Administrator." /></Card>
       ) : !isConfirmed ? (
         <Card>
-          <EmptyState title="Awaiting confirmed class schedule"
-            description="A personal class schedule becomes available after an official Registrar confirmation and finalized class assignments. Proposed blocks, validated project timetables, and simulated confirmation do not establish an official schedule." />
+            <EmptyState title="Awaiting confirmed class schedule"
+            description="A personal class schedule becomes available after an official Registrar confirmation and finalized class assignments. Proposed blocks, classroom timetables, and demonstration review confirmation do not establish an official schedule." />
           <div className="notice" style={{ marginTop: 14 }} role="status">
             This is a fictional PROJECT_ONLY student account. No official confirmed schedule is currently linked to this record. You can review tentative subject choices in Enrollment.
           </div>

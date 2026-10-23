@@ -9,17 +9,17 @@ function Notice({ children }) {
 function getNextAction(data) {
   const current = data.simulation?.status;
   if (current === "CONFIRMED_SIMULATION") return {
-    title: "Review your confirmed project simulation",
-    description: "Your Registrar simulation was confirmed. This is separate from official university enrollment.",
+    title: "Review your demonstration enrollment",
+    description: "The Registrar confirmed your demonstration review. This is not official university enrollment.",
     label: "View Registration Demonstration", href: "/student/enrollment",
   };
   if (["SUBMITTED", "VALIDATED"].includes(current)) return {
-    title: "Track Registrar simulation review",
-    description: "Your project submission is read only while the Registrar processes it.",
+    title: "Track Registrar enrollment review",
+    description: "Your demonstration submission is read only while the Registrar processes it.",
     label: "View Enrollment Status", href: "/student/enrollment",
   };
   if (current === "RETURNED") return {
-    title: "Review returned project enrollment",
+    title: "Review returned enrollment",
     description: "Your enrollment was returned for review. Check the current prepared subjects and any Registrar instructions.",
     label: "Review Returned Enrollment", href: "/student/enrollment",
   };
@@ -53,9 +53,9 @@ export default function StudentDashboardLive({ enrollment, notices }) {
       <div className="hero-meta">
         <span className="hero-chip">{data.term.label}</span>
         <span className="hero-chip">{displayCurriculumCode(data.student.curriculum)}</span>
-        <span className="hero-chip">PROJECT_ONLY</span>
+        <span className="hero-chip">Demonstration account</span>
       </div>
-      <p style={{ marginTop: 12 }}>This is a fictional classroom student account. Project academic data is not institutionally verified.</p>
+      <p style={{ marginTop: 12 }}>This is a fictional classroom student account. Its academic data is not institutionally verified.</p>
       <Link className="portal-button portal-button-secondary" href="/student/student-profile">View Profile</Link>
     </Card>
 
@@ -71,7 +71,7 @@ export default function StudentDashboardLive({ enrollment, notices }) {
       <Card className="section-card span-5">
         <div className="section-header"><h2>Enrollment and Eligibility</h2></div>
         <div className="detail-list">
-          <div className="detail-row"><span>Project Enrollment Status</span><StatusBadge value={data.simulation?.status || "NOT_STARTED"} /></div>
+          <div className="detail-row"><span>Enrollment Review Status</span><StatusBadge value={data.simulation?.status || "NOT_STARTED"} label={data.simulation?.status === "CONFIRMED_SIMULATION" ? "Confirmed (demo only)" : undefined} /></div>
           <div className="detail-row"><span>Official Enrollment Status</span><strong>Not Confirmed</strong></div>
           <div className="detail-row"><span>Academic Classification</span><StatusBadge value={data.student.classification} /></div>
           <div className="detail-row"><span>Recorded Deficiencies</span><strong>{deficientCount}</strong></div>
@@ -93,15 +93,15 @@ export default function StudentDashboardLive({ enrollment, notices }) {
         <div className="section-header"><div><h2>Academic Records</h2><p>History and curriculum requirements</p></div>
           <Link className="section-link" href="/student/academic-records">Open Academic Records</Link></div>
         <div className="info-grid">
-          <div className="info-item"><span>Recorded Simulated Results</span><strong>{data.previousResults.length}</strong></div>
-          <div className="info-item"><span>Simulated Transfer Credits</span><strong>{data.transferCredits.length}</strong></div>
+          <div className="info-item"><span>Recorded Demonstration Results</span><strong>{data.previousResults.length}</strong></div>
+          <div className="info-item"><span>Demonstration Transfer Credits</span><strong>{data.transferCredits.length}</strong></div>
         </div>
       </Card>
 
       <Card className="section-card span-6">
         <div className="section-header"><div><h2>Class Schedule</h2><p>Available after official Registrar confirmation</p></div>
           <Link className="section-link" href="/student/class-schedule">View Schedule</Link></div>
-        <Notice>The current project timetable is a proposal. No official schedule is released from a project simulation.</Notice>
+        <Notice>The current classroom timetable is a proposal. No official schedule is released from a demonstration enrollment.</Notice>
       </Card>
 
       <Card className="section-card span-6">

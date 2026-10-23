@@ -81,13 +81,13 @@ export async function performRegistrarProjectSimulationAction(simulationId, acti
     );
     if (queueError || queue?.fictional_only !== true ||
         !Array.isArray(queue.records) || queue.records.length > MAX_PROJECT_RECORDS) {
-      return { ok: false, message: "Project simulation queue is unavailable." };
+      return { ok: false, message: "Project enrollment review queue is unavailable." };
     }
     const sim = queue.records.find((record) => record.id === simulationId);
     if (!sim || sim.term_id !== PROJECT_TERM ||
         sim.source_provenance !== "GENERATED_PROJECT" ||
         sim.verified_institutionally !== false) {
-      return { ok: false, message: "Project simulation not found." };
+      return { ok: false, message: "Project enrollment record was not found." };
     }
     const admin = createAdminClient();
     if (!allowedFrom[sim.status]) {

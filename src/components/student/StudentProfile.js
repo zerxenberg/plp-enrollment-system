@@ -195,7 +195,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
           ) : null}
           <h2 className={styles.studentName}>{profile.fullName}</h2>
           <p className={styles.studentNumber}>{profile.studentNumber}</p>
-          <span className={styles.studentBadge}>{isProject ? "Fictional Project Student" : "Student"}</span>
+          <span className={styles.studentBadge}>{isProject ? "Demonstration Student" : "Student"}</span>
 
           <dl className={styles.identityDetails}>
             <div><dt>Program</dt><dd>{missing(profile.program)}</dd></div>
@@ -204,7 +204,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             <div><dt>Curriculum</dt><dd>{missing(displayCurriculumCode(profile.curriculum))}</dd></div>
             <div><dt>Academic Classification</dt><dd>{classification}</dd></div>
             <div><dt>Enrollment Eligibility</dt><dd>{missing(profile.enrollmentEligibility || (isProject ? "Not yet evaluated" : null))}</dd></div>
-            <div><dt>Enrollment Status</dt><dd>{isProject ? missing(profile.projectEnrollmentStatus || "Project: Not started") : academicStatus}</dd></div>
+            <div><dt>Enrollment Status</dt><dd>{isProject ? missing(profile.projectEnrollmentStatus === "CONFIRMED_SIMULATION" ? "Confirmed (demo only)" : profile.projectEnrollmentStatus || "Not started (demonstration)") : academicStatus}</dd></div>
           </dl>
           {isProject ? <p className={styles.proposedNote}>Program and year are proposed project data only.</p> : null}
         </aside>

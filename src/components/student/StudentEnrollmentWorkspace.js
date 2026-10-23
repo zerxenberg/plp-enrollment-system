@@ -10,6 +10,22 @@ const TABS = [
   { value: "history", label: "Enrollment History" },
 ];
 
+const ENROLLMENT_REVIEW_LABELS = Object.freeze({
+  NOT_STARTED: "Not started",
+  DRAFT: "Draft",
+  SUBMITTED: "Submitted",
+  VALIDATED: "Validated",
+  RETURNED: "Returned",
+  CONFIRMED_SIMULATION: "Confirmed (demo only)",
+  CONFIRMED_FOR_PROJECT_SIMULATION: "Confirmed (demonstration only)",
+});
+
+function enrollmentReviewLabel(value) {
+  const raw = String(value || "Not recorded");
+  const canonical = raw.trim().toUpperCase().replaceAll(/\s+/g, "_");
+  return ENROLLMENT_REVIEW_LABELS[canonical] || raw.replaceAll("_", " ");
+}
+
 function Field({ label, value }) {
   return <div className="info-item"><span>{label}</span><strong>{value ?? "Not available"}</strong></div>;
 }
@@ -27,7 +43,7 @@ function ScheduleText({ meetings }) {
 
 function SampleNotice() {
   return <div className="notice" role="note">
-    <strong>PROJECT_ONLY classroom demonstration.</strong> The curriculum, grades, timetable, admission context, and enrollment simulation are generated project records. They are not institutionally verified. Registrar confirmation of a simulation does not create official university enrollment.
+    <strong>Classroom demonstration only.</strong> The curriculum, grades, timetable, admission context, and enrollment review are fictional records. They are not institutionally verified. A demonstration review confirmation does not create official university enrollment.
   </div>;
 }
 
@@ -65,7 +81,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
       try {
         await submitPreparedProjectEnrollment();
         setReviewOpen(false);
-        setMessage("Your PROJECT_ONLY enrollment was submitted for Registrar simulation review. Your official university enrollment remains unconfirmed.");
+        setMessage("Your demonstration enrollment was submitted for Registrar review. Your official university enrollment remains unconfirmed.");
         window.location.reload();
       } catch (error) {
         setMessage(error?.message || "Submission failed. Please review your enrollment details.");
@@ -105,7 +121,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
           <div className="section-header"><div>
             <h2>Current Enrollment</h2>
             <p>Automatically prepared from your linked curriculum, project academic history, and validated block timetable.</p>
-          </div><StatusBadge value={simulationStatus} label={simulationStatus.replaceAll("_", " ") + " · Project Simulation"} /></div>
+          </div><StatusBadge value={simulationStatus} label={enrollmentReviewLabel(simulationStatus)} /></div>
 
           <div className="info-grid" style={{ marginTop: 16 }}>
             <Field label="Student" value={`${data.student.name} (${data.student.number})`} />
@@ -114,7 +130,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
             <Field label="Proposed Home Block" value={data.homeBlock || "No validated block"} />
             <Field label="Prepared Eligible Subjects" value={String(selectedCount)} />
             <Field label="Proposed Units" value={String(data.proposedUnits)} />
-            <Field label="Estimated Tuition (Project Only)" value={formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)} />
+            <Field label="Estimated Tuition (Demonstration)" value={formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)} />
             <Field label="Academic Classification" value={<StatusBadge value={data.student.classification || "NOT_VERIFIED"} />} />
             <Field label="Current Eligibility" value={<StatusBadge value={eligibility} />} />
           </div>
@@ -125,12 +141,12 @@ export default function StudentEnrollmentWorkspace({ data }) {
           </div>
           {data.blockingReasons.map((reason) => <div key={reason} className="notice" role="status" style={{ marginTop: 10 }}>{reason}</div>)}
           {locked && <div className="notice" role="status" style={{ marginTop: 12 }}>
-            Your submitted project enrollment is read only. The Registrar controls validation, return for correction, and simulated confirmation.
+            Your submitted demonstration enrollment is read only. The Registrar controls validation, return for correction, and demonstration-only confirmation.
           </div>}
           {simulationStatus === "RETURNED" && <div className="notice warning" role="status" style={{ marginTop: 12 }}>
             <strong>Returned by Registrar for correction.</strong>
-            <p>{data.simulation?.correctionReason || "Please review your prepared project enrollment and contact the Registrar for the recorded return reason."}</p>
-            <p>Make permitted corrections before resubmission. The current project simulation can be resubmitted when the Registrar reopens a valid enrollment period.</p>
+            <p>{data.simulation?.correctionReason || "Please review your prepared enrollment and contact the Registrar for the recorded return reason."}</p>
+            <p>Make permitted corrections before resubmission. This demonstration enrollment can be resubmitted when the Registrar reopens a valid enrollment period.</p>
           </div>}
 
           <div className="section-header" style={{ marginTop: 22 }}><div>
@@ -152,7 +168,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
             {isConfirmedSimulation ? <Button onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
           </div>
           {message && <div className="notice" role="status" style={{ marginTop: 12 }}>{message}</div>}
-          <p style={{ marginTop: 10 }}>Schedule and block selections remain proposed during student review. Only a trusted Registrar may finalize a project simulation. Official COR and class schedules require a separate officially confirmed enrollment.</p>
+          <p style={{ marginTop: 10 }}>Schedule and block selections remain proposed during student review. Only an authorized Registrar may finalize the demonstration review. Official COR and class schedules require a separate officially confirmed enrollment.</p>
         </> : <>
           <div className="section-header"><div><h2>Enrollment History</h2><p>Read only enrollment transactions associated with this authenticated student.</p></div></div>
           <div className="toolbar">
@@ -162,14 +178,14 @@ export default function StudentEnrollmentWorkspace({ data }) {
             <FilterControl label="Semester" value={semesterFilter} onChange={setSemesterFilter}
               options={[{value:"ALL",label:"All semesters"}, ...[...new Set(history.map((h)=>String(h.semester)).filter(Boolean))].map((v)=>({value:v,label:v}))]} />
             <FilterControl label="Status" value={statusFilter} onChange={setStatusFilter}
-              options={[{ value: "ALL", label: "All statuses" }, ...[...new Set(history.map((h) => h.status))].map((v) => ({ value: v, label: v }))]} />
+              options={[{ value: "ALL", label: "All statuses" }, ...[...new Set(history.map((h) => h.status))].map((v) => ({ value: v, label: enrollmentReviewLabel(v) }))]} />
           </div>
           {visibleHistory.length ? <DataTable rowKey="id" rows={visibleHistory} columns={[
             { key: "academicYear", label: "Academic Year" },
             { key: "semester", label: "Semester" },
             { key: "program", label: "Program and Block", render: (r) => `${r.program} · ${r.block || "Unassigned"}` },
             { key: "units", label: "Proposed Units" },
-            { key: "status", label: "Project Simulation Status", render: (r) => <StatusBadge value={r.status} /> },
+            { key: "status", label: "Review Status", render: (r) => <StatusBadge value={r.status} label={enrollmentReviewLabel(r.status)} /> },
             { key: "actions", label: "Actions", render: (r) => <TableActionButton onClick={() => setDetail({ type: "history", value: r })}>View Details</TableActionButton> },
           ]} /> : <div className="empty-state"><strong>No enrollment transactions found.</strong><p>Your generated academic placement is separate from an enrollment submission.</p></div>}
           {isConfirmedSimulation ? <Button variant="secondary" onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
@@ -178,7 +194,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
       </InternalTabs>
     </div>
 
-    <Modal open={Boolean(detail)} title={detail?.type === "history" ? "Project Enrollment Details" : "Subject Details"}
+    <Modal open={Boolean(detail)} title={detail?.type === "history" ? "Enrollment Review Details" : "Subject Details"}
       onClose={() => setDetail(null)} footer={<Button variant="secondary" onClick={() => setDetail(null)}>Close</Button>}>
       {detail?.type === "subject" ? <div className="detail-list">
         <div className="detail-row"><span>Subject</span><strong>{displaySubjectCode(detail.value.code)} · {displaySubjectCode(detail.value.name)}</strong></div>
@@ -198,17 +214,17 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <Field label="Term" value={`${detail.value.academicYear} · ${detail.value.semester}`} />
         <Field label="Program and Block" value={`${detail.value.program} · ${detail.value.block}`} />
         <Field label="Submitted At" value={detail.value.submittedAt ? new Date(detail.value.submittedAt).toLocaleString() : "Not submitted"} />
-        <Field label="Project Status" value={detail.value.status.replaceAll("_", " ")} />
+        <Field label="Review Status" value={enrollmentReviewLabel(detail.value.status)} />
       </div> : null}
     </Modal>
 
-    <Modal open={reviewOpen} title="Review and Submit Project Enrollment"
+    <Modal open={reviewOpen} title="Review and Submit Enrollment"
       onClose={() => { if (!isPending) setReviewOpen(false); }} footer={<>
         <Button variant="secondary" disabled={isPending} onClick={() => setReviewOpen(false)}>Cancel</Button>
         <Button disabled={isPending} onClick={handleSubmit}>{isPending ? "Submitting..." : "Confirm Submission"}</Button>
       </>}>
       <p>Confirm that you reviewed all {selectedCount} eligible subjects and {data.proposedUnits} proposed units for {data.term.label}.</p>
-      <p>Your submission creates a PROJECT_ONLY classroom enrollment simulation for Registrar review. It does not confirm official registration.</p>
+      <p>Your submission creates a fictional classroom enrollment record for Registrar review. It does not confirm official registration.</p>
       {message && <p role="alert">{message}</p>}
     </Modal>
 
@@ -222,13 +238,13 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <div className="detail-row"><span>Student</span><strong>{cor.student?.student_name}</strong></div>
         <div className="detail-row"><span>Student Number</span><strong>{cor.student?.student_number}</strong></div>
         <div className="detail-row"><span>Program and Term</span><strong>{cor.student?.program_code} · {cor.student?.term_id}</strong></div>
-        <div className="detail-row"><span>Registrar Simulation</span><strong>{cor.registration_status}</strong></div>
+        <div className="detail-row"><span>Registrar Review</span><strong>{enrollmentReviewLabel(cor.registration_status)}</strong></div>
         {(cor.projectFeeEstimate?.subjects || []).map((item) =>
           <div className="detail-row" key={item.code}>
             <span>{displaySubjectCode(item.code)} · {displaySubjectCode(item.name)} ({item.units} units)</span>
             <strong>{formatProjectPeso(item.estimatedFee)}</strong>
           </div>)}
-        <div className="detail-row"><span>Total Registered Units (Project Simulation)</span><strong>{cor.projectFeeEstimate?.totalUnits ?? "Not available"}</strong></div>
+        <div className="detail-row"><span>Registered Units (Demonstration)</span><strong>{cor.projectFeeEstimate?.totalUnits ?? "Not available"}</strong></div>
         <div className="detail-row"><span>Estimated Tuition (Not Official)</span><strong>{formatProjectPeso(cor.projectFeeEstimate?.estimatedAmount)}</strong></div>
       </div> : null}
     </Modal>

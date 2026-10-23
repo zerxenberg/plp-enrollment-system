@@ -541,12 +541,12 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
                 </div>
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 9, marginTop: 12, fontSize: ".75rem" }}>
                   <input type="checkbox" checked={sourceConfirmed} onChange={(event) => setSourceConfirmed(event.target.checked)} />
-                  For this simulation, I confirm that the sample file matches the demo source reference.
+                  For this demonstration, I confirm that the sample file matches the demo source reference.
                 </label>
                 <div className="action-row" style={{ marginTop: 12 }}>
                   <Button type="submit" variant="secondary" disabled={!sourceConfirmed || selected.status !== "VALIDATED"}>Record Simulated Verification</Button>
                 </div>
-              </form> : isVerified(selected) ? <StatusBadge value="VALIDATED" label="Simulated Verification complete" /> : <p className="notice">Source verification is unavailable for this batch status.</p>}
+              </form> : isVerified(selected) ? <StatusBadge value="VALIDATED" label="Source check completed (demo)" /> : <p className="notice">Source verification is unavailable for this batch status.</p>}
             </Panel>
             {isEditable(selected) ? <Panel title="Publish Demo Results" subtitle="Demo publication updates simulated student academic records. Any later corrections are tracked in demo revision history.">
               <div className="summary-strip" style={{ marginBottom: 12 }}>

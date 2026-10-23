@@ -54,7 +54,7 @@ export async function getConfirmedProjectDemonstrationCor() {
       status?.verified_institutionally !== false ||
       status?.curriculum_is_official !== false ||
       simulation?.status !== "CONFIRMED_SIMULATION") {
-    throw new Error("A Registrar confirmed project simulation is required before a demonstration registration document can be viewed.");
+    throw new Error("Registrar confirmation of the fictional enrollment record is required before viewing this demonstration registration document.");
   }
   const result = await context.client.rpc("project_phase8_demonstration_cor_v1", {
     p_simulation_id: simulation.id,

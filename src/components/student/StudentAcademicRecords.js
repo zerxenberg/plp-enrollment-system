@@ -33,11 +33,11 @@ function studentResults(snapshot) {
     code: item.target_subject,
     name: snapshot.curriculum.find((row) => row.code === item.target_subject)?.name || item.target_subject,
     units: item.credited_units,
-    term: "Transfer simulation",
+    term: "Transfer demonstration",
     grade: null,
     status: item.project_decision === "PROJECT_CREDITED" ? "CREDITED" :
       item.project_decision === "PROJECT_DENIED" ? "DENIED" : "PENDING",
-    source: "Simulated transfer evaluation",
+    source: "Demonstration transfer evaluation",
     note: `Source course: ${item.source_course || "Not recorded"}. This evaluation is fictional and is not institutional accreditation.`,
   }));
   return [...grades, ...transfer].sort((a, b) => b.term.localeCompare(a.term) || a.code.localeCompare(b.code));
@@ -193,7 +193,7 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                     { key: "yearLevel", label: "Year", render: (row) => `Year ${row.yearLevel}` },
                     { key: "semester", label: "Semester" },
                     { key: "units", label: "Curriculum Units", render: (row) => formatUnits(row.units) },
-                    { key: "status", label: "Simulated Progress", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "status", label: "Demonstration Progress", render: (row) => <StatusBadge value={row.status} /> },
                   ]} />
                 {filteredCurriculum.length > PAGE_SIZE && <TablePagination
                   page={safePage} pageSize={PAGE_SIZE} total={filteredCurriculum.length}
@@ -209,7 +209,7 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                 <div className="info-grid">
                   <div className="info-item"><span>Subject Code</span><strong>{displaySubjectCode(selected.code)}</strong></div>
                   <div className="info-item"><span>Units</span><strong>{formatUnits(selected.units)}</strong></div>
-                  <div className="info-item"><span>Simulation Status</span><strong><StatusBadge value={selected.status} /></strong></div>
+                  <div className="info-item"><span>Academic Result Status</span><strong><StatusBadge value={selected.status} /></strong></div>
                   {"term" in selected ? (
                     <>
                       <div className="info-item"><span>Term</span><strong>{selected.term}</strong></div>

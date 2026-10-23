@@ -255,7 +255,7 @@ export default function AcademicSetupWorkspace() {
   function editSubjectPlacement(placement) {
     const target = curricula.find((item) => item.id === placement.curriculumId);
     if (!target || target.status !== "Draft" || (isOfficial && target.isProjectOnly)) {
-      report({ ok: false, message: "Prerequisites can only be edited in an authorized Draft curriculum without project simulation provenance." });
+      report({ ok: false, message: "Prerequisites can only be edited in an authorized, editable Draft curriculum." });
       return;
     }
     openCurriculum(target);
@@ -286,7 +286,7 @@ export default function AcademicSetupWorkspace() {
     event.preventDefault();
     if (isOfficial && (selected?.isProjectOnly ||
       subjectRows.some((row) => row.code === selected?.code && row.isProjectOnly))) {
-      report({ ok: false, message: "Project simulation subject records are read only." });
+      report({ ok: false, message: "Protected demonstration subject records are read only." });
       return;
     }
     const payload = { ...subjectForm, program: subjectForm.programs[0] };
@@ -297,7 +297,7 @@ export default function AcademicSetupWorkspace() {
     event.preventDefault();
     if (isOfficial) {
       if (selected?.isProjectOnly) {
-        report({ ok: false, message: "Project simulation curriculum versions are read only in Academic Setup." });
+        report({ ok: false, message: "Protected demonstration curriculum versions are read only in Academic Setup." });
         return;
       }
       const errors = validateLiveCurriculumDraft(curriculumForm, selected, { programs, subjects });
@@ -354,7 +354,7 @@ export default function AcademicSetupWorkspace() {
     const latest = curricula.find((entry) => entry.id === row.id);
     const rule = CONFIRMABLE_CURRICULUM_ACTIONS[action];
     if (isOfficial && latest?.isProjectOnly) {
-      report({ ok: false, message: "Project simulation curricula are read only in official Academic Setup." });
+      report({ ok: false, message: "Protected demonstration curricula are read only in Academic Setup." });
       return;
     }
     if (!latest || !rule?.from.includes(latest.status)) {
@@ -374,7 +374,7 @@ export default function AcademicSetupWorkspace() {
   async function manageVersion(action, row) {
     if (versionBusyRef.current) return;
     if (isOfficial && row.isProjectOnly) {
-      report({ ok: false, message: "Project simulation curricula are read only in official Academic Setup." });
+      report({ ok: false, message: "Protected demonstration curricula are read only in Academic Setup." });
       return;
     }
     const operation = {
@@ -495,7 +495,7 @@ export default function AcademicSetupWorkspace() {
                             <th scope="row" className="academic-version-cell">
                               <button type="button" className="academic-version-toggle" aria-expanded={expanded} aria-controls={yearGroupIds.length ? yearGroupIds.join(" ") : detailsId} onClick={() => setCollapsedCurricula((current) => ({ ...current, [curriculum.id]: !current[curriculum.id] }))}>
                                 <span className={`academic-version-chevron ${expanded ? "is-expanded" : ""}`}><AppIcon name="chevronRight" size={15} /></span>
-                                <span className="academic-curriculum-version">{curriculumLabel(curriculum)}{isOfficial && curriculum.isProjectOnly ? " (Project Simulation)" : ""}</span>
+                                <span className="academic-curriculum-version">{curriculumLabel(curriculum)}</span>
                               </button>
                             </th>
                             <td className="academic-program-info">
@@ -590,9 +590,9 @@ export default function AcademicSetupWorkspace() {
           </div>
           {isOfficial ? <>
             <h3>Registered Curriculum Placements and Prerequisites</h3>
-            <p className="academic-helper">{isSubjectView ? "Project simulation subject records and their curriculum placements are read only." : "Subjects are shared catalog records. A program, specialization, semester, and prerequisite rule is saved to a specific Draft curriculum in the Curriculum tab. Saving this form changes only the subject catalog."}</p>
+            <p className="academic-helper">{isSubjectView ? "These demonstration subject records and their curriculum placements are read only." : "Subjects are shared catalog records. A program, specialization, semester, and prerequisite rule is saved to a specific Draft curriculum in the Curriculum tab. Saving this form changes only the subject catalog."}</p>
             <DataTable rowKey="curriculumId" rows={selected?.livePlacements || []} emptyMessage="This subject has no curriculum placements yet. Save it, then add it to a Draft curriculum." columns={[
-              { key: "curriculumVersion", label: "Curriculum Version", render: (item) => curriculumLabel({ id: item.curriculumId, version: item.curriculumVersion }) + (item.isProjectOnly ? " (Project Simulation)" : "") },
+              { key: "curriculumVersion", label: "Curriculum Version", render: (item) => curriculumLabel({ id: item.curriculumId, version: item.curriculumVersion }) },
               { key: "program", label: "Program" },
               { key: "major", label: "Specialization", render: (item) => item.major || "None" },
               { key: "term", label: "Academic Placement", render: (item) => item.yearLevel + ", " + item.semester },
