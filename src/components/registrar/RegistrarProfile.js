@@ -1,32 +1,37 @@
 "use client";
 
-import { useState } from "react";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, PageHeader } from "@/components/ui/PortalUI";
-import { Panel, Info, Feedback } from "./RegistrarShared";
+import { useEffect, useState } from "react";
+import { PageHeader } from "@/components/ui/PortalUI";
+import { Info, Panel } from "./RegistrarShared";
+import { loadRegistrarProfile } from "@/features/notifications/registrar-notifications-actions";
 
 export default function RegistrarProfile() {
-  const {registrar} = useDemoData();
-  const account = registrar.registrar;
-  const [enrollmentUpdates,setEnrollmentUpdates] = useState(true);
-  const [corrections,setCorrections] = useState(true);
-  const [message,setMessage] = useState("");
-
+  const [result, setResult] = useState({ kind: "loading" });
+  useEffect(() => {
+    let active = true;
+    loadRegistrarProfile().then((data) => { if (active) setResult(data); })
+      .catch(() => { if (active) setResult({ kind: "unavailable" }); });
+    return () => { active = false; };
+  }, []);
   return (
     <>
-      <PageHeader title="Registrar Profile" description="View Registrar account details and demonstration notification preferences." />
-      <Panel title="Account Information">
-        <div className="info-grid"><Info label="Registrar Name" value={account.fullName} /><Info label="Registrar Account ID" value={account.accountId} /><Info label="Office" value={account.office} /><Info label="Email" value={account.email} /><Info label="Assigned Role" value={account.role} /><Info label="Account Status" value={account.accountStatus} /></div>
-        <p className="notice" style={{marginTop:14}}>Changing account credentials or personal details requires the authentication and authorized profile service. This page displays demo account information.</p>
-      </Panel>
-      <div style={{marginTop:16}}><Panel title="Notification Preferences" subtitle="These preferences are local to this page demo session.">
-        <div className="list-stack">
-          <label className="list-item"><input type="checkbox" checked={enrollmentUpdates} onChange={(event)=>setEnrollmentUpdates(event.target.checked)} /> Enrollment status and validation updates</label>
-          <label className="list-item"><input type="checkbox" checked={corrections} onChange={(event)=>setCorrections(event.target.checked)} /> Correction requests and responses</label>
+      <PageHeader title="Registrar Profile" description="View your authenticated Registrar account information." />
+      {result.kind === "loading" ? <p className="notice" role="status">Loading account information…</p> : null}
+      {result.kind === "unavailable" ? <p className="notice warning" role="alert">
+        Your account information is temporarily unavailable.
+      </p> : null}
+      {result.kind === "ready" ? <Panel title="Account Information">
+        <div className="info-grid">
+          <Info label="Registrar Name" value={result.account.fullName} />
+          <Info label="Account Reference" value={result.account.accountId} />
+          <Info label="Registered Email" value={result.account.email} />
+          <Info label="Assigned Role" value={result.account.role} />
+          <Info label="Account Status" value={result.account.status} />
         </div>
-        <div className="action-row" style={{marginTop:14}}><Button type="button" onClick={()=>setMessage("Demo preferences retained until you leave this page.")}>Save Demo Preferences</Button></div>
-        <Feedback message={message} />
-      </Panel></div>
+        <p className="notice" style={{ marginTop: 14 }}>
+          Identity details and account permissions are managed by the System Administrator.
+        </p>
+      </Panel> : null}
     </>
   );
 }

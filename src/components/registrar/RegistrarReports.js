@@ -1,27 +1,31 @@
 "use client";
 
-import { useState } from "react";
-import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
-import { Panel, Tabs, Metric, Feedback } from "./RegistrarShared";
-import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
-import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
+import { useEffect, useMemo, useState } from "react";
+import { Button, DataTable, FilterControl, PageHeader, SearchControl, StatusBadge } from "@/components/ui/PortalUI";
+import { Feedback, Metric, Tabs } from "./RegistrarShared";
 import { displaySubjectCode, displayCurriculumCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { loadRegistrarReports } from "@/features/reporting/registrar-reports-server";
 
-const VIEW_OPTIONS = [{value:"reports",label:"Reports"},{value:"statistics",label:"Enrollment Statistics"},{value:"monitoring",label:"Enrollment Monitoring"},{value:"quality",label:"Data Quality Review"},{value:"history",label:"Registrar Transaction History"}];
-const REPORTS = ["Enrollment Report", "Student Enrollment Report", "Enrollment Status Report", "Program Enrollment Report", "Subject Registration Report", "Section Capacity Report", "Academic Term Report"];
-
-function reportDisplayValue(key, value) {
-  if (key === "code" || key === "subjectCode" || key === "subject") return displaySubjectCode(value);
-  if (key === "curriculum" || key === "curriculumCode") return displayCurriculumCode(value);
-  return value;
-}
-
+const REPORTS = [
+  "Enrollment Report", "Student Enrollment Report", "Enrollment Status Report",
+  "Program Enrollment Report", "Section Capacity Report", "Academic Term Report",
+];
+const ALL = "ALL";
+const choice = (value, label = value) => ({ value, label });
+const groupRows = (rows, fields) => {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = fields.map((field) => String(row[field] ?? "")).join("|");
+    if (!groups.has(key)) groups.set(key, { ...Object.fromEntries(fields.map((field) => [field, row[field]])), students: 0 });
+    groups.get(key).students += 1;
+  }
+  return [...groups.values()].sort((a, b) => b.students - a.students);
+};
 function exportCsv(rows, filename) {
-  const headings = Object.keys(rows[0] || {message:"No records"});
-  const escape = (value) => `"${String(value ?? "").replaceAll('"','""')}"`;
-  const csv = [headings.join(","), ...rows.map((row) => headings.map((heading)=>escape(reportDisplayValue(heading, row[heading]))).join(","))].join("\r\n");
-  const url = URL.createObjectURL(new Blob(["\uFEFF", csv],{type:"text/csv;charset=utf-8;"}));
+  const columns = Object.keys(rows[0] || { message: "No matching records" });
+  const quote = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+  const lines = [columns.join(","), ...rows.map((row) => columns.map((key) => quote(row[key])).join(","))];
+  const url = URL.createObjectURL(new Blob(["\uFEFF", lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
@@ -30,58 +34,149 @@ function exportCsv(rows, filename) {
   link.remove();
   URL.revokeObjectURL(url);
 }
+function displayValue(key, value) {
+  if (key === "subject" || key === "subjectCode") return displaySubjectCode(value);
+  if (key === "curriculum") return displayCurriculumCode(value);
+  return value ?? "";
+}
+function columnsFor(rows, fallback = []) {
+  const keys = Object.keys(rows[0] || Object.fromEntries(fallback.map((item) => [item, ""])));
+  return keys.filter((key) => key !== "id").map((key) => ({
+    key, label: key.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase()),
+    render: (row) => key === "status"
+      ? <StatusBadge value={row.status} label={row.status.replaceAll("_", " ")} />
+      : displayValue(key, row[key]),
+  }));
+}
 
 export default function RegistrarReports() {
-  const { registrar, catalog } = useDemoData();
-  const [view,setView] = useState("reports");
-  const [report,setReport] = useState(REPORTS[0]);
-  const [academicFilters,setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
-  const [status,setStatus] = useState("ALL");
-  const [subject,setSubject] = useState("ALL");
-  const [section,setSection] = useState("ALL");
-  const [preview,setPreview] = useState(false);
-  const [message,setMessage] = useState("");
-  const statusEnrolled = registrar.enrollments.filter((entry) => status === "ALL" || entry.status === status);
-  const enrolled = filterAcademicRecords(statusEnrolled, academicFilters, [], catalog.programs);
-  const reportEnrollments = enrolled.filter((entry) => subject === "ALL" || entry.subjects.some((item)=>item.code===subject));
-  const reportRows = report === "Section Capacity Report" ? registrar.sections.filter((row)=>(section==="ALL" || row.code===section) && (subject==="ALL" || row.subject===subject)).map(({code,subject,capacity,confirmed,status})=>({code,subject,capacity,confirmed,remaining:Math.max(0,capacity-confirmed),status})) :
-    report === "Subject Registration Report" ? reportEnrollments.flatMap((entry)=>entry.subjects.filter((item)=>(subject==="ALL" || item.code===subject) && (academicFilters.section==="ALL" || item.section===academicFilters.section)).map((item)=>({enrollment:entry.reference,student:entry.studentName,program:entry.program,term:entry.term,code:item.code,subject:item.name,section:item.section}))) :
-    report === "Academic Term Report" ? [...new Set(reportEnrollments.map((entry)=>entry.term))].map((academicTerm)=>({term:academicTerm,enrollments:reportEnrollments.filter((entry)=>entry.term===academicTerm).length,confirmed:reportEnrollments.filter((entry)=>entry.term===academicTerm && entry.status==="CONFIRMED").length})) :
-    report === "Program Enrollment Report" ? catalog.programs.filter((item)=>academicFilters.program==="ALL" || academicFilters.program===item.code).map((item)=>({program:item.code,name:item.name,enrollments:reportEnrollments.filter((entry)=>entry.program===item.code).length,confirmed:reportEnrollments.filter((entry)=>entry.program===item.code && entry.status==="CONFIRMED").length})) :
-    reportEnrollments.map(({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference})=>({reference,studentNumber,studentName,program,term,units,status,submittedDate,confirmationReference:confirmationReference || ""}));
-  const count = (filter) => enrolled.filter((entry)=>entry.status===filter).length;
-  const reportColumns = Object.keys(reportRows[0] || {}).map((key)=>({key,label:key.replace(/([A-Z])/g," $1").replace(/^./, (letter)=>letter.toUpperCase()),render:(row)=>reportDisplayValue(key,row[key])}));
-  const choices = (array) => [{value:"ALL",label:"All"},...new Set(array)].map((item)=>typeof item==="string"?{value:item,label:displaySubjectCode(item).replaceAll("_"," ")}:item);
-  const showEnrollmentFilters = view === "statistics" || view === "monitoring" || (view === "reports" && report !== "Section Capacity Report");
-  const changeAcademicFilter = (key, value) => { setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value); setPreview(false); };
+  const [result, setResult] = useState({ kind: "loading", records: [], sections: [], history: [] });
+  const [view, setView] = useState("reports");
+  const [report, setReport] = useState(REPORTS[0]);
+  const [program, setProgram] = useState(ALL);
+  const [term, setTerm] = useState(ALL);
+  const [source, setSource] = useState(ALL);
+  const [status, setStatus] = useState(ALL);
+  const [historySearch, setHistorySearch] = useState("");
+  const [preview, setPreview] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [refresh, setRefresh] = useState(0);
 
+  useEffect(() => {
+    let active = true;
+    loadRegistrarReports().then((data) => {
+      if (active) { setResult(data); setPreview(false); }
+    }).catch(() => {
+      if (active) setResult({ kind: "unavailable", records: [], sections: [], history: [] });
+    });
+    return () => { active = false; };
+  }, [refresh]);
+
+  const records = result.records;
+  const options = (field) => [
+    choice(ALL, "All"),
+    ...[...new Set(records.map((row) => row[field]).filter(Boolean))].sort().map((item) => choice(item, item)),
+  ];
+  const filtered = useMemo(() => records.filter((row) =>
+    (source === ALL || row.source === source) &&
+    (program === ALL || row.program === program) &&
+    (term === ALL || row.term === term) &&
+    (status === ALL || row.status === status)
+  ), [records, program, term, source, status]);
+
+  const sectionRows = useMemo(() => result.sections.filter((row) =>
+    (source === ALL || row.source === source) &&
+    (program === ALL || row.program === program) &&
+    (term === ALL || row.term === term)
+  ), [result.sections, source, program, term]);
+  const reportRows = useMemo(() => {
+    switch (report) {
+      case "Student Enrollment Report":
+        return filtered.map(({ studentNumber, studentName, studentType, classification, program, section, term, status, source }) =>
+          ({ studentNumber, studentName, studentType, classification, program, section, term, status, source }));
+      case "Enrollment Status Report":
+        return groupRows(filtered, ["term", "status", "source"]);
+      case "Program Enrollment Report":
+        return groupRows(filtered, ["program", "term", "source"]);
+      case "Section Capacity Report":
+        return sectionRows.map(({ id, ...row }) => row);
+      case "Academic Term Report":
+        return groupRows(filtered, ["term", "source"]);
+      default:
+        return filtered.map(({ id, ...row }) => row);
+    }
+  }, [report, filtered, sectionRows]);
+
+  const history = useMemo(() => {
+    const search = historySearch.trim().toLowerCase();
+    return (result.history || []).filter((row) =>
+      (source === ALL || source === row.source) &&
+      (!search || Object.values(row).some((value) => String(value ?? "").toLowerCase().includes(search))));
+  }, [result.history, source, historySearch]);
+
+  const ready = result.kind === "ready";
+  const updateFilter = (setter) => (value) => { setter(value); setPreview(false); setFeedback(""); };
   return (
     <>
-      <PageHeader title="Reports & Monitoring" description="Generate enrollment summaries, examine workload and review Registrar transaction history." />
-      <Tabs selected={view} onSelect={(next)=>{setView(next);setMessage("");}} items={VIEW_OPTIONS} label="Registrar reporting sections" title="Registrar Reporting">
-        {showEnrollmentFilters ? <div className="toolbar">
-          <FilterControl label="Enrollment Status" value={status} onChange={(next)=>{setStatus(next);setPreview(false);}} options={choices(registrar.enrollments.map((entry)=>entry.status))} />
-        </div> : null}
-        {showEnrollmentFilters ? <AcademicFilterBar records={statusEnrolled} programs={catalog.programs} departments={catalog.departments} value={academicFilters} onChange={changeAcademicFilter} matchingCount={enrolled.length} label="Registrar enrollment report academic filters" /> : null}
-        {view==="reports" ? <>
-          <div className="toolbar"><FilterControl label="Report Type" value={report} onChange={(next)=>{setReport(next);setPreview(false);}} options={REPORTS.map((item)=>({value:item,label:item}))} />
-            <FilterControl label="Subject" value={subject} onChange={(next)=>{setSubject(next);setPreview(false);}} options={choices([...registrar.enrollments.flatMap((entry)=>entry.subjects.map((item)=>item.code)),...registrar.sections.map((item)=>item.subject)])} />
-            {report==="Section Capacity Report" ? <FilterControl label="Section" value={section} onChange={(next)=>{setSection(next);setPreview(false);}} options={choices(registrar.sections.map((item)=>item.code))} /> : null}
-            <Button type="button" onClick={()=>{setPreview(true);setMessage(`${report} generated from ${reportRows.length} demo records.`);}}>Generate & Preview</Button>
-            <Button type="button" variant="secondary" onClick={()=>exportCsv(reportRows,`${report.toLowerCase().replaceAll(" ","-")}.csv`)}>Export Spreadsheet (CSV)</Button>
-            <Button type="button" variant="secondary" onClick={()=>window.print()}>Print / Save as PDF</Button>
+      <PageHeader title="Reports & Monitoring"
+        description="Enrollment reports and Registrar transaction history from authorized records."
+        actions={<Button type="button" variant="secondary" disabled={result.kind === "loading"}
+          onClick={() => { setResult((prev) => ({ ...prev, kind: "loading" })); setRefresh((value) => value + 1); }}>
+          Refresh Data
+        </Button>} />
+      {result.kind === "loading" ? <p className="notice" role="status">Loading Registrar records…</p> : null}
+      {result.kind === "unavailable" ? <p className="notice warning" role="alert">
+        Registrar reporting is temporarily unavailable. No sample values are shown.
+      </p> : null}
+      {ready ? <>
+        <div className="stats-grid" style={{ marginBottom: 16 }}>
+          <Metric label="Official Enrollment Records" value={result.officialCount} />
+          <Metric label="Fictional Cohort Records" value={result.projectCount} hint="Demonstration only" />
+          <Metric label="Officially Confirmed" value={records.filter((row) => row.source === "Official record" && row.status === "CONFIRMED").length} />
+          <Metric label="Registrar History Events" value={result.history.length} />
+        </div>
+        <Tabs selected={view} onSelect={(next) => { setView(next); setFeedback(""); }}
+          label="Registrar reporting sections" title="Registrar Reports"
+          items={[choice("reports", "Registrar Reports"), choice("history", "Registrar Activity History")]}>
+          <div className="toolbar">
+            <FilterControl label="Data Source" value={source} onChange={updateFilter(setSource)}
+              options={[choice(ALL, "All sources"), choice("Official record"), choice("Demonstration only"),
+                ...(view === "history" ? [choice("Registrar audit")] : [])]} />
+            {view === "reports" ? <>
+              <FilterControl label="Program" value={program} onChange={updateFilter(setProgram)} options={options("program")} />
+              <FilterControl label="Academic Term" value={term} onChange={updateFilter(setTerm)} options={options("term")} />
+              {report !== "Section Capacity Report" ?
+                <FilterControl label="Enrollment Status" value={status} onChange={updateFilter(setStatus)} options={options("status")} /> : null}
+            </> : <SearchControl label="Search history" value={historySearch}
+              onChange={setHistorySearch} placeholder="Search actions, records or reasons" />}
           </div>
-          {preview ? <DataTable rowKey={(row)=>Object.values(row).join(":")} rows={reportRows} columns={reportColumns} emptyMessage="No records meet the report filters." /> : <div className="notice">Select a report and click Generate & Preview to inspect the current filtered data.</div>}
-        </> : null}
-        {view==="statistics" ? <>
-          <div className="stats-grid" style={{marginBottom:14}}><Metric label="Enrollment Transactions" value={enrolled.length} /><Metric label="Confirmed" value={count("CONFIRMED")} /><Metric label="Submitted" value={count("SUBMITTED")} /><Metric label="Requires Correction" value={count("REQUIRES_CORRECTION")} /></div>
-          <div className="list-stack">{catalog.programs.map((item)=>{const total=enrolled.filter((entry)=>entry.program===item.code).length;return <div className="chart-row" key={item.code}><span>{item.code} · {total} registrations</span><div className="chart-bar"><span style={{width:`${enrolled.length?100*total/enrolled.length:0}%`}} /></div><strong>{enrolled.length?Math.round(100*total/enrolled.length):0}%</strong></div>;})}</div>
-        </> : null}
-        {view==="monitoring" ? <><div className="stats-grid" style={{marginBottom:14}}><Metric label="For Validation" value={count("FOR_VALIDATION")} /><Metric label="Needs Academic Review" value={count("NEEDS_ACADEMIC_REVIEW")} /><Metric label="Correction Queue" value={count("REQUIRES_CORRECTION")} /><Metric label="Full Sections" value={registrar.sections.filter((item)=>item.confirmed>=item.capacity).length} /></div><DataTable rowKey="reference" rows={enrolled} columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"program",label:"Program"}]} /></> : null}
-        {view==="quality" ? <DataTable rowKey="id" rows={registrar.dataQuality} columns={[{key:"issue",label:"Data Quality Issue"},{key:"record",label:"Related Record"},{key:"severity",label:"Severity",render:(row)=><StatusBadge label={row.severity} value={row.severity==="High"?"REQUIRES_CORRECTION":"REQUIRES_REVIEW"} />}]} /> : null}
-        {view==="history" ? <DataTable rowKey="id" rows={registrar.activity} columns={[{key:"date",label:"Timestamp"},{key:"registrar",label:"Registrar"},{key:"student",label:"Student"},{key:"reference",label:"Record"},{key:"action",label:"Action"},{key:"previousStatus",label:"Previous State"},{key:"newStatus",label:"Resulting State"},{key:"reason",label:"Reason"}]} /> : null}
-        <Feedback message={message} />
-      </Tabs>
+          {view === "reports" ? <>
+            <div className="toolbar">
+              <FilterControl label="Report Type" value={report} onChange={updateFilter(setReport)}
+                options={REPORTS.map((item) => choice(item))} />
+              <Button type="button" onClick={() => { setPreview(true); setFeedback(`Showing ${reportRows.length} current records.`); }}>
+                Generate & Preview
+              </Button>
+              <Button type="button" variant="secondary" disabled={reportRows.length === 0}
+                onClick={() => exportCsv(reportRows, `${report.toLowerCase().replaceAll(" ", "-")}.csv`)}>
+                Export Spreadsheet (CSV)
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => window.print()}>Print / Save as PDF</Button>
+            </div>
+            {preview ? <DataTable rows={reportRows}
+              rowKey={(row) => row.id || Object.values(row).join(":")}
+              columns={columnsFor(reportRows, ["studentNumber", "program", "term", "status", "source"])}
+              emptyMessage="No records match these report filters." />
+              : <p className="notice">Select a report and generate a preview to inspect current records.</p>}
+            <p className="notice">Fictional cohort entries and proposed block capacity are demonstration data. Only records labeled Official record are institutional enrollment records.</p>
+          </> : <DataTable rows={history.slice(0, LIMIT_HISTORY)}
+            rowKey="id" columns={columnsFor(history, ["date", "registrar", "record", "action", "source"])}
+            emptyMessage="No Registrar transactions match these filters." />}
+          <Feedback message={feedback} />
+        </Tabs>
+      </> : null}
     </>
   );
 }
+
+const LIMIT_HISTORY = 200;

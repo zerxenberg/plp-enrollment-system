@@ -7,6 +7,7 @@ import { Button, DataTable, FilterControl, InternalTabs, Modal, SearchControl, S
 import { Feedback, Info, Metric, Panel } from "./RegistrarShared";
 import RegistrarGradeUploadPicker from "./RegistrarGradeUploadPicker";
 import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import RegistrarVerifiedGradeWorkspace from "@/features/grade-import/RegistrarVerifiedGradeWorkspace";
 
 const INNER_TABS = [
   { value: "overview", label: "Overview" },
@@ -187,7 +188,7 @@ function ImportRowTable({ batch, onAmend, published = false, displayedRows }) {
   </>;
 }
 
-export default function RegistrarGradeImports({ mode = "import", onNavigate = () => {} }) {
+function RegistrarGradeImportDemo({ mode = "import", onNavigate = () => {} }) {
   const {
     gradeImports = { batches: [], publications: [], revisions: [], notifications: [] },
     createMockGradeImport, validateMockGradeImport, verifyMockGradeSource,
@@ -697,5 +698,21 @@ export default function RegistrarGradeImports({ mode = "import", onNavigate = ()
         </label>
       </form> : null}
     </Modal>
+  </>;
+}
+
+export default function RegistrarGradeImports({ mode = "import", onNavigate = () => {} }) {
+  const [source, setSource] = useState("confirmed");
+  return <>
+    <div className="toolbar" style={{ marginBottom: 14 }}>
+      <FilterControl label="Grade Record Source" value={source} onChange={setSource}
+        options={[
+          { value: "confirmed", label: "Confirmed Historical Records" },
+          { value: "sample", label: "Sample Import Practice" },
+        ]} />
+    </div>
+    {source === "confirmed"
+      ? <RegistrarVerifiedGradeWorkspace mode={mode} />
+      : <RegistrarGradeImportDemo mode={mode} onNavigate={onNavigate} />}
   </>;
 }

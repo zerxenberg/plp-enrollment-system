@@ -23,7 +23,7 @@ function validateSelection(files) {
   if (!/\.(xlsx|csv)$/i.test(file.name) || (file.type && !PERMITTED_MIME_TYPES.has(file.type.toLowerCase())))
     return "Unsupported file format. Please upload an XLSX or CSV file.";
   if (file.size === 0) return "The selected file is empty. Choose a grade file containing records.";
-  if (file.size > GRADE_IMPORT_MAX_FILE_BYTES) return "The demo grade file limit is 2 MB.";
+  if (file.size > GRADE_IMPORT_MAX_FILE_BYTES) return "The grade file limit is 2 MB.";
   return null;
 }
 
@@ -105,7 +105,7 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
   return (
     <>
       <div className={styles.fileField}>
-        <span className={styles.fieldLabel} id="registrar-grade-file-label">Sample Grade File (XLSX or CSV)</span>
+        <span className={styles.fieldLabel} id="registrar-grade-file-label">Grade File (XLSX or CSV)</span>
         <div className={styles.fileRow} aria-labelledby="registrar-grade-file-label">
           <button type="button" className={styles.chooseButton} onClick={openPicker} disabled={disabled} aria-haspopup="dialog">
             Choose File

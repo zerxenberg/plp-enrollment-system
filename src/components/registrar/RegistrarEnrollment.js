@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions, TablePagination } from "@/components/ui/PortalUI";
 import { Panel, Tabs, Info, Details, Feedback } from "./RegistrarShared";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
@@ -21,8 +21,9 @@ const QUEUES = [
 const CHECKS = ["Program Match", "Curriculum Match", "Duplicate Subject Check", "Prerequisite Check", "Unit Validation", "Section Slot Check", "Schedule Conflict Check"];
 const CATEGORIES = ["Student Information", "Subject Registration", "Prerequisite", "Section Availability", "Schedule Conflict", "Unit Load", "Other"];
 
-export default function RegistrarEnrollment({ projectSimulationQueue }) {
+export default function RegistrarEnrollment({ projectSimulationQueue, projectSimulationHistory }) {
   const { registrar, catalog, runRegistrarValidation, returnForCorrection, confirmRegistrarEnrollment, applyAuthorizedCorrection } = useDemoData();
+  const [section, setSection] = useState("processing");
   const [queue, setQueue] = useState("ALL");
   const [search, setSearch] = useState("");
   const [academicFilters, setAcademicFilters] = useState(ALL_ACADEMIC_FILTERS);
@@ -39,6 +40,8 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
   const [correctedInformation, setCorrectedInformation] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyPage, setHistoryPage] = useState(1);
 
   const enrollment = registrar.enrollments.find((item) => item.reference === reference);
   const reviewApprovalConsumed = ["APPROVED", "APPLIED"].includes(enrollment?.academicReviewDecision);
@@ -60,6 +63,10 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
     .sort((a,b)=>sort==="name" ? a.studentName.localeCompare(b.studentName) : sort==="program" ? a.program.localeCompare(b.program) : sort==="oldest" ? a.reference.localeCompare(b.reference) : b.reference.localeCompare(a.reference));
   const historicalTransactions = registrar.enrollments.filter((item) => ["CONFIRMED","CANCELLED"].includes(item.status));
   const historyRows = filterAcademicRecords(historicalTransactions, historyAcademicFilters, [], catalog.programs);
+  const recordedEvents = (projectSimulationHistory?.kind === "ready" ? projectSimulationHistory.records : [])
+    .filter((event) => `${event.studentNumber} ${event.studentName} ${event.action} ${event.reason || ""}`
+      .toLowerCase().includes(historySearch.toLowerCase().trim()));
+  const safeEventPage = Math.max(1, Math.min(historyPage, Math.ceil(recordedEvents.length / 20) || 1));
   const changeAcademicFilter = (key, value) => setAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
   const changeHistoryAcademicFilter = (key, value) => setHistoryAcademicFilters((previous) => key ? updateAcademicFilters(previous, key, value) : value);
 
@@ -110,8 +117,13 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
 
   return (
     <>
-      <PageHeader title="Enrollment" description="Review official enrollment transactions, run demo validation, return corrections and confirm validated records." />
-      <RegistrarProjectSimulationQueue queue={projectSimulationQueue} />
+      <PageHeader title="Enrollment" description="Manage the demonstration enrollment period, process Registrar reviews and inspect enrollment history." />
+      <InternalTabs items={[{ value: "period", label: "Enrollment Period" }, { value: "processing", label: "Enrollment Processing" }, { value: "history", label: "Enrollment History" }]} selected={section} onSelect={(value) => { setSection(value); setDialog(null); }} label="Registrar enrollment sections">
+      {section === "period" ? <RegistrarProjectSimulationQueue queue={projectSimulationQueue} mode="period" /> : null}
+      {section === "processing" ? <>
+      <RegistrarProjectSimulationQueue queue={projectSimulationQueue} mode="processing" />
+      {!projectSimulationQueue ? <>
+      <p className="notice" style={{ marginBottom: 16 }}>The queue below uses browser demonstration records only. No official university enrollment is processed here.</p>
       <Tabs items={QUEUES.map((item) => ({...item,label:`${item.label} (${registrar.enrollments.filter((row) => item.value === "ALL" || (item.value === "PENDING" ? row.status === "SUBMITTED" : row.status === item.value)).length})`}))} selected={queue} onSelect={setQueue} label="Filter enrollment queue by status" filter />
       <Panel title="Enrollment Queue" subtitle="Pending is a queue view for Submitted only. Every stored enrollment retains its canonical status.">
         <div className="toolbar">
@@ -163,13 +175,23 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
         <Feedback message={feedback} />
         </Tabs>
       </div> : reference ? <p className="notice warning" role="status">Enrollment reference {reference} was not found. Select another transaction from the queue.</p> : null}
-
-      <div style={{marginTop:16}}><Panel title="Enrollment History" subtitle="Official confirmed and past transaction records stay available for review and audit.">
+      </> : null}
+      </> : null}
+      {section === "history" ? <div style={{marginTop:16}}>{projectSimulationQueue ? <Panel title="Enrollment History" subtitle="Actual authenticated demonstration enrollment events, preserving the previous and new statuses, actor role, time, and reason.">
+        {projectSimulationHistory?.kind !== "ready" ? <p className="notice warning" role="status">The protected demonstration event history is unavailable.</p> : <>
+          <div className="toolbar"><SearchControl label="Search enrollment events" value={historySearch} onChange={(value)=>{setHistorySearch(value);setHistoryPage(1);}} placeholder="Student number, student name, action or reason" /><Button variant="ghost" type="button" onClick={()=>{setHistorySearch("");setHistoryPage(1);}}>Clear Filters</Button></div>
+          <DataTable rowKey="id" rows={recordedEvents.slice((safeEventPage - 1) * 20, safeEventPage * 20)} emptyMessage="No authenticated demonstration enrollment events match your search." columns={[{key:"studentNumber",label:"Student Number"},{key:"studentName",label:"Fictional Student"},{key:"action",label:"Action"},{key:"priorStatus",label:"Previous Status",render:(row)=>row.priorStatus||"New"},{key:"nextStatus",label:"New Status",render:(row)=><StatusBadge value={row.nextStatus} label={row.nextStatus === "CONFIRMED_SIMULATION" ? "Confirmed (demo only)" : row.nextStatus} />},{key:"actorRole",label:"Actor Role"},{key:"occurredAt",label:"Date & Time",render:(row)=>row.occurredAt?new Date(row.occurredAt).toLocaleString("en-PH"):"Not recorded"},{key:"reason",label:"Reason",render:(row)=>row.reason||"Not supplied"}]} />
+          {recordedEvents.length>20?<TablePagination page={safeEventPage} pageSize={20} total={recordedEvents.length} onPageChange={setHistoryPage} label="Enrollment event history pagination" />:null}
+          {projectSimulationHistory.records.length>=500?<p className="notice">Showing the latest 500 authorized events.</p>:null}
+        </>}
+      </Panel> : <Panel title="Enrollment History" subtitle="Browser demo transaction history. Protected classroom enrollment decisions are tracked separately from official university enrollment.">
         <AcademicFilterBar records={historicalTransactions} programs={catalog.programs} departments={catalog.departments} value={historyAcademicFilters} onChange={changeHistoryAcademicFilter} matchingCount={historyRows.length} label="Enrollment history academic filters" />
         <DataTable rowKey="reference" rows={historyRows} emptyMessage="No historical enrollment records match the selected academic filters." columns={[{key:"reference",label:"Reference"},{key:"studentName",label:"Student"},{key:"term",label:"Term"},{key:"status",label:"Status",render:(row)=><StatusBadge value={row.status} />},{key:"confirmationReference",label:"Confirmation Reference"},{key:"confirmationDate",label:"Confirmed On"},{key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openReview(row.reference,"history")}>View Details</TableActionButton></TableActions>}]} />
-      </Panel></div>
+      </Panel>}</div>
+      : null}
+      </InternalTabs>
 
-      <Modal open={dialog === "return" && Boolean(enrollment)} title="Return for Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-return-form">Return for Correction</Button></>}>
+      <Modal open={!projectSimulationQueue && dialog === "return" && Boolean(enrollment)} title="Return for Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-return-form">Return for Correction</Button></>}>
         <form id="registrar-return-form" className="form-grid" onSubmit={sendCorrection}>
           <label className="field full">Reason Category<select required value={category} onChange={(event) => setCategory(event.target.value)}>{CATEGORIES.map((item) => <option key={item}>{item}</option>)}</select></label>
           <label className="field full">Explanation<textarea required value={explanation} onChange={(event) => setExplanation(event.target.value)} placeholder="Describe what the student must correct" /></label>
@@ -177,7 +199,7 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
         </form>
         <p className="notice warning" style={{marginTop:12}}>This records a Registrar correction reason and sets the transaction to Requires Correction.</p>
       </Modal>
-      <Modal open={dialog === "correct" && Boolean(enrollment)} title="Authorized Enrollment Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-correction-form">Record Correction</Button></>}>
+      <Modal open={!projectSimulationQueue && dialog === "correct" && Boolean(enrollment)} title="Authorized Enrollment Correction" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button type="submit" form="registrar-correction-form">Record Correction</Button></>}>
         <form id="registrar-correction-form" className="form-grid" onSubmit={saveAuthorizedCorrection}>
           <div className="field full"><Details items={[["Enrollment",enrollment?.reference],["Current Status",enrollment?.status]]} /></div>
           <label className="field full">Corrected Information<textarea required value={correctedInformation} onChange={(event) => setCorrectedInformation(event.target.value)} placeholder="Describe the approved record correction" /></label>
@@ -185,7 +207,7 @@ export default function RegistrarEnrollment({ projectSimulationQueue }) {
         </form>
         <p className="notice" style={{marginTop:12}}>{reviewAwaitingClarification ? "Recording a documented clarification returns this case to the pending Academic Review queue. The Coordinator must still make a new decision." : "This demo records a correction annotation and audit entry; official confirmed record fields remain intact."}</p>
       </Modal>
-      <Modal open={dialog === "confirm" && Boolean(enrollment)} title="Confirm Enrollment" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button disabled={!canConfirm} onClick={confirm}>Confirm Enrollment</Button></>}>
+      <Modal open={!projectSimulationQueue && dialog === "confirm" && Boolean(enrollment)} title="Confirm Enrollment" onClose={() => setDialog(null)} footer={<><Button variant="ghost" onClick={() => setDialog(null)}>Cancel</Button><Button disabled={!canConfirm} onClick={confirm}>Confirm Enrollment</Button></>}>
         <Details items={[["Student", enrollment?.studentName],["Academic Term",enrollment?.term],["Subject Count",enrollment?.subjects.length],["Total Units",enrollment?.units],["Current Status",enrollment?.status]]} />
         <p className="notice" style={{marginTop:12}}>Confirmation completes official term enrollment and generates a confirmation reference.</p>
       </Modal>

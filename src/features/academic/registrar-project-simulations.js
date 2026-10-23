@@ -50,6 +50,7 @@ export async function loadRegistrarProjectSimulationQueue() {
           !sim.student_number || !sim.student_name) return [];
       return [{
         id: sim.id,
+        homeBlockId: sim.home_block_id,
         studentNumber: sim.student_number,
         studentName: sim.student_name,
         term: sim.term_id,
@@ -64,6 +65,63 @@ export async function loadRegistrarProjectSimulationQueue() {
   } catch {
     return { kind: "unavailable", records: [] };
   }
+}
+
+export async function loadRegistrarProjectSimulationHistory() {
+  await requireRole("registrar");
+  try {
+    const client = await createClient();
+    const { data, error } = await client.rpc("project_phase8_registrar_simulation_events_v1");
+    if (error || data?.fictional_only !== true ||
+        data?.verified_institutionally !== false ||
+        data?.term_id !== PROJECT_TERM || !Array.isArray(data.records) ||
+        data.records.length > 500) {
+      return { kind: "unavailable", records: [] };
+    }
+    return { kind: "ready", records: data.records };
+  } catch {
+    return { kind: "unavailable", records: [] };
+  }
+}
+
+// One selected classroom block can be processed in a bounded batch. Each
+// enrollment remains an independent guarded database transaction, so an
+// invalid student never masks successful confirmations of other students.
+export async function performRegistrarProjectSimulationBatchAction(simulationIds, action, reason = "") {
+  await requireRole("registrar");
+  if (action !== "CONFIRM" || !Array.isArray(simulationIds) ||
+      simulationIds.length === 0 || simulationIds.length > 40 ||
+      new Set(simulationIds).size !== simulationIds.length ||
+      simulationIds.some((id) => !UUID.test(String(id)))) {
+    return { ok: false, message: "Select up to 40 unique enrollments for batch confirmation." };
+  }
+  if (typeof reason !== "string" || !reason.trim() || reason.length > 1000) {
+    return { ok: false, message: "Provide an authorized confirmation reason." };
+  }
+  const queue = await loadRegistrarProjectSimulationQueue();
+  if (queue.kind !== "ready") return { ok: false, message: "The protected Registrar queue is unavailable." };
+  const queueById = new Map(queue.records.map((row) => [row.id, row]));
+  const selected = simulationIds.map((id) => queueById.get(id));
+  if (selected.some((row) => !row || !row.homeBlockId) ||
+      new Set(selected.map((row) => row.homeBlockId)).size !== 1) {
+    return { ok: false, message: "Select enrollments from one verified block section." };
+  }
+  const results = [];
+  for (const id of simulationIds) {
+    const row = queueById.get(id);
+    if (row.status !== "VALIDATED") {
+      results.push({ id, studentNumber: row.studentNumber, ok: false,
+        message: "Only individually validated enrollments can be confirmed." });
+      continue;
+    }
+    const outcome = await performRegistrarProjectSimulationAction(id, action, reason.trim());
+    results.push({ id, studentNumber: row.studentNumber, ok: outcome.ok === true,
+      status: outcome.status || row.status,
+      message: outcome.ok ? "Demonstration enrollment confirmed." : outcome.message });
+  }
+  return { ok: true, simulationOnly: true, total: results.length,
+    confirmed: results.filter((row) => row.ok).length,
+    failed: results.filter((row) => !row.ok).length, results };
 }
 
 // The window is separate from the institutional academic term dates.

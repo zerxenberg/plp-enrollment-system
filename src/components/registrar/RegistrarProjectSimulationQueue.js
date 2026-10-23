@@ -7,7 +7,7 @@ import {
   StatusBadge, TableActions, TablePagination,
 } from "@/components/ui/PortalUI";
 import { Panel } from "./RegistrarShared";
-import { performRegistrarProjectSimulationAction, saveRegistrarDemonstrationWindow } from "@/features/academic/registrar-project-simulations";
+import { performRegistrarProjectSimulationAction, performRegistrarProjectSimulationBatchAction, saveRegistrarDemonstrationWindow } from "@/features/academic/registrar-project-simulations";
 
 const PAGE_SIZE = 20;
 const STATUSES = [
@@ -33,7 +33,7 @@ function readableDate(value) {
   return Number.isNaN(parsed.getTime()) ? "Not recorded" : parsed.toLocaleString();
 }
 
-export default function RegistrarProjectSimulationQueue({ queue }) {
+export default function RegistrarProjectSimulationQueue({ queue, mode = "all" }) {
   const router = useRouter();
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
@@ -46,6 +46,12 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
   const [endDate, setEndDate] = useState(queue?.demoWindow?.end_date || "");
   const [windowWorking, setWindowWorking] = useState(false);
   const [windowFeedback, setWindowFeedback] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [batchDialog, setBatchDialog] = useState(null);
+  const [batchReason, setBatchReason] = useState("");
+  const [batchWorking, setBatchWorking] = useState(false);
+  const [batchFeedback, setBatchFeedback] = useState("");
+  const [batchResults, setBatchResults] = useState([]);
 
   const rows = Array.isArray(queue?.records) ? queue.records : [];
   const filtered = rows.filter((row) =>
@@ -55,9 +61,57 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
   );
   const safePage = Math.max(1, Math.min(page, Math.ceil(filtered.length / PAGE_SIZE) || 1));
   const visibleRows = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const selectedRows = rows.filter((row) => selectedIds.includes(row.id));
+  const selectedBlockId = selectedRows[0]?.homeBlockId;
+  const canBatchConfirm = selectedRows.length > 0 && Boolean(selectedBlockId) &&
+    selectedRows.every((row) => row.status === "VALIDATED" && row.homeBlockId === selectedBlockId);
+
+  function toggleBatchSelection(rowId, checked) {
+    setBatchFeedback("");
+    setBatchResults([]);
+    setSelectedIds((current) => checked
+      ? current.includes(rowId) || current.length >= 40 ? current : [...current, rowId]
+      : current.filter((id) => id !== rowId));
+  }
+
+  function selectVisibleBlock() {
+    const blockId = selectedBlockId || visibleRows.find((row) =>
+      row.status === "VALIDATED" && row.homeBlockId)?.homeBlockId;
+    if (!blockId) return;
+    setBatchResults([]);
+    setBatchFeedback("");
+    setSelectedIds((current) => [...new Set([...current, ...visibleRows
+      .filter((row) => row.status === "VALIDATED" && row.homeBlockId === blockId)
+      .map((row) => row.id)])].slice(0, 40));
+  }
+
+  async function performBatch(explanation = "") {
+    if (batchWorking || working || !canBatchConfirm || selectedRows.length > 40 || !explanation.trim()) return;
+    setBatchWorking(true);
+    setBatchFeedback("");
+    try {
+      const result = await performRegistrarProjectSimulationBatchAction(
+        selectedRows.map((row) => row.id), "CONFIRM", explanation.trim());
+      setBatchResults(Array.isArray(result?.results) ? result.results : []);
+      setBatchFeedback(result?.ok
+        ? `${result.confirmed} confirmed for demonstration, ${result.failed} failed out of ${result.total} selected. Review individual results below.`
+        : result?.message || "The batch confirmation could not be completed.");
+      router.refresh();
+      if (result?.ok) {
+        const confirmedIds = new Set(result.results.filter((row) => row.ok).map((row) => row.id));
+        setSelectedIds((current) => current.filter((id) => !confirmedIds.has(id)));
+        setBatchDialog(null);
+        setBatchReason("");
+      }
+    } catch {
+      setBatchFeedback("The batch action could not be completed. Refresh the page and try again.");
+    } finally {
+      setBatchWorking(false);
+    }
+  }
 
   async function performAction(row, action, explanation = "") {
-    if (working) return;
+    if (working || batchWorking) return;
     setWorking(true);
     setFeedback("");
     try {
@@ -107,6 +161,7 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
 
   return (
     <div style={{ marginBottom: 18 }}>
+      {mode !== "processing" ? (
       <Panel title="Demonstration Enrollment Window"
         subtitle="Registrar controlled classroom testing dates. Official academic term dates remain unchanged.">
         <form className="form-grid" onSubmit={(event) => void saveWindow(event, "OPEN")}>
@@ -130,6 +185,8 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
           {windowFeedback ? ` ${windowFeedback}` : ""}
         </p>
       </Panel>
+      ) : null}
+      {mode !== "period" ? (
       <Panel title="Enrollment Review Queue"
         subtitle="Registrar review of fictional classroom submissions. These records are separate from official enrollments and the existing demonstration queue.">
         <div className="notice" role="note" style={{ marginBottom: 14 }}>
@@ -150,9 +207,17 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
               <FilterControl label="Review status" value={filter}
                 onChange={(value) => { setFilter(value); setPage(1); }} options={STATUSES} />
             </div>
+            <div className="action-row" style={{ marginBottom: 14 }}>
+              <strong>{selectedRows.length} of 40 selected</strong>
+              <Button type="button" variant="secondary" disabled={batchWorking || working || selectedIds.length >= 40 || !visibleRows.some((row) => row.status === "VALIDATED" && row.homeBlockId && (!selectedBlockId || row.homeBlockId === selectedBlockId) && !selectedIds.includes(row.id))} onClick={selectVisibleBlock}>Select Validated on Page</Button>
+              <Button type="button" disabled={!canBatchConfirm || batchWorking || working} onClick={() => { setBatchReason(""); setBatchDialog("CONFIRM"); }}>Confirm Selected (demo)</Button>
+              <Button type="button" variant="ghost" disabled={!selectedRows.length || batchWorking} onClick={() => setSelectedIds([])}>Clear Selection</Button>
+            </div>
+            <p className="notice" style={{ marginBottom: 14 }}>Batch confirmation accepts up to 40 individually validated records from the same block section. Validate or return individual submissions first. Confirmation is fictional and records results separately for each student.</p>
             <DataTable rowKey="id" rows={visibleRows}
               emptyMessage="No enrollment reviews match the current filters."
               columns={[
+                { key: "selection", label: "Select", render: (row) => <input type="checkbox" aria-label={`Select ${row.studentNumber} for batch confirmation`} checked={selectedIds.includes(row.id)} disabled={working || batchWorking || row.status !== "VALIDATED" || !row.homeBlockId || (selectedBlockId && selectedBlockId !== row.homeBlockId) || (selectedIds.length >= 40 && !selectedIds.includes(row.id))} onChange={(event) => toggleBatchSelection(row.id, event.target.checked)} /> },
                 { key: "studentNumber", label: "Student No." },
                 { key: "studentName", label: "Fictional Student" },
                 { key: "term", label: "Academic Term" },
@@ -187,12 +252,20 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
               <TablePagination page={safePage} pageSize={PAGE_SIZE} total={filtered.length}
                 onPageChange={setPage} label="Enrollment review pagination" />
             ) : null}
+            {batchFeedback ? <p className="notice" role="status" style={{ marginTop: 12 }}>{batchFeedback}</p> : null}
+            {batchResults.length ? <div style={{ marginTop: 16 }}>
+              <h3>Batch Confirmation Results</h3>
+              <DataTable rowKey="id" rows={batchResults} columns={[{key:"studentNumber",label:"Student No."},{key:"status",label:"Result",render:(row)=><StatusBadge value={row.ok ? "CONFIRMED_SIMULATION" : "REQUIRES_CORRECTION"} label={row.ok ? "Confirmed (demo only)" : "Not confirmed"} />},{key:"message",label:"Details"}]} />
+            </div> : null}
           </>
         )}
         {feedback ? (
           <p className="notice" role="status" aria-live="polite" style={{ marginTop: 12 }}>{feedback}</p>
         ) : null}
       </Panel>
+      ) : null}
+      {mode !== "period" ? (
+      <>
       <Modal open={Boolean(dialog)}
         title={dialog?.action === "CONFIRM" ? "Confirm Demonstration Review" : "Return Enrollment Review"}
         onClose={() => { if (!working) setDialog(null); }}
@@ -225,6 +298,17 @@ export default function RegistrarProjectSimulationQueue({ queue }) {
           </>
         ) : null}
       </Modal>
+      <Modal open={Boolean(batchDialog)}
+        title="Confirm Selected Demonstration Reviews"
+        onClose={() => { if (!batchWorking) setBatchDialog(null); }}
+        footer={<><Button type="button" variant="ghost" disabled={batchWorking} onClick={() => setBatchDialog(null)}>Cancel</Button><Button type="submit" form="registrar-project-batch-reason" disabled={batchWorking || !canBatchConfirm || !batchReason.trim()}>{batchWorking ? "Processing..." : "Confirm selected (demo)"}</Button></>}>
+        {batchDialog ? <form id="registrar-project-batch-reason" onSubmit={(event) => { event.preventDefault(); void performBatch(batchReason); }}>
+          <p className="notice">{selectedRows.length} fictional student reviews selected. This action is recorded separately for each eligible record and does not confirm official enrollment.</p>
+          <label className="field full" style={{ marginTop: 12 }}>Review reason or verification reference<textarea required maxLength={1000} value={batchReason} disabled={batchWorking} onChange={(event) => setBatchReason(event.target.value)} placeholder="Document the source and reason for this action" /></label>
+        </form> : null}
+      </Modal>
+      </>
+      ) : null}
     </div>
   );
 }

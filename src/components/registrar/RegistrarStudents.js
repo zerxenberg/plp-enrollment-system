@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
-import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions } from "@/components/ui/PortalUI";
+import { Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton, TableActions, TablePagination } from "@/components/ui/PortalUI";
 import AppIcon from "@/components/ui/AppIcon";
-import { Panel, Tabs, Info, Feedback, Details } from "./RegistrarShared";
+import { Panel, Tabs, Info, Feedback } from "./RegistrarShared";
 import RegistrarGradeImports from "./RegistrarGradeImports";
 import AcademicFilterBar from "@/components/shared/AcademicFilterBar";
 import { ALL_ACADEMIC_FILTERS, filterAcademicRecords, updateAcademicFilters } from "@/features/students/academic-student-filters";
@@ -13,7 +13,7 @@ import { displayCurriculumCode } from "@/features/academic/project-academic-disp
 
 const ALL = { value: "ALL", label: "All" };
 
-export default function RegistrarStudents() {
+export default function RegistrarStudents({ projectRoster }) {
   const [section, setSection] = useState("list");
   const { registrar, catalog, correctRegistrarStudent } = useDemoData();
   const [search, setSearch] = useState("");
@@ -28,6 +28,21 @@ export default function RegistrarStudents() {
   const [value, setValue] = useState("");
   const [reason, setReason] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [blockSection, setBlockSection] = useState("ALL");
+  const [projectPage, setProjectPage] = useState(1);
+  const projectAvailable = projectRoster?.kind === "ready" && Array.isArray(projectRoster.students);
+  const projectStudents = projectAvailable ? projectRoster.students : [];
+  const blockOptions = [...new Set(projectStudents.map((row) => row.blockSection).filter(Boolean))].sort();
+  const projectFiltered = projectStudents.filter((row) => {
+    const term = `${row.studentNumber || ""} ${row.fullName || ""} ${row.program || ""} ${row.blockSection || ""}`.toLowerCase();
+    return term.includes(search.trim().toLowerCase()) && (blockSection === "ALL" || row.blockSection === blockSection);
+  }).sort((a, b) => sort === "name_desc" ? String(b.fullName || "").localeCompare(String(a.fullName || ""))
+    : sort === "student_asc" ? String(a.studentNumber || "").localeCompare(String(b.studentNumber || ""))
+    : sort === "student_desc" ? String(b.studentNumber || "").localeCompare(String(a.studentNumber || ""))
+    : String(a.fullName || "").localeCompare(String(b.fullName || "")));
+  const safeProjectPage = Math.min(projectPage, Math.ceil(projectFiltered.length / 25) || 1);
+  const visibleProjectStudents = projectFiltered.slice((safeProjectPage - 1) * 25, safeProjectPage * 25);
+  const selectedProject = projectStudents.find((item) => item.studentNumber === selectedId);
 
   const selected = registrar.students.find((item) => item.studentNumber === selectedId);
   const selectedEnrollments = registrar.enrollments.filter((item) => item.studentNumber === selectedId);
@@ -54,14 +69,38 @@ export default function RegistrarStudents() {
 
   return (
     <>
-      <PageHeader title="Students" description="Review student records and manage the official grade import workflow." />
+      <PageHeader title="Students" description="Review block section student lists, official grade imports and import history." />
       <InternalTabs
-        items={[{ value: "list", label: "Student List" }, { value: "import", label: "Official Grades Import" }, { value: "history", label: "Grade Import History" }]}
+        items={[{ value: "list", label: "Block Section Student List" }, { value: "import", label: "Official Grades Import" }, { value: "history", label: "Grade Import History" }]}
         selected={section}
         onSelect={setSection}
         label="Registrar Students sections"
       >
       {section === "list" ? <>
+      {projectAvailable ? <Panel title="Block Section Student List" subtitle={`${projectFiltered.length} of ${projectStudents.length} authorized fictional student records. Block assignments are proposals and are not official enrollments.`}>
+        <div className="toolbar">
+          <SearchControl label="Search block students" value={search} onChange={(value) => {setSearch(value);setProjectPage(1);}} placeholder="Search name, student number, program or section" />
+          <FilterControl label="Block Section" value={blockSection} onChange={(value) => {setBlockSection(value);setProjectPage(1);}} options={[ALL, ...blockOptions.map((value) => ({ value, label: value }))]} />
+          <FilterControl label="Sort By" value={sort} onChange={(value) => {setSort(value);setProjectPage(1);}} options={[{value:"name_asc",label:"Name A to Z"},{value:"name_desc",label:"Name Z to A"},{value:"student_asc",label:"Student Number Ascending"},{value:"student_desc",label:"Student Number Descending"}]} />
+          <Button type="button" variant="ghost" onClick={() => { setSearch(""); setBlockSection("ALL"); setSort("name_asc"); setProjectPage(1); }}>Clear Filters</Button>
+        </div>
+        <DataTable rowKey="studentNumber" rows={visibleProjectStudents} emptyMessage="No students match the selected block section filters." columns={[
+          {key:"studentNumber",label:"Student Number"},
+          {key:"fullName",label:"Fictional Student"},
+          {key:"program",label:"Program"},
+          {key:"yearLevel",label:"Year Level"},
+          {key:"blockSection",label:"Block Section",render:(row)=>row.blockSection || "Unassigned"},
+          {key:"classification",label:"Classification",render:(row)=>row.classification || "Not evaluated"},
+          {key:"studentType",label:"Student Type",render:(row)=>row.studentType?.replaceAll("_", " ") || "Not available"},
+          {key:"actions",label:"Actions",render:(row)=><TableActions><TableActionButton icon="eye" tone="view" type="button" onClick={() => openStudent(row.studentNumber)}>View Details</TableActionButton></TableActions>},
+        ]} />
+        {projectFiltered.length > 25 ? <TablePagination page={safeProjectPage} pageSize={25} total={projectFiltered.length} onPageChange={setProjectPage} label="Block section roster pagination" /> : null}
+      </Panel> : null}
+      {projectAvailable && selectedProject ? <div style={{marginTop:16}}><Panel title={`${selectedProject.fullName} · Demonstration Record`} subtitle="Academic placement reference only. Official grade records and confirmation are managed separately." actions={<Button type="button" variant="ghost" onClick={() => setSelectedId(null)}>Close Details</Button>}>
+        <div className="info-grid">{[["Student Number",selectedProject.studentNumber],["Full Name",selectedProject.fullName],["Program",selectedProject.program],["Year Level",selectedProject.yearLevel],["Block Section",selectedProject.blockSection],["Academic Classification",selectedProject.classification],["Student Type",selectedProject.studentType?.replaceAll("_", " ")],["Curriculum",displayCurriculumCode(selectedProject.curriculum)]].map(([label,value])=><Info key={label} label={label} value={value} />)}</div>
+      </Panel></div> : null}
+      {projectRoster && !projectAvailable ? <Panel title="Student roster unavailable" subtitle="The authorized classroom roster could not be loaded."><p className="notice warning" role="status">Refresh the page or check the Registrar session. No replacement student records are displayed.</p></Panel> : null}
+      {!projectRoster ? <>
       <Panel title="Student List" subtitle={`${filtered.length} matching student records. Records originate from the Admission handoff.`}>
         <div className="toolbar">
           <SearchControl label="Search students" value={search} onChange={setSearch} placeholder="Search student name, number or admission reference" />
@@ -97,6 +136,7 @@ export default function RegistrarStudents() {
         </form>
         <p className="notice" style={{marginTop:12}}>The original value, corrected value, Registrar identity and date are retained in record history.</p>
       </Modal>
+      </> : null}
       </> : <RegistrarGradeImports mode={section} onNavigate={setSection} />}
       </InternalTabs>
     </>
