@@ -1,18 +1,8 @@
-import { supabase } from "@/lib/supabase/client";
 import { getLiveSession } from "@/lib/auth/live-auth";
+import { loadCoordinatorProjectAcademicReviewRows } from "./coordinator-project-audit-actions";
 
 // Academic reviews are individual scoped records. A single enrollment may
 // legitimately have more than one review, so never collapse them by enrollment ID.
-const PAGE_SIZE = 500;
-const MAX_ROWS = 10000;
-const COLUMNS = [
-  "id", "enrollment_id", "review_status", "exception_type", "academic_reason",
-  "subject_code", "failed_rule_code", "requested_reason", "decision_reason",
-  "supporting_reference", "created_at", "decided_at", "applied_at",
-  "coordinator_user_id",
-  "enrollments!inner(id,reference,student_id,program_code,term_id,curriculum_code,status,submitted_at,current_correction_reason)",
-].join(",");
-
 export function toAcademicReviewCase(review, registrarEnrollments = [], studentRecords = []) {
   const enrollment = review.enrollments;
   if (!enrollment) return null;
@@ -56,20 +46,10 @@ export async function loadAuthorizedAcademicReviewCases(registrarEnrollments = [
   if (current?.role !== "academic-coordinator") {
     throw new Error("Academic Coordinator authentication is required.");
   }
-  const reviews = [];
-  for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
-    const { data, error } = await supabase.from("academic_reviews")
-      .select(COLUMNS)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw new Error("Unable to load authorized academic review cases.");
-    reviews.push(...(data || []));
-    if ((data || []).length < PAGE_SIZE) break;
-    if (offset + PAGE_SIZE >= MAX_ROWS) {
-      throw new Error("The academic review queue exceeds the supported result limit.");
-    }
-  }
+  // Read only reviews whose enrollments belong to the authenticated
+  // PROJECT_ONLY cohort. Direct browser SELECT can include older institutional
+  // reviews in the same term, so restrict membership at the server boundary.
+  const reviews = await loadCoordinatorProjectAcademicReviewRows();
   const pendingByEnrollment = new Map();
   for (const review of reviews) {
     if (review.review_status === "PENDING") {
