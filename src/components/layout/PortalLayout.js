@@ -64,7 +64,7 @@ export default function PortalLayout({ role, authUser, projectOnly = false,
 
   // Real fictional PROJECT_ONLY students must not inherit another demo
   // student's term or notification inbox from the shared mock provider.
-  const term = projectOnly ? portalTerm : student.term;
+  const term = portalTerm || (projectOnly ? null : student.term);
   const roleNotifications = projectOnly ? (portalNotifications || []) : (notifications[role] || []);
   const markHeaderNotification = projectOnly && role === "student"
     ? (_role, id) => markStudentNotificationRead(id, true)
@@ -92,7 +92,7 @@ export default function PortalLayout({ role, authUser, projectOnly = false,
           markNotification: markHeaderNotification,
           notificationHref: meta.notificationHref,
           utilityLabel: meta.topbarUtilityLabel,
-          showTerm: projectOnly ? Boolean(portalTerm) : true,
+          showTerm: Boolean(term),
           menuOpen: sidebarOpen,
           onMenu: toggleSidebar,
         }}>

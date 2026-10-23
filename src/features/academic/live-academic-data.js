@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getLiveSession } from "@/lib/auth/live-auth";
+import { loadProjectEnrollmentWindowForStaff } from "./project-enrollment-window-actions";
 import { loadCoordinatorCurriculumProvenance } from "./coordinator-curriculum-provenance";
 import { scopeCoordinatorPhase8Records } from "./coordinator-phase8-scope.mjs";
 import {
@@ -145,7 +146,7 @@ export async function loadLiveAcademicCoordinator() {
     instructorsResult, roomsResult, sectionInstructorsResult, reviewsResult,
     enrollmentsResult, enrollmentSubjectsResult, notificationsResult,
     userNotificationsResult,pricesResult,curriculumRatesResult,
-    curriculumEstimatesResult, provenanceResult,
+    curriculumEstimatesResult, provenanceResult, projectWindow,
   ] = await Promise.all([
     supabase.from("organizational_units").select("*"),
     supabase.from("programs").select("*"),
@@ -173,6 +174,7 @@ export async function loadLiveAcademicCoordinator() {
     loadAllRows("academic_estimated_curriculum_rates", ["curriculum_code", "subject_code"]),
     supabase.from("academic_estimated_curriculum_tuition").select("*"),
     loadCoordinatorCurriculumProvenance(),
+    loadProjectEnrollmentWindowForStaff("academic-coordinator"),
   ]);
   const organizationalUnits = rows(unitsResult, "organizational unit");
   const programRecords = rows(programsResult, "program");
@@ -338,8 +340,13 @@ export async function loadLiveAcademicCoordinator() {
   const terms = termRecords.map((record) => ({
     id: record.id, label: record.label, shortLabel: record.short_label,
     academicYear: record.academic_year, semester: record.semester,
-    enrollmentStart: record.enrollment_start || "", enrollmentEnd: record.enrollment_end || "",
-    status: titleStatus(record.status),
+    enrollmentStart: record.id === projectWindow.termId
+      ? projectWindow.enrollmentStart : record.enrollment_start || "",
+    enrollmentEnd: record.id === projectWindow.termId
+      ? projectWindow.enrollmentEnd : record.enrollment_end || "",
+    status: record.id === projectWindow.termId
+      ? projectWindow.status : titleStatus(record.status),
+    isDemonstration: record.id === projectWindow.termId,
   }));
   const liveTerm = terms.find((record) => record.status === "Open") || terms[0] || defaultTerm;
   const blocks = blockRecords.map((record) => {

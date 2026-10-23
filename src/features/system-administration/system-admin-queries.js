@@ -2,6 +2,7 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
+import { loadProjectEnrollmentWindowForStaff } from "@/features/academic/project-enrollment-window-actions";
 
 function assertQuery(error, label) {
   if (error) {
@@ -120,9 +121,10 @@ async function getUserNotifications(supabase, userId, limit = 100) {
 
 export async function getSystemAdministratorShellData(userId) {
   const supabase = await createClient();
-  const [term, notifications] = await Promise.all([
+  const [term, notifications, projectWindow] = await Promise.all([
     getOpenOrLatestTerm(supabase),
     getUserNotifications(supabase, userId, 20),
+    loadProjectEnrollmentWindowForStaff("system-administrator"),
   ]);
 
   return {
@@ -133,9 +135,12 @@ export async function getSystemAdministratorShellData(userId) {
           shortLabel: term.short_label,
           academicYear: term.academic_year,
           semester: term.semester,
-          enrollmentStart: formatDate(term.enrollment_start),
-          enrollmentEnd: formatDate(term.enrollment_end),
-          status: term.status,
+          enrollmentStart: term.id === projectWindow.termId
+            ? formatDate(projectWindow.enrollmentStart) : formatDate(term.enrollment_start),
+          enrollmentEnd: term.id === projectWindow.termId
+            ? formatDate(projectWindow.enrollmentEnd) : formatDate(term.enrollment_end),
+          status: term.id === projectWindow.termId ? projectWindow.status : term.status,
+          isDemonstration: term.id === projectWindow.termId,
         }
       : null,
     notifications,

@@ -78,7 +78,9 @@ export function buildStudentEnrollmentSummary({
     today >= term.enrollment_start && today <= term.enrollment_end;
   const demonstrationOpen = validDemoWindow && demoWindow.status === "OPEN" &&
     Boolean(demoStart && demoEnd) && today >= demoStart && today <= demoEnd;
-  const windowOpen = originalOpen || demonstrationOpen;
+  // A manually closed project window must never be bypassed by the
+  // institution's independently configured academic term dates.
+  const windowOpen = validDemoWindow ? demonstrationOpen : originalOpen;
   const ready = snapshot.schedule_validated_for_project === true &&
     eligible.length > 0;
   const blockingReasons = [];
@@ -109,7 +111,8 @@ export function buildStudentEnrollmentSummary({
       semester: term?.semester || null,
       enrollmentStart: termStart,
       enrollmentEnd: termEnd,
-      status: term?.status || "Unknown",
+      status: validDemoWindow ? (demoWindow.status === "OPEN" ? "Open" : "Closed")
+        : term?.status || "Unknown",
       windowOpen,
       demonstrationWindow: validDemoWindow,
     },
