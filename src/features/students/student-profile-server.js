@@ -1,107 +1,118 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { allowProjectOnlyLogin } from "@/lib/auth/project-only-login-guard";
-import {
-  requireProjectOnlyInitialPasswordRotation,
-} from "@/lib/auth/project-only-first-login-rotation.mjs";
-import { resolveStudentProfile } from "./project-student-profile-lookup.mjs";
 import { getStudentContext } from "./student-context-server";
 import { isOwnStudentPhotoPath } from "./student-profile-photo-path.mjs";
 
-export async function loadStudentProfileForPage() {
-  try {
-    // Validated Auth identity is required on each server-rendered request.
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data?.user?.id) return { mode: "unavailable" };
-
-    const adminClient = createAdminClient();
-    const result = await resolveStudentProfile({
-      adminClient,
-      authUser: data.user,
-      // Enforce initial password rotation AGAIN at the actual profile data
-      // boundary, not only in the parent layout. Direct RSC/navigation or
-      // a concurrently rendered page cannot expose an unrotated identity.
-      verifyProjectAccount: async (trustedClient, appUser, authUser) => {
-        if (!(await allowProjectOnlyLogin(trustedClient, appUser, authUser))) {
-          return false;
-        }
-        return (await requireProjectOnlyInitialPasswordRotation(
-          trustedClient, appUser, authUser,
-        )) === false;
-      },
-    });
-    if (result.mode !== "project") return result;
-
-    // Resolve the same linked student again at the write-authority boundary;
-    // never use a browser-provided student number or another account's photo.
-    const ctx = await getStudentContext();
-    if (ctx.kind !== "project" ||
-        ctx.studentNumber !== result.profile.studentNumber) {
-      return { mode: "unavailable" };
-    }
-    const { data: storedContact, error: contactError } = await ctx.client
-      .from("student_profiles")
+async function loadContactAndPhoto(context) {
+  const [{data:contact,error:contactError},{data:photo,error:photoError}]=await Promise.all([
+    context.client.from("student_profiles")
       .select("contact_number,alternate_contact_number,address")
-      .eq("id", ctx.studentId).eq("user_id", ctx.appUserId).single();
-    let contact = storedContact;
-    let contactEditingReady = true;
-    if (contactError?.code === "42703") {
-      // The migration adds alternate_contact_number. During the review gap,
-      // continue showing the verified student using current schema fields.
-      const fallback = await ctx.client.from("student_profiles")
-        .select("contact_number,address")
-        .eq("id", ctx.studentId).eq("user_id", ctx.appUserId).single();
-      if (fallback.error || !fallback.data) return { mode: "unavailable" };
-      contact = fallback.data;
-      contactEditingReady = false;
-    } else if (contactError || !contact) return { mode: "unavailable" };
+      .eq("id",context.studentId).eq("user_id",context.appUserId).single(),
+    context.admin.from("student_profile_photos")
+      .select("object_path").eq("student_id",context.studentId).maybeSingle(),
+  ]);
+  if(contactError||!contact) throw contactError||new Error("Student contact is unavailable.");
+  if(photoError) throw photoError;
 
-    // Storage remains private even to browser JWTs. Sign only an image whose
-    // path belongs to the verified current student, using trusted server-only
-    // credentials after getStudentContext validated the live project link.
-    const { data: photo } = await ctx.client.from("student_profile_photos")
-      .select("object_path").eq("student_id", ctx.studentId).maybeSingle();
-    let photoUrl = null;
-    if (photo?.object_path && isOwnStudentPhotoPath(photo.object_path, ctx.authUser.id)) {
-      const { data: signed } = await ctx.admin.storage
-        .from("student-profile-photos").createSignedUrl(photo.object_path, 900);
-      photoUrl = signed?.signedUrl || null;
-    }
-    // Academic values are fictional and are displayed as simulated only when
-    // the trusted owner-scoped project snapshot validates its provenance.
-    const [{ data: snapshot, error: snapshotError }, { data: portalStatus }] = await Promise.all([
-      ctx.client.rpc("project_phase8_student_snapshot_v2", { p_student_id: ctx.studentId }),
-      ctx.client.rpc("project_phase8_student_portal_status_v1", { p_student_id: ctx.studentId }),
-    ]);
-    const validSnapshot = !snapshotError && snapshot?.project_only === true &&
-      snapshot.data_origin === "GENERATED_PROJECT" &&
-      snapshot.verified_institutionally === false &&
-      snapshot.student_number === ctx.studentNumber;
-    const projectEligible = validSnapshot && snapshot.schedule_validated_for_project === true &&
-      Array.isArray(snapshot.subjects) && snapshot.subjects.some((subject) =>
-        ["ELIGIBLE", "RETAKE"].includes(subject.eligibility));
-    return { ...result, profile: { ...result.profile,
-      curriculum: validSnapshot ? (snapshot.curriculum_code || result.profile.curriculum) : result.profile.curriculum,
-      yearLevel: validSnapshot ? (snapshot.year_level || result.profile.yearLevel) : result.profile.yearLevel,
-      academicClassification: validSnapshot && snapshot.academic_classification
-        ? `Simulated: ${snapshot.academic_classification}` : "Not verified",
-      enrollmentEligibility: validSnapshot
-        ? (projectEligible ? "Prepared for project enrollment" : "Project validation pending")
-        : "Not yet evaluated",
-      projectEnrollmentStatus: portalStatus?.simulation?.status
-        ? `Project: ${portalStatus.simulation.status}` : "Project: Not started",
-      contactEditingReady,
-      contact: {
-        contactNumber: contact.contact_number || "",
-        alternateContactNumber: contact.alternate_contact_number || "",
-        address: contact.address || "",
-      }, photoUrl,
-    } };
-  } catch {
-    // Database read failures and absent deployment must not render mock data.
-    return { mode: "unavailable" };
+  let photoUrl=null;
+  if(photo?.object_path&&isOwnStudentPhotoPath(photo.object_path,context.authUser.id)){
+    const {data:signed}=await context.admin.storage.from("student-profile-photos")
+      .createSignedUrl(photo.object_path,900);
+    photoUrl=signed?.signedUrl||null;
+  }
+  return {
+    contact:{
+      contactNumber:contact.contact_number||"",
+      alternateContactNumber:contact.alternate_contact_number||"",
+      address:contact.address||"",
+    },
+    photoUrl,
+  };
+}
+
+async function loadProjectProfile(context) {
+  const [{data:snapshot,error:snapshotError},{data:portalStatus,error:statusError}]=await Promise.all([
+    context.client.rpc("project_phase8_student_snapshot_v2",{p_student_id:context.studentId}),
+    context.client.rpc("project_phase8_student_portal_status_v1",{p_student_id:context.studentId}),
+  ]);
+  if(snapshotError||statusError||snapshot?.project_only!==true||
+      snapshot?.verified_institutionally!==false||snapshot?.student_number!==context.studentNumber)
+    return {mode:"unavailable"};
+
+  const extras=await loadContactAndPhoto(context);
+  const projectEligible=snapshot.schedule_validated_for_project===true&&
+    Array.isArray(snapshot.subjects)&&snapshot.subjects.some((s)=>["ELIGIBLE","RETAKE"].includes(s.eligibility));
+
+  return {
+    mode:"project",
+    profile:{
+      studentNumber:context.studentNumber,fullName:context.account.full_name,email:context.account.email,
+      program:snapshot.program_code,yearLevel:snapshot.year_level,studentType:context.studentType,
+      curriculum:snapshot.curriculum_code,major:snapshot.program_track_code,
+      academicClassification:snapshot.academic_classification?`Simulated: ${snapshot.academic_classification}`:"Not verified",
+      studentStatus:null,accountStatus:"Active (demonstration account)",
+      enrollmentEligibility:projectEligible?"Prepared for demonstration enrollment":"Demonstration validation pending",
+      projectEnrollmentStatus:portalStatus?.simulation?.status
+        ? `Demonstration: ${portalStatus.simulation.status}`:"Demonstration: Not started",
+      contactEditingReady:true,contact:extras.contact,photoUrl:extras.photoUrl,admission:null,
+    },
+  };
+}
+
+async function loadInstitutionalProfile(context) {
+  const [extras,handoffResult,enrollmentResult]=await Promise.all([
+    loadContactAndPhoto(context),
+    context.admin.from("admission_handoffs")
+      .select("applicant_reference,approved_program_code,admission_status,admission_date,admission_type,synchronization_status,source_name")
+      .eq("student_id",context.studentId).order("received_at",{ascending:false,nullsFirst:false})
+      .limit(1).maybeSingle(),
+    context.admin.from("enrollments")
+      .select("id,reference,term_id,status,confirmation_reference,confirmed_at,created_at")
+      .eq("student_id",context.studentId).order("created_at",{ascending:false})
+      .limit(1).maybeSingle(),
+  ]);
+  if(handoffResult.error||enrollmentResult.error)
+    throw new Error("Institutional Student profile is incomplete.");
+
+  const profile=context.profile,handoff=handoffResult.data,enrollment=enrollmentResult.data;
+  let enrollmentEligibility="Academic preparation in progress";
+  if(profile.student_status==="ACTIVE"&&handoff?.admission_status==="COMPLETED")
+    enrollmentEligibility="Ready for enrollment";
+  else if(profile.student_type==="TRANSFEREE"&&!profile.year_level_number)
+    enrollmentEligibility="Transfer evaluation and placement pending";
+
+  return {
+    mode:"live",
+    profile:{
+      studentNumber:context.studentNumber,fullName:context.account.full_name,email:context.account.email,
+      program:profile.program_code,
+      yearLevel:profile.year_level||(profile.year_level_number?`Year ${profile.year_level_number}`:null),
+      studentType:profile.student_type,curriculum:profile.current_curriculum_code,major:null,
+      academicClassification:profile.academic_classification,studentStatus:profile.student_status,
+      accountStatus:context.account.account_status,enrollmentEligibility,
+      officialEnrollmentStatus:enrollment?.status||"NOT_STARTED",
+      enrollmentReference:enrollment?.reference||null,
+      contactEditingReady:true,contact:extras.contact,photoUrl:extras.photoUrl,
+      admission:handoff?{
+        applicantReference:handoff.applicant_reference,source:handoff.source_name,
+        decision:handoff.admission_status,type:handoff.admission_type,
+        program:handoff.approved_program_code,date:handoff.admission_date,
+        synchronizationStatus:handoff.synchronization_status,
+      }:null,
+    },
+  };
+}
+
+export async function loadStudentProfileForPage() {
+  const context=await getStudentContext();
+  try {
+    if(context.kind==="project") return await loadProjectProfile(context);
+    if(context.kind==="institutional") return await loadInstitutionalProfile(context);
+    return {mode:"unavailable"};
+  } catch(error) {
+    console.error("[Student Portal][Profile Loader][ERROR]",{
+      mode:context.kind,message:error instanceof Error?error.message:String(error),
+    });
+    return {mode:"unavailable"};
   }
 }
