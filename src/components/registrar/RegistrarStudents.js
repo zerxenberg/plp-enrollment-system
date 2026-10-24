@@ -18,16 +18,24 @@ import RegistrarGradeImports from "./RegistrarGradeImports";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import { loadRegistrarStudentRecordDetail } from "@/features/registrar/registrar-actions";
 import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
+import { displayCurriculumCode, displayCurriculumName } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const ALL = "ALL";
 
-function options(values, allLabel) {
+function options(values, allLabel, format = (value) => value) {
   return [
     { value: ALL, label: allLabel },
-    ...[...new Set(values.filter(Boolean))]
-      .sort()
-      .map((value) => ({ value, label: value })),
+    ...[...new Set(values.filter((value) => value !== null && value !== undefined && value !== ""))]
+      .map((value) => ({ value: String(value), label: format(value) }))
+      .sort((a, b) => String(a.label).localeCompare(String(b.label))),
   ];
+}
+
+function yearLabel(value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1) return "Not available";
+  const suffix = number === 1 ? "st" : number === 2 ? "nd" : number === 3 ? "rd" : "th";
+  return `${number}${suffix} Year`;
 }
 
 export default function RegistrarStudents({ studentsData }) {
@@ -57,7 +65,7 @@ export default function RegistrarStudents({ studentsData }) {
     () =>
       studentsData.groups.filter(
         (item) =>
-          `${item.blockSection} ${item.college} ${item.programCode} ${item.programName} ${item.curriculumCode} ${item.source}`
+          `${item.blockSection} ${item.college} ${item.programCode} ${item.programName} ${displayCurriculumCode(item.curriculumCode)} ${displayCurriculumName(item.curriculumCode)}`
             .toLowerCase()
             .includes(search.toLowerCase()) &&
           (college === ALL || item.college === college) &&
@@ -73,11 +81,7 @@ export default function RegistrarStudents({ studentsData }) {
   const roster = selectedGroup
     ? studentsData.students.filter(
         (item) =>
-          (selectedGroup.blockId
-            ? item.home_block_id === selectedGroup.blockId
-            : !item.home_block_id) &&
-          item.current_term_id === selectedGroup.termId &&
-          item.program_code === selectedGroup.programCode,
+          item.home_block_id === selectedGroup.blockId,
       )
     : [];
 
@@ -103,7 +107,7 @@ export default function RegistrarStudents({ studentsData }) {
     <>
       <PageHeader
         title="Students"
-        description="Student records grouped by block section, academic standing, enrollment history, and official grade processing."
+        description="Current 2026 demonstration block sections, student rosters, and official grade processing."
       />
 
       <InternalTabs
@@ -119,15 +123,15 @@ export default function RegistrarStudents({ studentsData }) {
         {tab === "blocks" ? (
           <Panel
             title="Block Section Student List"
-            subtitle="Use block sections to locate students and open individual academic records."
+            subtitle={`${studentsData.groups.length} block sections · ${studentsData.students.length} students in the 2026 demonstration cohort. Select a block to view its roster.`}
           >
             <div className="toolbar">
-              <SearchControl value={search} onChange={setSearch} label="Search blocks" placeholder="Search block, program, curriculum, or source" />
+              <SearchControl value={search} onChange={setSearch} label="Search blocks" placeholder="Search block, program, or curriculum" />
               <FilterControl label="College" value={college} onChange={setCollege} options={options(studentsData.groups.map((item) => item.college), "All Colleges")} />
               <FilterControl label="Program" value={program} onChange={setProgram} options={options(studentsData.groups.map((item) => item.programCode), "All Programs")} />
-              <FilterControl label="Curriculum" value={curriculum} onChange={setCurriculum} options={options(studentsData.groups.map((item) => item.curriculumCode), "All Curricula")} />
-              <FilterControl label="Term" value={term} onChange={setTerm} options={options(studentsData.groups.map((item) => item.termId), "All Terms")} />
-              <FilterControl label="Year" value={year} onChange={setYear} options={options(studentsData.groups.map((item) => String(item.yearLevel)), "All Years")} />
+              <FilterControl label="Curriculum" value={curriculum} onChange={setCurriculum} options={options(studentsData.groups.map((item) => item.curriculumCode), "All Curricula", displayCurriculumName)} />
+              <FilterControl label="Term" value={term} onChange={setTerm} options={options(studentsData.groups.map((item) => item.termId), "All Terms", (value) => termMap.get(value) || value)} />
+              <FilterControl label="Year" value={year} onChange={setYear} options={options(studentsData.groups.map((item) => String(item.yearLevel)), "All Years", yearLabel)} />
               <FilterControl label="Section" value={section} onChange={setSection} options={options(studentsData.groups.map((item) => item.blockSection), "All Sections")} />
               {(search || [college, program, curriculum, term, year, section].some((value) => value !== ALL)) ? (
                 <Button
@@ -157,10 +161,10 @@ export default function RegistrarStudents({ studentsData }) {
                 { key: "blockSection", label: "Block Section" },
                 { key: "college", label: "College" },
                 { key: "programCode", label: "Program" },
-                { key: "curriculumCode", label: "Curriculum" },
-                { key: "yearLevel", label: "Year" },
+                { key: "curriculumCode", label: "Curriculum", render: (row) => displayCurriculumCode(row.curriculumCode) },
+                { key: "yearLevel", label: "Year", render: (row) => yearLabel(row.yearLevel) },
                 { key: "termId", label: "Academic Term", render: (row) => termMap.get(row.termId) || row.termId },
-                { key: "assignedStudents", label: "Students" },
+                { key: "assignedStudents", label: "Students", render: (row) => `${row.assignedStudents} / ${row.capacity ?? "?"}` },
               ]}
             />
           </Panel>
@@ -184,10 +188,10 @@ export default function RegistrarStudents({ studentsData }) {
                 ["Block Section", selectedGroup.blockSection],
                 ["College", selectedGroup.college],
                 ["Program", `${selectedGroup.programCode} · ${selectedGroup.programName}`],
-                ["Curriculum", selectedGroup.curriculumCode],
+                ["Curriculum", displayCurriculumName(selectedGroup.curriculumCode)],
                 ["Academic Term", termMap.get(selectedGroup.termId) || selectedGroup.termId],
-                ["Year Level", selectedGroup.yearLevel],
-                ["Assigned Students", selectedGroup.assignedStudents],
+                ["Year Level", yearLabel(selectedGroup.yearLevel)],
+                ["Assigned Students", `${selectedGroup.assignedStudents} of ${selectedGroup.capacity ?? "?"} capacity`],
               ]}
             />
 
@@ -201,10 +205,10 @@ export default function RegistrarStudents({ studentsData }) {
                 columns={[
                   { key: "student_number", label: "Student ID" },
                   { key: "full_name", label: "Full Name" },
+                  { key: "student_type", label: "Student Type", render: (row) => titleStatus(row.student_type) },
                   { key: "academic_classification", label: "Classification", render: (row) => titleStatus(row.academic_classification) },
-                  { key: "student_status", label: "Student Status", render: (row) => <StatusBadge value={row.student_status} /> },
-                  { key: "progression_status", label: "Progression", render: (row) => titleStatus(row.progression_status) },
-                  { key: "home_block", label: "Assignment" },
+                  { key: "enrollment_status", label: "Enrollment Status", render: (row) => titleStatus(row.enrollment_status) },
+                  { key: "home_block", label: "Block Section" },
                 ]}
               />
             </div>
@@ -244,12 +248,12 @@ export default function RegistrarStudents({ studentsData }) {
                 ["Student ID", selectedStudent.student_number],
                 ["Full Name", selectedStudent.full_name],
                 ["Program", selectedStudent.program_code],
-                ["Curriculum", selectedStudent.curriculum_code],
+                ["Curriculum", displayCurriculumName(selectedStudent.curriculum_code)],
                 ["Academic Term", termMap.get(selectedStudent.current_term_id) || selectedStudent.current_term_id],
-                ["Year Level", selectedStudent.year_level],
-                ["Student Type", selectedStudent.student_type],
+                ["Year Level", yearLabel(selectedStudent.year_level)],
+                ["Student Type", titleStatus(selectedStudent.student_type)],
                 ["Academic Classification", titleStatus(selectedStudent.academic_classification)],
-                ["Progression", titleStatus(selectedStudent.progression_status)],
+                ["Enrollment Status", titleStatus(selectedStudent.enrollment_status)],
                 ["Block Assignment", selectedStudent.home_block],
               ]}
             />
