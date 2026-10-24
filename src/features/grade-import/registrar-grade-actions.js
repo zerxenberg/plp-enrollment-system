@@ -632,3 +632,70 @@ export async function getOfficialRegistrationData(enrollmentId, role) {
   if (error) throw new Error("Official registration information is not available.");
   return data;
 }
+
+// Isolated demonstration import path. These rows are stored only in sandbox
+// tables and have no call path to registrar_publish_grade_batch_v1.
+export async function previewSandboxGradeImport(formData) {
+  await requireRole("registrar");
+  const file = formData.get("file");
+  const parsed = await parseTrustedUpload(file);
+  const expected = {
+    academic_year: normalize(formData.get("academic_year")),
+    semester: normalize(formData.get("semester")),
+    program_code: normalize(formData.get("program_code")),
+    subject_code: normalize(formData.get("subject_code")),
+    section_code: normalize(formData.get("section_code")),
+  };
+  const rows = parsed.records.map((row) => {
+    const issues = [];
+    for (const field of REQUIRED_HEADERS) {
+      if (!normalize(row[field])) issues.push(`${field} is required.`);
+    }
+    if (normalize(row.subject_code) !== expected.subject_code) issues.push("Subject does not match the selected sandbox context.");
+    if (normalize(row.academic_year) !== expected.academic_year) issues.push("Academic year does not match the selected sandbox context.");
+    if (normalize(row.semester) !== expected.semester) issues.push("Semester does not match the selected sandbox context.");
+    if (normalize(row.section_code) !== expected.section_code) issues.push("Section does not match the selected sandbox context.");
+    if (!normalize(row.source_record_reference).startsWith("DEMO_ONLY:")) issues.push("Source reference must begin with DEMO_ONLY:.");
+    if (!/^\d+(?:\.\d{1,3})?$/.test(normalize(row.grade_value))) issues.push("Demo grade must be numeric.");
+    if (!COMPLETION_STATUSES.has(normalizeKey(row.completion_status))) issues.push("Completion status is not supported.");
+    return { ...row, issues };
+  });
+  const invalidRows = rows.filter((row) => row.issues.length).length;
+  return {
+    fileName: file.name,
+    checksum: parsed.checksum,
+    rowCount: rows.length,
+    validRows: rows.length - invalidRows,
+    invalidRows,
+    rows,
+    sandboxOnly: true,
+  };
+}
+
+export async function stageSandboxGradeImport(formData) {
+  await requireRole("registrar");
+  const file = formData.get("file");
+  const parsed = await parseTrustedUpload(file);
+  const client = await createClient();
+  const args = {
+    p_academic_year: normalize(formData.get("academic_year")),
+    p_semester: normalize(formData.get("semester")),
+    p_college_code: normalize(formData.get("college_code")),
+    p_program_code: normalize(formData.get("program_code")),
+    p_subject_code: normalize(formData.get("subject_code")),
+    p_section_code: normalize(formData.get("section_code")),
+    p_source_reference: normalize(formData.get("source_reference")),
+    p_issuer: normalize(formData.get("issuer")),
+    p_file_name: file.name,
+    p_checksum: parsed.checksum,
+    p_rows: parsed.records.map(({ source_row_number, ...row }) => row),
+  };
+  const precheck = await previewSandboxGradeImport(formData);
+  if (precheck.invalidRows) {
+    throw new Error(`Sandbox file has ${precheck.invalidRows} invalid row(s). Fix the preview issues before staging.`);
+  }
+  const { data, error } = await client.rpc("registrar_stage_sandbox_grade_batch_v1", args);
+  if (error) throw new Error(`Sandbox grade staging failed: ${error.message}`);
+  revalidatePath("/registrar/students");
+  return data;
+}
