@@ -41,9 +41,29 @@ function issue(code, message) {
 }
 
 function normalizeSpreadsheetRows(input) {
-  // Some spreadsheet reader versions return a { rows, errors } result,
-  // while others return the row matrix directly.
+  // read-excel-file v9's default Node export returns an array of
+  // { sheet, data } objects. Select the worksheet containing the required
+  // grade headers instead of treating the worksheet list as a row matrix.
   let rows = Array.isArray(input) ? input : input?.rows;
+  if (
+    Array.isArray(rows) &&
+    rows.length &&
+    rows[0] &&
+    !Array.isArray(rows[0]) &&
+    Array.isArray(rows[0].data)
+  ) {
+    const gradeSheet = rows.find((sheet) =>
+      Array.isArray(sheet?.data?.[0]) &&
+      [...REQUIRED_HEADERS].every((header) =>
+        sheet.data[0].some((cell) => normalize(cell).toLowerCase() === header)
+      )
+    );
+    const namedGradesSheet = rows.find((sheet) =>
+      normalize(sheet?.sheet).toLowerCase() === "grades" &&
+      Array.isArray(sheet?.data)
+    );
+    rows = (gradeSheet ?? namedGradesSheet ?? rows[0]).data;
+  }
   if (!Array.isArray(rows)) {
     throw new Error("The spreadsheet could not be read as a row-based table. Save it as XLSX or CSV and try again.");
   }
