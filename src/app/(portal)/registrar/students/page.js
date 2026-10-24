@@ -1,9 +1,9 @@
-import RegistrarReports from "@/components/registrar/RegistrarReports";
-import { getRegistrarReportsData } from "@/features/registrar/registrar-queries";
+import RegistrarStudents from "@/components/registrar/RegistrarStudents";
+import { getRegistrarStudentsData } from "@/features/registrar/registrar-queries";
 
-export const metadata = { title: "Reports & Monitoring" };
+export const metadata = { title: "Students" };
 
-export default async function RegistrarReportsPage() {
-  const reportsData = await getRegistrarReportsData();
-  return <RegistrarReports reportsData={reportsData} />;
+export default async function RegistrarStudentsPage() {
+  const studentsData = await getRegistrarStudentsData();
+  return <RegistrarStudents studentsData={studentsData} />;
 }
