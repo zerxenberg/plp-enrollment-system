@@ -40,7 +40,39 @@ function issue(code, message) {
   return { code, message };
 }
 
-function parseRowsAsRecords(rows) {
+function normalizeSpreadsheetRows(input) {
+  // Some spreadsheet reader versions return a { rows, errors } result,
+  // while others return the row matrix directly.
+  let rows = Array.isArray(input) ? input : input?.rows;
+  if (!Array.isArray(rows)) {
+    throw new Error("The spreadsheet could not be read as a row-based table. Save it as XLSX or CSV and try again.");
+  }
+  if (!rows.length) return rows;
+
+  // Standard XLSX and CSV parsing returns a matrix of arrays.
+  if (Array.isArray(rows[0])) return rows;
+
+  // Accept readers that return object records keyed by column headers.
+  if (rows[0] && typeof rows[0] === "object") {
+    const keys = Object.keys(rows[0]);
+    const normalizedKeys = keys.map((key) => normalize(key).toLowerCase());
+    const hasRequiredHeaders = [...REQUIRED_HEADERS].every((header) => normalizedKeys.includes(header));
+    if (hasRequiredHeaders) {
+      return [keys, ...rows.map((row) => keys.map((key) => row?.[key] ?? ""))];
+    }
+
+    // Some adapters wrap each row in a row/value property.
+    if (Array.isArray(rows[0].row)) {
+      const matrix = rows.map((row) => row.row);
+      if (matrix.every(Array.isArray)) return matrix;
+    }
+  }
+
+  throw new Error("The spreadsheet reader returned an unsupported row format. Please use a standard XLSX or CSV file with the required header row.");
+}
+
+function parseRowsAsRecords(inputRows) {
+  const rows = normalizeSpreadsheetRows(inputRows);
   if (!rows.length) throw new Error("The grade file is empty.");
 
   const columns = rows[0].map((column) => normalize(column).toLowerCase());
