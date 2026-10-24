@@ -10,6 +10,7 @@ import {
 import { Details, Panel } from "./RegistrarShared";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import RegistrarGradeUploadPicker from "./RegistrarGradeUploadPicker";
+import RegistrarSandboxGradeImports from "./RegistrarSandboxGradeImports";
 import {
   previewRegistrarGradeImport,
   publishRegistrarGradeImport,
@@ -283,6 +284,10 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
 
   return (
     <>
+      <div style={{ marginBottom: 20 }}>
+        <RegistrarSandboxGradeImports />
+      </div>
+
       <Panel
         title="Official Grades Import"
         subtitle="Upload one official XLSX or CSV grade file for each subject section from the selected academic term."
