@@ -12,6 +12,7 @@ export default function SystemAdministratorDashboard({ dashboardData }) {
     activeUsers,
     inactiveUsers,
     activeAdministrators,
+    currentProjectStudentAccounts,
     failedRequests,
     successfulSynchronizations,
     openErrors,
@@ -39,9 +40,7 @@ export default function SystemAdministratorDashboard({ dashboardData }) {
       >
         <h2>Technical operations at a glance</h2>
         <p>
-          The dashboard uses live Supabase data. Technical administration remains
-          separate from Registrar enrollment decisions and Academic Coordinator
-          academic decisions.
+          The dashboard uses the current operational database scope: nonsynthetic institutional and staff records plus the active Curriculum Project 2026 student cohort. Retired synthetic planning records are excluded from operational counts.
         </p>
         <div className="hero-meta">
           <span className="hero-chip">
@@ -57,9 +56,10 @@ export default function SystemAdministratorDashboard({ dashboardData }) {
       </section>
 
       <div className="stats-grid" style={{ margin: "16px 0" }}>
-        <Metric label="Active Users" value={activeUsers} hint="Enabled application accounts" />
-        <Metric label="Inactive Users" value={inactiveUsers} hint="Access disabled" />
+        <Metric label="Active Users" value={activeUsers} hint="Current operational accounts" />
+        <Metric label="Inactive Users" value={inactiveUsers} hint="Current operational accounts with access disabled" />
         <Metric label="System Administrators" value={activeAdministrators} hint="Active administrator accounts" />
+        <Metric label="Current Project Students" value={currentProjectStudentAccounts} hint="PLP_PROJECT_600_2026_1 accounts" />
         <Metric label="Failed API Requests" value={failedRequests} hint="Recorded integration failures" />
         <Metric label="Successful Synchronizations" value={successfulSynchronizations} hint="Recorded successful sync events" />
         <Metric label="Unread Technical Alerts" value={unreadTechnicalAlerts} hint="Your notification queue" />

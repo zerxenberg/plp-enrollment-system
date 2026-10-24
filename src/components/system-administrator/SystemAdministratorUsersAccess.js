@@ -90,6 +90,7 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
     rolePermissions,
     organizationalUnits,
     accessActivity,
+    recordScope,
   } = usersAccessData;
 
   const [tab, setTab] = useState("users");
@@ -285,7 +286,7 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
     <>
       <PageHeader
         title="Users & Access"
-        description="Live Supabase account administration, predefined roles, permissions, and recorded access activity."
+        description="Live account administration, predefined roles, permissions, and recorded access activity for the current operational dataset."
         actions={<Button onClick={() => setCreateOpen(true)}>Create User Account</Button>}
       />
 
@@ -303,6 +304,9 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
         title="Access Administration"
         subtitle="Select a table row to inspect the full record. Account actions are available only inside the selected user modal."
       >
+        <div className="notice" style={{ marginBottom: 12 }}>
+          Current account scope: nonsynthetic institutional accounts plus project cohort <code>{recordScope?.currentProjectCohortId || "Not available"}</code>. Retired synthetic planning accounts are excluded.
+        </div>
         <Feedback message={message} warning={messageWarning} />
 
         {tab === "users" ? (
@@ -407,6 +411,7 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
                   </div>
                 ) },
                 { key: "roleName", label: "Role" },
+                { key: "recordScope", label: "Record Type" },
                 { key: "organization", label: "College / Office / Department", render: (row) => row.student?.collegeName || row.staff?.organizationName || "Not assigned" },
                 { key: "accountStatus", label: "Account Status", render: (row) => <StatusBadge value={row.accountStatus} label={row.accountStatus} /> },
                 { key: "authLinked", label: "Auth", render: (row) => <StatusBadge value={row.authLinked ? "ACTIVE" : "INACTIVE"} label={row.authLinked ? "Linked" : "Not linked"} /> },
@@ -529,6 +534,7 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
               <Info label="Registered Email" value={selectedUser.email} />
               <Info label="Username / Identifier" value={selectedUser.username} />
               <Info label="Role" value={selectedUser.roleName} />
+              <Info label="Record Type" value={selectedUser.recordScope} />
               <Info label="Last Login" value={selectedUser.lastLoginLabel} />
               <div className="info-item"><span>Account Status</span><strong><StatusBadge value={selectedUser.accountStatus} label={selectedUser.accountStatus} /></strong></div>
               <div className="info-item"><span>Supabase Auth</span><strong><StatusBadge value={selectedUser.authLinked ? "ACTIVE" : "INACTIVE"} label={selectedUser.authLinked ? "Linked" : "Not linked"} /></strong></div>
@@ -540,11 +546,14 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
                   ["Student Number", selectedUser.student.student_number],
                   ["College", selectedUser.student.collegeName],
                   ["Program", `${selectedUser.student.program_code} · ${selectedUser.student.programName}`],
+                  ["Curriculum", selectedUser.student.current_curriculum_code || "Not assigned"],
+                  ["Academic Term", selectedUser.student.current_term_id || "Not assigned"],
                   ["Year Level", selectedUser.student.year_level],
                   ["Student Type", selectedUser.student.student_type],
                   ["Student Status", selectedUser.student.student_status],
                   ["Academic Classification", selectedUser.student.academic_classification],
                   ["Progression Status", selectedUser.student.progression_status],
+                  ["Project Cohort", selectedUser.projectCohortId || "Not applicable"],
                 ]} />
               </div>
             ) : null}

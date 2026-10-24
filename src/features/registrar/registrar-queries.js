@@ -10,7 +10,14 @@ const PROJECT_SCHEDULE_SOURCE_SYSTEM = "PHASE8_FICTIONAL_GENERATOR";
 const PROJECT_SCHEDULE_SOURCE_PREFIX = "PHASE8_FICTIONAL_SCHEDULE_V1:";
 
 function assertQuery(error, label) {
-  if (error) throw new Error(`${label} failed: ${error.message}`);
+  if (!error) return;
+  console.error(`[Registrar][Query][ERROR] ${label}`, {
+    message: error.message,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+  throw new Error("Registrar data could not be loaded. Please try again or contact the system administrator if the problem continues.");
 }
 
 function formatDateTime(value) {

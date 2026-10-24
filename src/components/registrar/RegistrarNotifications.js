@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   Button,
@@ -11,6 +11,7 @@ import {
   StatusBadge,
 } from "@/components/ui/PortalUI";
 import { Panel } from "./RegistrarShared";
+import { registrarDebug } from "@/features/registrar/registrar-client-utils";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import {
   markAllRegistrarNotifications,
@@ -24,6 +25,12 @@ export default function RegistrarNotifications({ notificationsData }) {
   const [readFilter, setReadFilter] = useState("ALL");
   const [category, setCategory] = useState("ALL");
   const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (!notificationsData.announcementsAvailable) {
+      registrarDebug("info", "Enrollment Announcements", "Announcement publishing and archive actions are not available in the current Registrar contract.");
+    }
+  }, [notificationsData.announcementsAvailable]);
 
   const categories = useMemo(
     () => [...new Set(notificationsData.notifications.map((item) => item.category).filter(Boolean))],
@@ -50,7 +57,7 @@ export default function RegistrarNotifications({ notificationsData }) {
     <>
       <PageHeader
         title="Notifications"
-        description="Live Registrar notifications and the documented Enrollment Announcements workspace."
+        description="Registrar notifications and enrollment announcements."
         actions={
           tab === "notifications" ? (
             <Button
@@ -74,7 +81,7 @@ export default function RegistrarNotifications({ notificationsData }) {
         label="Registrar notification sections"
       >
         {tab === "notifications" ? (
-          <Panel title="My Notifications" subtitle="Notification state is persisted through the existing user_notifications table.">
+          <Panel title="My Notifications" subtitle="Review enrollment-related notices and mark items as read or unread.">
             <div className="toolbar">
               <SearchControl value={search} onChange={setSearch} label="Search notifications" placeholder="Search title, message, or category" />
               <FilterControl
@@ -133,20 +140,18 @@ export default function RegistrarNotifications({ notificationsData }) {
         {tab === "announcements" ? (
           <Panel
             title="Enrollment Announcements"
-            subtitle="The simplified Registrar doctrine retains this workspace, but publication is not exposed by the current normalized backend."
+            subtitle="Create and publish enrollment announcements when this function becomes available."
           >
             <div className="notice warning">
-              <strong>Publishing is not connected yet.</strong>
-              <p>
-                The live notifications table contains only notification content and delivery records. There is no protected Registrar announcement publication or archive contract, and no existing recipient scope metadata. This interface therefore does not create or pretend to publish announcements.
-              </p>
+              <strong>Enrollment announcement publishing is currently unavailable.</strong>
+              <p>Please use the existing Registrar communication process until this function is enabled.</p>
             </div>
 
             <div className="detail-list" style={{ marginTop: 14 }}>
-              <div className="detail-row"><span>Compose Announcement</span><strong>Backend gap</strong></div>
-              <div className="detail-row"><span>Recipient Selection</span><strong>Backend gap</strong></div>
-              <div className="detail-row"><span>Publish</span><strong>Backend gap</strong></div>
-              <div className="detail-row"><span>Archive</span><strong>Backend gap</strong></div>
+              <div className="detail-row"><span>Compose Announcement</span><strong>Unavailable</strong></div>
+              <div className="detail-row"><span>Recipient Selection</span><strong>Unavailable</strong></div>
+              <div className="detail-row"><span>Publish</span><strong>Unavailable</strong></div>
+              <div className="detail-row"><span>Archive</span><strong>Unavailable</strong></div>
             </div>
           </Panel>
         ) : null}

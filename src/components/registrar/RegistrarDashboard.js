@@ -32,7 +32,7 @@ export default function RegistrarDashboard({ dashboardData }) {
 
       <section className="portal-card hero-card registrar-enter" aria-label="Current enrollment term">
         <h2>Enrollment operations at a glance</h2>
-        <p>Official institutional records and PROJECT_ONLY demonstration records remain separate.</p>
+        <p>Official enrollment and demonstration enrollment workloads are shown separately.</p>
         <div className="hero-meta">
           <span className="hero-chip">{currentTerm?.label || "Academic term not available"}</span>
           <span className="hero-chip">Institutional window: {currentTerm?.status || "Not available"}</span>
@@ -41,17 +41,17 @@ export default function RegistrarDashboard({ dashboardData }) {
       </section>
 
       <div className="stats-grid" style={{ margin: "16px 0" }}>
-        <Metric label="Student Records" value={studentCount} hint={`${projectStudentCount} PROJECT_ONLY records`} />
+        <Metric label="Student Records" value={studentCount} hint={`${projectStudentCount} demonstration student records`} />
         <Metric label="Official For Validation" value={count(officialCounts, "FOR_VALIDATION")} hint="Institutional Registrar queue" />
         <Metric label="Official Requires Correction" value={count(officialCounts, "REQUIRES_CORRECTION")} hint="Institutional records" />
-        <Metric label="Official Validated" value={count(officialCounts, "VALIDATED")} hint="Eligible for protected confirmation" />
+        <Metric label="Official Validated" value={count(officialCounts, "VALIDATED")} hint="Ready for final confirmation" />
         <Metric label="Officially Enrolled" value={count(officialCounts, "CONFIRMED")} hint="CONFIRMED institutional transactions" />
         <Metric label="Project Submitted" value={count(projectCounts, "SUBMITTED")} hint="Demonstration workflow only" />
         <Metric label="Project Validated" value={count(projectCounts, "VALIDATED")} hint="Demonstration workflow only" />
         <Metric
           label="Grade Import History"
           value={gradeImportSummary.available ? gradeImportSummary.total : "Unavailable"}
-          hint={gradeImportSummary.available ? "Live grade import batches" : "Current schema exposes write workflow but no Registrar history reader"}
+          hint={gradeImportSummary.available ? "Grade import batches" : "Grade import history is currently unavailable"}
         />
       </div>
 
@@ -62,9 +62,9 @@ export default function RegistrarDashboard({ dashboardData }) {
               ["Official · For Validation", count(officialCounts, "FOR_VALIDATION"), "FOR_VALIDATION"],
               ["Official · Needs Academic Review", count(officialCounts, "NEEDS_ACADEMIC_REVIEW"), "NEEDS_ACADEMIC_REVIEW"],
               ["Official · Validated", count(officialCounts, "VALIDATED"), "VALIDATED"],
-              ["Project · Submitted", count(projectCounts, "SUBMITTED"), "SUBMITTED"],
-              ["Project · Validated", count(projectCounts, "VALIDATED"), "VALIDATED"],
-              ["Project · Confirmed Simulation", count(projectCounts, "CONFIRMED_SIMULATION"), "CONFIRMED"],
+              ["Demonstration · Submitted", count(projectCounts, "SUBMITTED"), "SUBMITTED"],
+              ["Demonstration · Validated", count(projectCounts, "VALIDATED"), "VALIDATED"],
+              ["Demonstration · Confirmed", count(projectCounts, "CONFIRMED_SIMULATION"), "CONFIRMED"],
             ].map(([label, value, status]) => (
               <div className="list-item" key={label}>
                 <div className="list-item-header">
@@ -117,7 +117,7 @@ export default function RegistrarDashboard({ dashboardData }) {
           </div>
         </Panel>
 
-        <Panel title="Project Block Capacity Concerns" subtitle="PROJECT_ONLY blocks at or near configured capacity." className="span-12" actions={<LinkButton href="/registrar/academic-scheduling">View Sections & Schedules</LinkButton>}>
+        <Panel title="Block Capacity Concerns" subtitle="Demonstration blocks at or near configured capacity." className="span-12" actions={<LinkButton href="/registrar/academic-scheduling">View Sections & Schedules</LinkButton>}>
           <DataTable
             rowKey="id"
             rows={capacityConcerns}

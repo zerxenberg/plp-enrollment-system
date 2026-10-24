@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   Button,
   DataTable,
@@ -17,6 +17,7 @@ import {
   validateRegistrarGradeImport,
   verifyRegistrarGradeSource,
 } from "@/features/registrar/registrar-actions";
+import { registrarDebug } from "@/features/registrar/registrar-client-utils";
 
 const NONE = "";
 
@@ -81,6 +82,16 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
   const [verificationMethod, setVerificationMethod] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
   const [sessionProgress, setSessionProgress] = useState({});
+
+  useEffect(() => {
+    if (historyOnly && !data.gradeHistoryAvailable) {
+      registrarDebug(
+        "warn",
+        "Grade Import History",
+        "History is not exposed to the Registrar by the current authorized data contract.",
+      );
+    }
+  }, [historyOnly, data.gradeHistoryAvailable]);
 
   const yearRows = contexts;
   const semesterRows = contexts.filter((row) => row.academicYear === academicYear);
@@ -252,23 +263,19 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
     return (
       <Panel
         title="Grade Import History"
-        subtitle="Published grade batches and corrections must remain traceable without exposing private staging tables directly."
+        subtitle="Review previously imported and published grade files."
       >
         <div className="notice warning">
-          <strong>History access still needs one protected read contract.</strong>
-          <p>
-            The live database already preserves batch metadata, publication references, row validation state,
-            and authorized grade revisions. Those tables intentionally deny direct Registrar SELECT access,
-            and no protected history reader currently exists. This page therefore does not fabricate history.
-          </p>
+          <strong>Grade Import History is currently unavailable.</strong>
+          <p>Previously published grade files cannot yet be opened from this screen.</p>
         </div>
         <div className="detail-list" style={{ marginTop: 14 }}>
-          <div className="detail-row"><span>Imported Subject</span><strong>Preserved in database · reader unavailable</strong></div>
-          <div className="detail-row"><span>Academic Term / Section</span><strong>Preserved in database · reader unavailable</strong></div>
-          <div className="detail-row"><span>Importer / Upload Date</span><strong>Preserved in database · reader unavailable</strong></div>
-          <div className="detail-row"><span>Validation / Publication Status</span><strong>Preserved in database · reader unavailable</strong></div>
-          <div className="detail-row"><span>Publication Reference</span><strong>Preserved in database · reader unavailable</strong></div>
-          <div className="detail-row"><span>Corrections / Revisions</span><strong>Preserved in database · reader unavailable</strong></div>
+          <div className="detail-row"><span>Imported Subject</span><strong>Unavailable</strong></div>
+          <div className="detail-row"><span>Academic Term / Section</span><strong>Unavailable</strong></div>
+          <div className="detail-row"><span>Importer / Upload Date</span><strong>Unavailable</strong></div>
+          <div className="detail-row"><span>Validation / Publication Status</span><strong>Unavailable</strong></div>
+          <div className="detail-row"><span>Publication Reference</span><strong>Unavailable</strong></div>
+          <div className="detail-row"><span>Corrections / Revisions</span><strong>Unavailable</strong></div>
         </div>
       </Panel>
     );
@@ -278,13 +285,12 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
     <>
       <Panel
         title="Official Grades Import"
-        subtitle="Upload one official XLSX or CSV per subject section. Academic context is derived only from confirmed institutional enrollment attempts, never from PROJECT_ONLY / P8F26 records."
+        subtitle="Upload one official XLSX or CSV grade file for each subject section from the selected academic term."
       >
         <div className="notice warning" style={{ marginBottom: 14 }}>
           <strong>Official academic records</strong>
           <p>
-            Publication writes real academic results. PROJECT_ONLY students are deliberately blocked from this pipeline.
-            Successful publication automatically refreshes the affected official student subject eligibility through the existing database trigger.
+            Publication updates official academic records. Verify the academic context, source, and uploaded grades before publishing.
           </p>
         </div>
 
@@ -369,15 +375,13 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                     ["Subject", `${selectedContext.subjectCode} · ${selectedContext.subjectName}`],
                     ["Subject Section", selectedContext.sectionCode],
                     ["Professor", selectedContext.instructorName],
-                    ["Confirmed Attempts", selectedContext.confirmedStudentCount],
-                    ["Section Source", selectedContext.sourceSystem],
+                    ["Students in Section", selectedContext.confirmedStudentCount],
                   ]}
                 />
 
                 {!selectedContext.previousBlockAvailable ? (
                   <div className="notice" style={{ marginTop: 12 }}>
-                    The current official data has no historical block assignment linked to these confirmed attempts.
-                    The Previous Block Section label remains visible as <strong>Not available</strong>; the exact official subject section is still verified before staging.
+                    Previous Block Section is not available for these records. The selected subject section is still used for grade processing.
                   </div>
                 ) : null}
               </div>
@@ -394,7 +398,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                     { key: "subjectName", label: "Subject" },
                     { key: "sectionCode", label: "Section" },
                     { key: "instructorName", label: "Professor" },
-                    { key: "confirmedStudentCount", label: "Confirmed Attempts" },
+                    { key: "confirmedStudentCount", label: "Students in Section" },
                     {
                       key: "sessionStatus",
                       label: "This Session",
@@ -406,7 +410,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                   ]}
                 />
                 <div className="notice" style={{ marginTop: 10 }}>
-                  This checklist is current-session progress only. Persistent historical batch status requires the protected Grade Import History reader that is not yet present in the database.
+                  This checklist shows the grade files processed during the current session.
                 </div>
               </div>
             ) : null}
@@ -441,7 +445,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                 </Button>
                 {preview?.invalidRows === 0 ? (
                   <Button disabled={isPending} onClick={stageAndValidate}>
-                    {isPending ? "Staging & Validating..." : "Stage & Validate with Database"}
+                    {isPending ? "Validating..." : "Validate Grade File"}
                   </Button>
                 ) : null}
               </div>
@@ -454,10 +458,8 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                   items={[
                     ["File", preview.fileName],
                     ["Rows", preview.rowCount],
-                    ["Precheck Valid", preview.validRows],
+                    ["Valid Records", preview.validRows],
                     ["Requires Correction", preview.invalidRows],
-                    ["Checksum", preview.checksum],
-                    ["Student Name Consistency", "Source name shown; authoritative name comparison is a backend gap"],
                   ]}
                 />
                 <DataTable
@@ -469,8 +471,8 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                     { key: "studentFullName", label: "Student Name" },
                     { key: "gradeValue", label: "Grade" },
                     { key: "completionStatus", label: "Completion" },
-                    { key: "validationStatus", label: "Precheck", render: (row) => <StatusBadge value={row.validationStatus === "PRECHECK_VALID" ? "VALID" : "REQUIRES_CORRECTION"} label={row.validationStatus === "PRECHECK_VALID" ? "Precheck Valid" : "Requires Correction"} /> },
-                    { key: "issues", label: "Issues", render: (row) => row.issues.length ? row.issues.map((item) => item.code).join(", ") : "None" },
+                    { key: "validationStatus", label: "File Check", render: (row) => <StatusBadge value={row.validationStatus === "PRECHECK_VALID" ? "VALID" : "REQUIRES_CORRECTION"} label={row.validationStatus === "PRECHECK_VALID" ? "Valid" : "Requires Correction"} /> },
+                    { key: "issues", label: "Issues", render: (row) => row.issues.length ? row.issues.map((item) => item.message).join("; ") : "None" },
                   ]}
                 />
                 {preview.invalidRows ? (
@@ -483,22 +485,20 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
 
             {activeBatch ? (
               <div style={{ marginTop: 22 }}>
-                <h3>Protected Database Validation</h3>
+                <h3>Grade File Validation</h3>
                 <Details
                   items={[
-                    ["Batch Reference", activeBatch.batchId],
-                    ["Staged Rows", activeBatch.stagedRows],
-                    ["Checksum", activeBatch.checksum],
+                    ["Records", activeBatch.stagedRows],
                     ["Source Reference", activeBatch.sourceReference],
                     ["Current Status", statusLabel(activeBatch.status)],
-                    ["Valid Rows", activeBatch.validation?.valid_rows ?? "Not available"],
-                    ["Invalid Rows", activeBatch.validation?.invalid_rows ?? "Not available"],
+                    ["Valid Records", activeBatch.validation?.valid_rows ?? "Not available"],
+                    ["Records Requiring Correction", activeBatch.validation?.invalid_rows ?? "Not available"],
                   ]}
                 />
 
                 {activeBatch.status === "REQUIRES_CORRECTION" ? (
                   <div className="notice warning" style={{ marginTop: 12 }}>
-                    The protected database validator found rows requiring correction. The current backend returns the count but does not expose private row-level validation details to Registrar. Start a corrected new batch after fixing the source file.
+                    Some records require correction. Fix the source file and start a new import for this subject.
                   </div>
                 ) : null}
 
@@ -531,7 +531,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                   <div className="notice" style={{ marginTop: 14 }}>
                     <strong>Publication completed.</strong>
                     <p>
-                      Official academic results were committed atomically. Existing database triggers refresh affected official subject eligibility. Academic classification, prepared-enrollment refresh, and student notification are not claimed here because those post-publication contracts do not currently exist.
+                      Official grades were published successfully. Student academic records and subject eligibility were updated.
                     </p>
                     <p>Publication Reference: <strong>{activeBatch.publication?.reference || "Not available"}</strong></p>
                   </div>
@@ -572,9 +572,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
         <div className="notice warning">
           <strong>This writes official academic records.</strong>
           <p>
-            The trusted backend rechecks the verified checksum, every row, the confirmed enrollment attempt,
-            the exact subject section, and existing official results inside one publication transaction.
-            A failure prevents partial publication.
+            Confirm that the academic term, program, section, professor, source reference, and grades are correct. If publication fails, no partial grade batch will be recorded.
           </p>
         </div>
         <Details
@@ -586,9 +584,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
             ["Subject", selectedContext ? `${selectedContext.subjectCode} · ${selectedContext.subjectName}` : "Not available"],
             ["Section", selectedContext?.sectionCode || "Not available"],
             ["Professor", selectedContext?.instructorName || "Not available"],
-            ["Batch Reference", activeBatch?.batchId || "Not available"],
             ["Source Reference", activeBatch?.sourceReference || "Not available"],
-            ["Checksum", activeBatch?.checksum || "Not available"],
           ]}
         />
       </Modal>

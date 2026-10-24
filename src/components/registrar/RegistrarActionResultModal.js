@@ -1,11 +1,21 @@
 "use client";
 
+import { useEffect } from "react";
 import { Button, Modal, StatusBadge } from "@/components/ui/PortalUI";
+import {
+  registrarResultDebug,
+  registrarSafeMessage,
+} from "@/features/registrar/registrar-client-utils";
 
 export default function RegistrarActionResultModal({ result, onClose }) {
-  if (!result) return null;
   const issues = result?.data?.blocking_issues || result?.data?.blockingIssues || [];
   const batchResults = result?.data?.results || [];
+
+  useEffect(() => {
+    if (result) registrarResultDebug(result);
+  }, [result]);
+
+  if (!result) return null;
 
   return (
     <Modal
@@ -16,18 +26,18 @@ export default function RegistrarActionResultModal({ result, onClose }) {
       className="registrar-result-modal"
     >
       <div className={`notice ${result.ok ? "" : "warning"}`.trim()}>
-        <strong>{result.message}</strong>
+        <strong>{registrarSafeMessage(result.message, result.ok)}</strong>
       </div>
 
       {issues.length ? (
         <div className="list-stack" style={{ marginTop: 14 }}>
           {issues.map((issue, index) => (
-            <div className="list-item" key={`${issue.code || "issue"}-${index}`}>
+            <div className="list-item" key={`issue-${index}`}>
               <div className="list-item-header">
-                <strong>{issue.code || "Validation issue"}</strong>
-                <StatusBadge value="REQUIRES_CORRECTION" label="Blocking" />
+                <strong>Enrollment requirement</strong>
+                <StatusBadge value="REQUIRES_CORRECTION" label="Needs Attention" />
               </div>
-              <p>{issue.message || "No additional detail was returned."}</p>
+              <p>{registrarSafeMessage(issue.message || "This enrollment requirement needs attention.")}</p>
             </div>
           ))}
         </div>
@@ -35,13 +45,13 @@ export default function RegistrarActionResultModal({ result, onClose }) {
 
       {batchResults.length ? (
         <div className="list-stack" style={{ marginTop: 14 }}>
-          {batchResults.map((item) => (
-            <div className="list-item" key={item.studentId}>
+          {batchResults.map((item, index) => (
+            <div className="list-item" key={item.studentId || index}>
               <div className="list-item-header">
-                <strong>{item.studentId}</strong>
+                <strong>Student confirmation</strong>
                 <StatusBadge value={item.ok ? "COMPLETED" : "FAILED"} label={item.ok ? "Confirmed" : "Unconfirmed"} />
               </div>
-              <p>{item.status || item.message || "No additional detail returned."}</p>
+              <p>{item.ok ? "Enrollment confirmed." : "This student could not be confirmed. Review the enrollment record and try again."}</p>
             </div>
           ))}
         </div>
