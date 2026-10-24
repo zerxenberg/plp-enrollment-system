@@ -150,7 +150,7 @@ async function loadVisibleStudentProfiles(supabase) {
 }
 
 
-async function loadProjectBlocksAndRosters(supabase) {
+async function loadProjectBlocksAndRosters(supabase, { strict = false } = {}) {
   const { data: blocks, error } = await supabase
     .from("block_sections")
     .select("id,term_id,code,program_code,curriculum_code,year_level,section_letter,capacity,planning_status,synthetic_source_key,is_synthetic_demo")
@@ -168,9 +168,15 @@ async function loadProjectBlocksAndRosters(supabase) {
         { p_block_id: block.id },
       );
       if (rosterError) {
+        if (strict) assertQuery(rosterError, `Load protected roster for ${block.code}`);
         return { block, students: [], unavailable: true };
       }
-      return { block, students: data?.students || [], unavailable: false };
+      if (data?.fictional_only !== true || data?.block_id !== block.id ||
+          !Array.isArray(data?.students)) {
+        if (strict) throw new Error("A protected Phase 8 student roster returned invalid data.");
+        return { block, students: [], unavailable: true };
+      }
+      return { block, students: data.students, unavailable: false };
     }),
   );
 
@@ -543,7 +549,7 @@ export async function getRegistrarStudentsData() {
     gradeImportContexts,
   ] = await Promise.all([
     loadVisibleStudentProfiles(supabase),
-    loadProjectBlocksAndRosters(supabase),
+    loadProjectBlocksAndRosters(supabase, { strict: true }),
     supabase
       .from("academic_terms")
       .select("id,label,short_label,academic_year,semester,status")
@@ -561,10 +567,13 @@ export async function getRegistrarStudentsData() {
   assertQuery(curriculaResult.error, "Load Phase 8 curricula");
 
   const p8Curricula = curriculaResult.data || [];
+  const projectProfiles = profiles.filter((row) =>
+    row.record_kind === "PROJECT_ONLY" && row.project_cohort_id === PROJECT_COHORT_ID);
+  const projectProfilesById = new Map(projectProfiles.map((row) => [row.id, row]));
   const visibleProgramCodes = [
     ...new Set([
       ...p8Curricula.map((row) => row.program_code),
-      ...profiles.map((row) => row.program_code),
+      ...projectBlocks.map(({ block }) => block.program_code),
       ...gradeImportContexts.map((row) => row.programCode),
     ].filter(Boolean)),
   ];
@@ -581,7 +590,6 @@ export async function getRegistrarStudentsData() {
   const organizationalUnitCodes = [
     ...new Set((programsResult.data || []).map((row) => row.organizational_unit_code).filter(Boolean)),
   ];
-
   const unitsResult = organizationalUnitCodes.length
     ? await supabase
         .from("organizational_units")
@@ -593,123 +601,75 @@ export async function getRegistrarStudentsData() {
 
   const programMap = new Map((programsResult.data || []).map((row) => [row.code, row]));
   const unitMap = new Map((unitsResult.data || []).map((row) => [row.code, row]));
-  const projectNameMap = new Map();
-  const projectStudentBlockMap = new Map();
-  const projectBlockMap = new Map();
 
-  for (const { block, students } of projectBlocks) {
-    projectBlockMap.set(block.id, block);
-    for (const student of students) {
-      projectNameMap.set(student.student_id, student.full_name || "Not available");
-      projectStudentBlockMap.set(student.student_id, block);
-    }
-  }
+  // A PROJECT_ONLY student profile deliberately has no authoritative current
+  // block, year, classification, or progression values. The staff-authorized
+  // Phase 8 roster RPC supplies verified placement information instead.
+  const seenStudentIds = new Set();
+  const students = [];
+  const groups = [];
 
-  const institutionalProfileIds = profiles
-    .filter((row) => row.record_kind !== "PROJECT_ONLY")
-    .map((row) => row.id);
-
-  let assignments = [];
-  if (institutionalProfileIds.length) {
-    const { data, error } = await supabase
-      .from("block_student_assignments")
-      .select("student_id,block_id,term_id,status,assigned_at,ended_at")
-      .in("student_id", institutionalProfileIds)
-      .is("ended_at", null);
-    assertQuery(error, "Load active institutional block assignments");
-    assignments = data || [];
-  }
-
-  const assignmentByStudent = new Map(assignments.map((row) => [row.student_id, row]));
-  const institutionalBlockIds = [...new Set(assignments.map((row) => row.block_id).filter(Boolean))];
-
-  let institutionalBlocks = [];
-  if (institutionalBlockIds.length) {
-    const { data, error } = await supabase
-      .from("block_sections")
-      .select("id,term_id,code,program_code,curriculum_code,year_level,capacity,planning_status,is_synthetic_demo")
-      .in("id", institutionalBlockIds)
-      .eq("is_synthetic_demo", false);
-    assertQuery(error, "Load assigned institutional blocks");
-    institutionalBlocks = data || [];
-  }
-
-  const allBlockMap = new Map([
-    ...[...projectBlockMap.entries()],
-    ...institutionalBlocks.map((row) => [row.id, row]),
-  ]);
-
-  const students = profiles.map((profile) => {
-    const projectOnly = profile.record_kind === "PROJECT_ONLY";
-    const assignment = assignmentByStudent.get(profile.id);
-    const block = projectOnly
-      ? projectStudentBlockMap.get(profile.id) || null
-      : assignment
-        ? allBlockMap.get(assignment.block_id) || null
-        : null;
-    const program = programMap.get(profile.program_code);
+  for (const { block, students: roster } of projectBlocks) {
+    const program = programMap.get(block.program_code);
     const college = unitMap.get(program?.organizational_unit_code);
-
-    return {
-      student_id: profile.id,
-      user_id: profile.user_id,
-      student_number: profile.student_number,
-      full_name: projectOnly ? projectNameMap.get(profile.id) || "Not available" : "Not available",
-      program_code: profile.program_code || block?.program_code || "Not available",
-      program_name: program?.name || "Not available",
+    groups.push({
+      id: block.id,
+      blockId: block.id,
+      blockSection: block.code,
       college: college?.name || "Not available",
-      current_term_id: projectOnly ? PROJECT_TERM_ID : profile.current_term_id || "Not available",
-      curriculum_code: projectOnly
-        ? block?.curriculum_code || "Not available"
-        : profile.current_curriculum_code || block?.curriculum_code || "Not available",
-      year_level: projectOnly
-        ? block?.year_level || "Not available"
-        : profile.year_level || profile.year_level_number || block?.year_level || "Not available",
-      student_type: profile.student_type || "Not available",
-      student_status: profile.student_status || "Not available",
-      academic_classification: profile.academic_classification || "Not available",
-      progression_status: profile.progression_status || "Not available",
-      contact_number: profile.contact_number || "Not available",
-      address: profile.address || "Not available",
-      emergency_contact_name: profile.emergency_contact_name || "Not available",
-      emergency_contact_number: profile.emergency_contact_number || "Not available",
-      alternate_contact_number: profile.alternate_contact_number || "Not available",
-      project_only: projectOnly,
-      home_block_id: block?.id || null,
-      home_block: block?.code || "Unassigned",
-      block_capacity: block?.capacity ?? null,
-      block_planning_status: block?.planning_status || "Not available",
-    };
-  });
+      programCode: block.program_code,
+      programName: program?.name || block.program_code,
+      curriculumCode: block.curriculum_code,
+      termId: block.term_id,
+      yearLevel: block.year_level,
+      capacity: block.capacity,
+      assignedStudents: roster.length,
+      confirmedStudents: 0,
+      source: "Demonstration",
+    });
 
-  const groupsMap = new Map();
-  for (const student of students) {
-    const key = student.home_block_id || `UNASSIGNED:${student.program_code}:${student.current_term_id}`;
-    if (!groupsMap.has(key)) {
-      groupsMap.set(key, {
-        id: key,
-        blockId: student.home_block_id,
-        blockSection: student.home_block,
-        college: student.college,
-        programCode: student.program_code,
-        programName: student.program_name,
-        curriculumCode: student.curriculum_code,
-        termId: student.current_term_id,
-        yearLevel: student.year_level,
-        capacity: student.block_capacity,
-        assignedStudents: 0,
-        confirmedStudents: 0,
-        source: student.project_only ? "PROJECT_ONLY · P8F26" : "Institutional",
+    for (const member of roster) {
+      const profile = projectProfilesById.get(member.student_id);
+      if (!profile || seenStudentIds.has(member.student_id) ||
+          member.student_number !== profile.student_number) {
+        throw new Error("Phase 8 student roster and cohort profiles are inconsistent.");
+      }
+      seenStudentIds.add(member.student_id);
+      students.push({
+        student_id: profile.id,
+        user_id: profile.user_id,
+        student_number: member.student_number,
+        full_name: member.full_name || "Not available",
+        program_code: block.program_code,
+        program_name: program?.name || block.program_code,
+        college: college?.name || "Not available",
+        current_term_id: block.term_id,
+        curriculum_code: block.curriculum_code,
+        year_level: member.year_level ?? block.year_level,
+        student_type: profile.student_type || "Not available",
+        student_status: profile.student_status || "Not available",
+        academic_classification: member.academic_classification || "Not available",
+        progression_status: profile.progression_status || "Not available",
+        enrollment_status: member.enrollment_status || "Not available",
+        project_only: true,
+        home_block_id: block.id,
+        home_block: block.code,
+        block_capacity: block.capacity,
+        block_planning_status: block.planning_status || "Not available",
       });
     }
-    groupsMap.get(key).assignedStudents += 1;
+  }
+
+  if (projectProfiles.length !== seenStudentIds.size || (projectProfiles.length > 0 && !groups.length)) {
+    throw new Error("The verified Phase 8 roster does not cover the current project cohort.");
   }
 
   return {
     students,
-    groups: [...groupsMap.values()].sort((a, b) =>
-      `${a.programCode}-${a.blockSection}`.localeCompare(`${b.programCode}-${b.blockSection}`),
-    ),
+    groups: groups.sort((a, b) =>
+      a.programCode.localeCompare(b.programCode) ||
+      a.yearLevel - b.yearLevel ||
+      a.blockSection.localeCompare(b.blockSection)),
     terms: termResult.data ? [termResult.data] : [],
     programs: programsResult.data || [],
     curricula: p8Curricula,
