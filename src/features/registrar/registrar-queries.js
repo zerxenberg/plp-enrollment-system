@@ -161,8 +161,10 @@ async function loadProjectBlocksAndRosters(supabase, { strict = false } = {}) {
     .order("code");
   assertQuery(error, "Load Phase 8 project block sections");
 
-  const rosterResults = await Promise.all(
-    (blocks || []).map(async (block) => {
+  const rosterResults = [];
+  // Bound concurrent RPC calls to avoid overloading the shared project database.
+  for (let offset = 0; offset < (blocks || []).length; offset += 8) {
+    const batch = await Promise.all(blocks.slice(offset, offset + 8).map(async (block) => {
       const { data, error: rosterError } = await supabase.rpc(
         "project_phase8_block_roster_v1",
         { p_block_id: block.id },
@@ -177,8 +179,9 @@ async function loadProjectBlocksAndRosters(supabase, { strict = false } = {}) {
         return { block, students: [], unavailable: true };
       }
       return { block, students: data.students, unavailable: false };
-    }),
-  );
+    }));
+    rosterResults.push(...batch);
+  }
 
   return rosterResults;
 }
