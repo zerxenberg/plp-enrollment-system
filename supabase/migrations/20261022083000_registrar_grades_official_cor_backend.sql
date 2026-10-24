@@ -95,7 +95,7 @@ BEGIN
    nullif(btrim(coalesce(j->>'section_code','')),''),
    btrim(j->>'source_record_reference'),
    btrim(j->>'grade_value'),
-   CASE WHEN btrim(j->>'grade_value') ~ '^[0-9]+(\\.[0-9]{1,3})?$'
+   CASE WHEN btrim(j->>'grade_value') ~ '^[0-9]+([.][0-9]{1,3})?$'
       THEN (j->>'grade_value')::numeric ELSE NULL END,
    CASE WHEN upper(btrim(coalesce(j->>'completion_status',''))) IN
      ('COMPLETED','FAILED','INCOMPLETE','CREDITED')
