@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Button, Panel } from "@/components/ui/PortalUI";
+import { Button } from "@/components/ui/PortalUI";
+import { Panel } from "./RegistrarShared";
 import {
   previewSandboxGradeImport,
   stageSandboxGradeImport,
