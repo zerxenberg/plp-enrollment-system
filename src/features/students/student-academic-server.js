@@ -3,6 +3,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadStudentProfileForPage } from "@/features/students/student-profile-server";
+import { loadStudentEnrollmentForPage } from "./student-enrollment-server";
 
 const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
 const UNAVAILABLE = Object.freeze({ mode: "unavailable" });
@@ -143,6 +144,8 @@ export async function loadStudentAcademicForPage() {
         decision_status: "CREDITED",
       }));
 
+    const enrollmentView = await loadStudentEnrollmentForPage();
+    if (enrollmentView.kind !== "ready") return UNAVAILABLE;
     return {
       mode: "project",
       snapshot: {
@@ -151,14 +154,15 @@ export async function loadStudentAcademicForPage() {
         track: snapshot.program_track_code,
         curriculumCode: snapshot.curriculum_code,
         yearLevel: snapshot.year_level,
-        classification: student.student_type === "CONTINUING_STUDENT" && !publishedResults.length
-          ? "PENDING_EVALUATION" :
-          student.student_type === "TRANSFEREE" && !approvedCredits.length
-            ? "PENDING_EVALUATION" : snapshot.academic_classification,
+        classification: enrollmentView.student.classification,
         term: snapshot.term_id,
         previousResults: publishedResults,
         transferCredits: approvedCredits,
-        eligibility: Array.isArray(snapshot.subjects) ? snapshot.subjects : [],
+        eligibility: enrollmentView.subjects.map((subject) => ({
+          subject_code: subject.code,
+          eligibility: subject.eligibility,
+          reason: subject.reason,
+        })),
         curriculum,
       },
       officialSchedule,
