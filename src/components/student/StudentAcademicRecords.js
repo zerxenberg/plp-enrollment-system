@@ -34,7 +34,7 @@ function studentResults(snapshot) {
     units: item.credited_units,
     term: "Transfer evaluation",
     grade: null,
-    status: item.decision_status === "APPROVED" ? "CREDITED" : "PENDING",
+    status: item.decision_status === "CREDITED" ? "CREDITED" : "PENDING",
     source: "Approved transfer credit",
     note: `Source course: ${item.source_course || "Not recorded"}.`,
   }));
@@ -43,7 +43,7 @@ function studentResults(snapshot) {
 
 function curriculumRows(snapshot) {
   const credited = new Set(
-    snapshot.transferCredits.filter((item) => item.decision_status === "APPROVED")
+    snapshot.transferCredits.filter((item) => item.decision_status === "CREDITED")
       .map((item) => item.target_subject),
   );
   const completed = new Set(
