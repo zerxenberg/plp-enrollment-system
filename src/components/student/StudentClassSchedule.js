@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { formatClockTime, formatRoomCode, formatWeekday } from "@/features/students/class-meeting-format.mjs";
 import {
   Button, Card, DataTable, EmptyState, FilterControl, InternalTabs, Modal,
   PageHeader, StatusBadge,
@@ -9,15 +10,6 @@ import {
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const TABS = ["Weekly Schedule", "List View"];
-
-function labelTime(value) {
-  if (!value) return "Not recorded";
-  const parts = String(value).match(/^(\d{1,2}):(\d{2})/);
-  if (!parts) return String(value);
-  const hour = Number(parts[1]);
-  if (hour > 23) return String(value);
-  return `${hour % 12 || 12}:${parts[2]} ${hour < 12 ? "AM" : "PM"}`;
-}
 
 function displayValue(value) {
   return value && value !== "NOT_RECORDED_IN_SOURCE" ? value : "Not recorded";
@@ -41,10 +33,10 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
       name: subjects.get(item.subject_code)?.subject_name || item.subject_code,
       sectionId: subjects.get(item.subject_code)?.section_id || null,
       units: subjects.get(item.subject_code)?.units ?? null,
-      day: String(item.day_of_week || "Unspecified"),
-      start: labelTime(item.start_time),
-      end: labelTime(item.end_time),
-      room: displayValue(item.room),
+      day: formatWeekday(item.day_of_week),
+      start: formatClockTime(item.start_time),
+      end: formatClockTime(item.end_time),
+      room: formatRoomCode(item.room),
       instructor: displayValue(item.professor),
       component: displayValue(item.lecture_lab_type),
     }));
@@ -76,16 +68,10 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
       ) : !isConfirmed ? (
         <Card>
             <EmptyState title="Awaiting confirmed class schedule"
-            description="A personal class schedule becomes available after an official Registrar confirmation and finalized class assignments. Proposed blocks, classroom timetables, and demonstration review confirmation do not establish an official schedule." />
-          <div className="notice" style={{ marginTop: 14 }} role="status">
-            This is a fictional PROJECT_ONLY student account. No official confirmed schedule is currently linked to this record. You can review tentative subject choices in Enrollment.
-          </div>
+            description="Your confirmed class schedule will appear after Registrar confirmation. Review proposed classes in Enrollment." />
         </Card>
       ) : (
         <>
-          <div className="notice" role="status" style={{ marginBottom: 16 }}>
-            This account belongs to a fictional classroom cohort. The timetable below comes exclusively from the official enrollment COR function after a confirmed enrollment is verified.
-          </div>
           <div className="summary-strip" style={{ marginBottom: 16 }}>
             <span>Term: <strong>{officialSchedule.term}</strong></span>
             <span>Confirmation Reference: <strong>{officialSchedule.reference}</strong></span>
