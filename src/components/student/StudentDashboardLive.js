@@ -15,7 +15,7 @@ function getNextAction(data) {
   };
   if (["SUBMITTED", "VALIDATED"].includes(current)) return {
     title: "Track Registrar enrollment review",
-    description: "Your demonstration submission is read only while the Registrar processes it.",
+    description: "Your submission is read only while the Registrar reviews it.",
     label: "View Enrollment Status", href: "/student/enrollment",
   };
   if (current === "RETURNED") return {
@@ -25,7 +25,7 @@ function getNextAction(data) {
   };
   if (data.canSubmit) return {
     title: "Review prepared subjects and submit",
-    description: "Your compatible project timetable and eligible subjects have been prepared for your review.",
+    description: "Your prepared subjects and class sections are ready for review.",
     label: "Review Enrollment", href: "/student/enrollment",
   };
   return {
@@ -55,7 +55,6 @@ export default function StudentDashboardLive({ enrollment, notices }) {
         <span className="hero-chip">{displayCurriculumCode(data.student.curriculum)}</span>
         <span className="hero-chip">Demonstration account</span>
       </div>
-      <p style={{ marginTop: 12 }}>This is a fictional classroom student account. Its academic data is not institutionally verified.</p>
       <Link className="portal-button portal-button-secondary" href="/student/student-profile">View Profile</Link>
     </Card>
 
@@ -93,15 +92,15 @@ export default function StudentDashboardLive({ enrollment, notices }) {
         <div className="section-header"><div><h2>Academic Records</h2><p>History and curriculum requirements</p></div>
           <Link className="section-link" href="/student/academic-records">Open Academic Records</Link></div>
         <div className="info-grid">
-          <div className="info-item"><span>Recorded Demonstration Results</span><strong>{data.previousResults.length}</strong></div>
-          <div className="info-item"><span>Demonstration Transfer Credits</span><strong>{data.transferCredits.length}</strong></div>
+          <div className="info-item"><span>Published Academic Results</span><strong>{data.previousResults.length}</strong></div>
+          <div className="info-item"><span>Approved Transfer Credits</span><strong>{data.transferCredits.length}</strong></div>
         </div>
       </Card>
 
       <Card className="section-card span-6">
         <div className="section-header"><div><h2>Class Schedule</h2><p>Available after official Registrar confirmation</p></div>
           <Link className="section-link" href="/student/class-schedule">View Schedule</Link></div>
-        <Notice>The current classroom timetable is a proposal. No official schedule is released from a demonstration enrollment.</Notice>
+        <Notice>Confirmed class schedules are released after Registrar confirmation.</Notice>
       </Card>
 
       <Card className="section-card span-6">
