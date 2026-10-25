@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth/project-only-first-login-rotation.mjs";
 import { resolveStudentProfile } from "./project-student-profile-lookup.mjs";
 import { getStudentContext } from "./student-context-server";
+import { loadStudentEnrollmentForPage } from "./student-enrollment-server";
 import { isOwnStudentPhotoPath } from "./student-profile-photo-path.mjs";
 
 export async function loadStudentProfileForPage() {
@@ -80,17 +81,17 @@ export async function loadStudentProfileForPage() {
       snapshot.data_origin === "GENERATED_PROJECT" &&
       snapshot.verified_institutionally === false &&
       snapshot.student_number === ctx.studentNumber;
-    const projectEligible = validSnapshot && snapshot.schedule_validated_for_project === true &&
-      Array.isArray(snapshot.subjects) && snapshot.subjects.some((subject) =>
-        ["ELIGIBLE", "RETAKE"].includes(subject.eligibility));
+    // The Student Profile must use the same published-grade readiness and
+    // current semester eligibility contract as Enrollment and Dashboard.
+    const enrollment = validSnapshot ? await loadStudentEnrollmentForPage() : null;
+    const currentReadiness = enrollment?.kind === "ready" ? enrollment : null;
+    const projectEligible = currentReadiness?.canSubmit === true;
     return { ...result, profile: { ...result.profile,
       curriculum: validSnapshot ? (snapshot.curriculum_code || result.profile.curriculum) : result.profile.curriculum,
       yearLevel: validSnapshot ? (snapshot.year_level || result.profile.yearLevel) : result.profile.yearLevel,
-      academicClassification: validSnapshot && snapshot.academic_classification
-        ? `Simulated: ${snapshot.academic_classification}` : "Not verified",
-      enrollmentEligibility: validSnapshot
-        ? (projectEligible ? "Prepared for project enrollment" : "Project validation pending")
-        : "Not yet evaluated",
+      academicClassification: currentReadiness?.student?.classification || "Pending Evaluation",
+      enrollmentEligibility: projectEligible ? "Eligible for enrollment review"
+        : currentReadiness?.blockingReasons?.[0] || "Academic evaluation pending",
       projectEnrollmentStatus: portalStatus?.simulation?.status
         ? `Project: ${portalStatus.simulation.status}` : "Project: Not started",
       contactEditingReady,
