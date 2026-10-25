@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Button, Card, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton } from "@/components/ui/PortalUI";
 import { submitPreparedProjectEnrollment, getConfirmedProjectDemonstrationCor } from "@/features/students/student-portal-actions";
 import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { groupMeetingSchedules, formatMeetingSchedule } from "@/features/students/class-meeting-format.mjs";
 
 const TABS = [
   { value: "current", label: "Current Enrollment" },
@@ -38,13 +39,8 @@ function formatProjectPeso(amount) {
 
 function ScheduleText({ meetings }) {
   if (!meetings?.length) return "Awaiting timetable";
-  return <span>{meetings.map((m) => `${m.day} ${String(m.start || "").slice(0, 5)} to ${String(m.end || "").slice(0, 5)}`).join("; ")}</span>;
-}
-
-function SampleNotice() {
-  return <div className="notice" role="note">
-    <strong>Classroom demonstration only.</strong> The curriculum, grades, timetable, admission context, and enrollment review are fictional records. They are not institutionally verified. A demonstration review confirmation does not create official university enrollment.
-  </div>;
+  return <div className="detail-list">{groupMeetingSchedules(meetings).map((line) =>
+    <span key={line} style={{ display: "block" }}>{line}</span>)}</div>;
 }
 
 export default function StudentEnrollmentWorkspace({ data }) {
@@ -114,13 +110,13 @@ export default function StudentEnrollmentWorkspace({ data }) {
 
   return <>
     <PageHeader title="Enrollment" description="Review your prepared subjects, submit for review, and follow your enrollment progress." />
-    <SampleNotice />
+    <p style={{ marginTop: 8, fontSize: "0.8rem" }}>Academic demonstration environment</p>
     <div style={{ marginTop: 16 }}>
       <InternalTabs items={TABS} selected={activeTab} onSelect={setActiveTab} label="Enrollment sections" panelCard>
         {activeTab === "current" ? <>
           <div className="section-header"><div>
             <h2>Current Enrollment</h2>
-            <p>Automatically prepared from your linked curriculum, project academic history, and validated block timetable.</p>
+            <p>Review the subjects and class meetings prepared for the selected academic term.</p>
           </div><StatusBadge value={simulationStatus} label={enrollmentReviewLabel(simulationStatus)} /></div>
 
           <div className="info-grid" style={{ marginTop: 16 }}>
@@ -151,7 +147,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
 
           <div className="section-header" style={{ marginTop: 22 }}><div>
             <h2>Prepared Subject Registration</h2>
-            <p>Subjects with eligible status, a matching home block class section, and a validated timetable are prepared automatically. Other curriculum requirements remain visible with their restrictions.</p>
+            <p>Current semester subjects and their actual proposed class sections.</p>
           </div></div>
           <DataTable rowKey="code" rows={data.subjects} columns={[
             { key: "code", label: "Subject Code", render: (item) => displaySubjectCode(item.code) },
@@ -168,7 +164,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
             {isConfirmedSimulation ? <Button onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
           </div>
           {message && <div className="notice" role="status" style={{ marginTop: 12 }}>{message}</div>}
-          <p style={{ marginTop: 10 }}>Schedule and block selections remain proposed during student review. Only an authorized Registrar may finalize the demonstration review. Official COR and class schedules require a separate officially confirmed enrollment.</p>
+
         </> : <>
           <div className="section-header"><div><h2>Enrollment History</h2><p>Read only enrollment transactions associated with this authenticated student.</p></div></div>
           <div className="toolbar">
@@ -208,7 +204,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <p>{detail.value.reason || "No additional academic restriction was supplied."}</p>
         {(detail.value.meetings || []).map((meeting, i) => <div className="info-item" key={i}>
           <span>{meeting.component || "Class Meeting"}</span>
-          <strong>{meeting.day} {meeting.start} to {meeting.end} · {meeting.room} · {meeting.instructor}</strong>
+          <strong>{formatMeetingSchedule(meeting)}</strong>
         </div>)}
       </div> : detail?.value ? <div className="info-grid">
         <Field label="Term" value={`${detail.value.academicYear} · ${detail.value.semester}`} />
@@ -224,7 +220,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <Button disabled={isPending} onClick={handleSubmit}>{isPending ? "Submitting..." : "Confirm Submission"}</Button>
       </>}>
       <p>Confirm that you reviewed all {selectedCount} eligible subjects and {data.proposedUnits} proposed units for {data.term.label}.</p>
-      <p>Your submission creates a fictional classroom enrollment record for Registrar review. It does not confirm official registration.</p>
+      <p>Submitting sends this record for Registrar review. Submission does not confirm enrollment.</p>
       {message && <p role="alert">{message}</p>}
     </Modal>
 
