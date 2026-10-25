@@ -36,9 +36,11 @@ function mapSchedule(meetings) {
   return bySubject;
 }
 
-function preparedSubjects(snapshot, sectionCodes) {
+function preparedSubjects(snapshot, sectionCodes, currentTermCodes = null) {
   const meetings = mapSchedule(snapshot.class_schedule);
-  const subjects = (snapshot.subjects || []).map((item) => ({
+  const subjects = (snapshot.subjects || [])
+    .filter((item) => !currentTermCodes || currentTermCodes.has(item.subject_code))
+    .map((item) => ({
     code: item.subject_code,
     name: item.subject_name,
     units: item.academic_units,
@@ -56,10 +58,10 @@ function preparedSubjects(snapshot, sectionCodes) {
 export function buildStudentEnrollmentSummary({
   context, snapshot, term, simulation, sectionCodes, correctionReason = null,
   demoWindow = null,
-  priceRows,
+  priceRows, currentTermCodes = null,
   asOfDate = manilaCalendarDate(),
 }) {
-  const { subjects, eligible } = preparedSubjects(snapshot, sectionCodes);
+  const { subjects, eligible } = preparedSubjects(snapshot, sectionCodes, currentTermCodes);
   // An eligible subject elsewhere in the curriculum is not automatically a
   // registered class. Only sections present in this student's validated home
   // block timetable form the prepared selection.
@@ -171,6 +173,18 @@ export async function loadStudentEnrollmentForPage() {
         placementResult.error || !placementResult.data || windowResult.error) {
       return { kind: "unavailable" };
     }
+    // The eligibility snapshot includes requirements from the entire curriculum.
+    // Enrollment may only prepare this student's assigned year and semester.
+    const { data: termCurriculum, error: termCurriculumError } = await context.admin
+      .from("curriculum_subjects")
+      .select("subject_code")
+      .eq("curriculum_code", snapshotResult.data.curriculum_code)
+      .eq("year_level_number", snapshotResult.data.year_level)
+      .eq("semester", termResult.data.semester);
+    if (termCurriculumError || !termCurriculum?.length) {
+      return { kind: "unavailable" };
+    }
+    const currentTermCodes = new Set(termCurriculum.map((row) => row.subject_code));
     const sectionCodes = new Map();
     const blockId = placementResult.data.home_block_id;
     if (blockId) {
@@ -192,7 +206,7 @@ export async function loadStudentEnrollmentForPage() {
       }
     }
     const simulation = statusResult.data.simulation || null;
-    const { eligible } = preparedSubjects(snapshotResult.data, sectionCodes);
+    const { eligible } = preparedSubjects(snapshotResult.data, sectionCodes, currentTermCodes);
     const selectedCodes = selectedProjectSubjectCodes(eligible);
     // Server-only price SELECT for exactly the signed student's eligible,
     // section-linked and scheduled subjects. Missing/mismatched prices fail
@@ -202,7 +216,7 @@ export async function loadStudentEnrollmentForPage() {
     if (priceRows.length !== selectedCodes.length) return { kind: "unavailable" };
     return buildStudentEnrollmentSummary({ context, snapshot: snapshotResult.data,
       term: termResult.data, simulation, sectionCodes,
-      priceRows, demoWindow: windowResult.data,
+      priceRows, currentTermCodes, demoWindow: windowResult.data,
       correctionReason: simulation?.correction_reason || null });
   } catch {
     return { kind: "unavailable" };
