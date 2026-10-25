@@ -6,6 +6,7 @@ import {
   selectedProjectSubjectCodes,
 } from "./project-fee-estimate.mjs";
 import { loadVerifiedProjectSubjectPrices } from "./project-fee-prices-server";
+import { loadStudentPublishedReadiness } from "./student-published-readiness-server";
 
 const TERM_ID = "TERM-2026-1";
 const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
@@ -36,7 +37,7 @@ function mapSchedule(meetings) {
   return bySubject;
 }
 
-function preparedSubjects(snapshot, sectionCodes, currentTermCodes = null) {
+function preparedSubjects(snapshot, sectionCodes, currentTermCodes = null, subjectDecisions = null) {
   const meetings = mapSchedule(snapshot.class_schedule);
   const subjects = (snapshot.subjects || [])
     .filter((item) => !currentTermCodes || currentTermCodes.has(item.subject_code))
@@ -44,8 +45,8 @@ function preparedSubjects(snapshot, sectionCodes, currentTermCodes = null) {
     code: item.subject_code,
     name: item.subject_name,
     units: item.academic_units,
-    eligibility: item.eligibility || "RESTRICTED",
-    reason: item.reason || null,
+    eligibility: subjectDecisions?.get(item.subject_code)?.eligibility || "PENDING_EVALUATION",
+    reason: subjectDecisions?.get(item.subject_code)?.reason || null,
     section: sectionCodes.get(item.subject_code) || null,
     meetings: meetings.get(item.subject_code) || [],
   }));
@@ -58,10 +59,11 @@ function preparedSubjects(snapshot, sectionCodes, currentTermCodes = null) {
 export function buildStudentEnrollmentSummary({
   context, snapshot, term, simulation, sectionCodes, correctionReason = null,
   demoWindow = null,
-  priceRows, currentTermCodes = null,
+  priceRows, currentTermCodes = null, publishedEvidence = null,
   asOfDate = manilaCalendarDate(),
 }) {
-  const { subjects, eligible } = preparedSubjects(snapshot, sectionCodes, currentTermCodes);
+  const { subjects, eligible } = preparedSubjects(snapshot, sectionCodes, currentTermCodes,
+    publishedEvidence?.subjectDecisions);
   // An eligible subject elsewhere in the curriculum is not automatically a
   // registered class. Only sections present in this student's validated home
   // block timetable form the prepared selection.
@@ -83,9 +85,12 @@ export function buildStudentEnrollmentSummary({
   // A manually closed project window must never be bypassed by the
   // institution's independently configured academic term dates.
   const windowOpen = validDemoWindow ? demonstrationOpen : originalOpen;
-  const ready = snapshot.schedule_validated_for_project === true &&
+  const gradeReady = publishedEvidence?.readiness?.ready === true;
+  const ready = gradeReady && snapshot.schedule_validated_for_project === true &&
     eligible.length > 0;
   const blockingReasons = [];
+  if (!gradeReady) blockingReasons.push(publishedEvidence?.readiness?.reason ||
+    "Published academic results or approved transfer credits are required.");
   if (!ready) blockingReasons.push("The approved project timetable or eligible subjects are not ready.");
   if (!windowOpen) blockingReasons.push("The configured enrollment period is not currently open.");
   const simulationStatus = simulation?.status || null;
@@ -103,7 +108,7 @@ export function buildStudentEnrollmentSummary({
       track: snapshot.program_track_code,
       curriculum: snapshot.curriculum_code,
       yearLevel: snapshot.year_level,
-      classification: snapshot.academic_classification,
+      classification: publishedEvidence?.readiness?.classification || "PENDING_EVALUATION",
       progression: snapshot.progression_status,
     },
     term: {
@@ -133,8 +138,8 @@ export function buildStudentEnrollmentSummary({
     proposedSubjects: eligible,
     proposedUnits: projectFeeEstimate.totalUnits,
     projectFeeEstimate,
-    previousResults: snapshot.previous_results || [],
-    transferCredits: snapshot.transfer_credits || [],
+    previousResults: publishedEvidence?.previousResults || [],
+    transferCredits: publishedEvidence?.transferCredits || [],
     blockingReasons,
     canSubmit,
   };
@@ -205,8 +210,11 @@ export async function loadStudentEnrollmentForPage() {
         }
       }
     }
+    const publishedEvidence = await loadStudentPublishedReadiness(
+      context, TERM_ID, snapshotResult.data.curriculum_code, currentTermCodes);
     const simulation = statusResult.data.simulation || null;
-    const { eligible } = preparedSubjects(snapshotResult.data, sectionCodes, currentTermCodes);
+    const { eligible } = preparedSubjects(snapshotResult.data, sectionCodes,
+      currentTermCodes, publishedEvidence.subjectDecisions);
     const selectedCodes = selectedProjectSubjectCodes(eligible);
     // Server-only price SELECT for exactly the signed student's eligible,
     // section-linked and scheduled subjects. Missing/mismatched prices fail
@@ -216,7 +224,7 @@ export async function loadStudentEnrollmentForPage() {
     if (priceRows.length !== selectedCodes.length) return { kind: "unavailable" };
     return buildStudentEnrollmentSummary({ context, snapshot: snapshotResult.data,
       term: termResult.data, simulation, sectionCodes,
-      priceRows, currentTermCodes, demoWindow: windowResult.data,
+      priceRows, currentTermCodes, publishedEvidence, demoWindow: windowResult.data,
       correctionReason: simulation?.correction_reason || null });
   } catch {
     return { kind: "unavailable" };
