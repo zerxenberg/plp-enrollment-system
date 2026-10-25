@@ -1,0 +1,17 @@
+name: Student Enrollment Checks
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  student-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout reviewed commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run current semester academic rules and schedule formatting tests
+        run: node --test tests/published-grade-readiness.test.mjs tests/class-meeting-format.test.mjs
