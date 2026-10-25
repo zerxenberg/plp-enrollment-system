@@ -123,7 +123,7 @@ export async function loadStudentAcademicForPage() {
         .select("target_subject_code,source_course_name,credited_units,decision_status,evaluator_user_id,decided_at")
         .eq("student_id", student.id)
         .eq("target_curriculum_code", snapshot.curriculum_code)
-        .eq("decision_status", "APPROVED"),
+        .eq("decision_status", "CREDITED"),
     ]);
     if (publishedResultQuery.error || creditQuery.error) return UNAVAILABLE;
     const publishedResults = (publishedResultQuery.data || []).map((row) => ({
