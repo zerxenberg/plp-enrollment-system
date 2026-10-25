@@ -29,7 +29,7 @@ export async function loadStudentAcademicForPage() {
         account.login_enabled !== true) return UNAVAILABLE;
 
     const { data: student, error: studentError } = await admin.from("student_profiles")
-      .select("id,user_id,student_number,record_kind,project_cohort_id")
+      .select("id,user_id,student_number,record_kind,project_cohort_id,student_type")
       .eq("user_id", account.id)
       .eq("student_number", profileView.profile.studentNumber)
       .eq("record_kind", "PROJECT_ONLY")
@@ -110,6 +110,39 @@ export async function loadStudentAcademicForPage() {
       }
     }
 
+    // Seeded academic histories and generated transfer decisions are not
+    // Registrar published or approved evidence. Never elevate them into an
+    // academic transcript or completion calculation.
+    const [publishedResultQuery, creditQuery] = await Promise.all([
+      admin.from("academic_results")
+        .select("subject_code,term_id,units,result_status,official_grade_value,published_grade_import_row_id")
+        .eq("student_id", student.id)
+        .eq("source_name", "REGISTRAR_VERIFIED_IMPORT")
+        .not("published_grade_import_row_id", "is", null),
+      admin.from("transfer_credit_evaluations")
+        .select("target_subject_code,source_course_name,credited_units,decision_status,evaluator_user_id,decided_at")
+        .eq("student_id", student.id)
+        .eq("target_curriculum_code", snapshot.curriculum_code)
+        .eq("decision_status", "APPROVED"),
+    ]);
+    if (publishedResultQuery.error || creditQuery.error) return UNAVAILABLE;
+    const publishedResults = (publishedResultQuery.data || []).map((row) => ({
+      term: row.term_id,
+      subject_code: row.subject_code,
+      subject_name: byCode.get(row.subject_code)?.name || row.subject_code,
+      units: row.units,
+      grade: row.official_grade_value,
+      result: row.result_status,
+    }));
+    const approvedCredits = (creditQuery.data || [])
+      .filter((row) => row.evaluator_user_id && row.decided_at)
+      .map((row) => ({
+        target_subject: row.target_subject_code,
+        source_course: row.source_course_name,
+        credited_units: row.credited_units,
+        decision_status: "APPROVED",
+      }));
+
     return {
       mode: "project",
       snapshot: {
@@ -118,10 +151,13 @@ export async function loadStudentAcademicForPage() {
         track: snapshot.program_track_code,
         curriculumCode: snapshot.curriculum_code,
         yearLevel: snapshot.year_level,
-        classification: snapshot.academic_classification,
+        classification: student.student_type === "CONTINUING_STUDENT" && !publishedResults.length
+          ? "PENDING_EVALUATION" :
+          student.student_type === "TRANSFEREE" && !approvedCredits.length
+            ? "PENDING_EVALUATION" : snapshot.academic_classification,
         term: snapshot.term_id,
-        previousResults: Array.isArray(snapshot.previous_results) ? snapshot.previous_results : [],
-        transferCredits: Array.isArray(snapshot.transfer_credits) ? snapshot.transfer_credits : [],
+        previousResults: publishedResults,
+        transferCredits: approvedCredits,
         eligibility: Array.isArray(snapshot.subjects) ? snapshot.subjects : [],
         curriculum,
       },
