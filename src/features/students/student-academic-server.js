@@ -140,7 +140,7 @@ export async function loadStudentAcademicForPage() {
         target_subject: row.target_subject_code,
         source_course: row.source_course_name,
         credited_units: row.credited_units,
-        decision_status: "APPROVED",
+        decision_status: "CREDITED",
       }));
 
     return {
