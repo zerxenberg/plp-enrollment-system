@@ -27,6 +27,9 @@ vm.runInNewContext(compiled.code, {
       estimateProjectSelectedSubjects, selectedProjectSubjectCodes,
     };
     if (name === "./project-fee-prices-server") return {};
+    if (name === "./student-published-readiness-server") return {
+      loadStudentPublishedReadiness: () => { throw new Error("Unexpected database read in pure preparation test"); },
+    };
     throw new Error(`Unexpected dependency: ${name}`);
   },
 }, { filename: "student-enrollment-server.compiled.js" });
@@ -64,6 +67,16 @@ function fixture({ status = null, ready = true, termStart = "2026-10-01",
       { subject_code: "IT301", rate_per_unit: 100, classification: "SYNTHETIC_DEVELOPMENT_ONLY" },
       { subject_code: "IT201", rate_per_unit: 100, classification: "SYNTHETIC_DEVELOPMENT_ONLY" },
     ],
+    currentTermCodes: new Set(["IT301", "IT201", "IT401", "IT402"]),
+    publishedEvidence: {
+      readiness: { ready: true, classification: "IRREGULAR" },
+      subjectDecisions: new Map([
+        ["IT301", { eligibility: "ELIGIBLE" }],
+        ["IT201", { eligibility: "RETAKE" }],
+        ["IT401", { eligibility: "ELIGIBLE" }],
+        ["IT402", { eligibility: "RESTRICTED", reason: "Failed prerequisite" }],
+      ]),
+    },
     asOfDate: "2026-10-23",
   };
 }
@@ -88,6 +101,16 @@ test("expired term and unvalidated timetable block student submission", () => {
     assert.equal(result.canSubmit, false);
     assert.ok(result.blockingReasons.length > 0);
   }
+});
+
+test("unverified published grade readiness blocks enrollment", () => {
+  const input = fixture();
+  const result = prepare({ ...input, publishedEvidence: {
+    ...input.publishedEvidence,
+    readiness: { ready: false, reason: "Published academic results are required." },
+  } });
+  assert.equal(result.canSubmit, false);
+  assert.match(result.blockingReasons.join(" "), /published academic results/i);
 });
 
 test("a verified project demonstration window opens enrollment without rewriting old term dates", () => {

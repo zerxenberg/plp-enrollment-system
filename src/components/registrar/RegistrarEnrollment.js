@@ -404,7 +404,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
         ) : null}
 
         {tab === "history" ? (
-          <Panel title="Enrollment History" subtitle="Live project simulation and official institutional history remain separate.">
+          <Panel title="Enrollment History" subtitle="Current enrollment activity and official institutional history are shown separately.">
             <div className="toolbar">
               <FilterControl
                 label="Record Type"

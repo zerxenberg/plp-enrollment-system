@@ -41,6 +41,9 @@ function renderProfile(mode, profile) {
     if (name === "@/components/ui/PortalUI") return elements;
     if (name === "@/components/ui/AppIcon") return { __esModule: true,
       default: () => React.createElement("span", { "aria-hidden": true }) };
+    if (name === "@/features/academic/project-academic-display-aliases.mjs") return {
+      displayCurriculumCode: (value) => value,
+    };
     if (name === "@/features/students/student-profile-actions") return {
       saveStudentContact: async () => ({ ok: false }),
       uploadStudentPhoto: async () => ({ ok: false }),
