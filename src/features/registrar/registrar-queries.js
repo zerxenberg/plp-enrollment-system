@@ -156,8 +156,9 @@ async function loadProjectBlocksAndRosters(supabase, { strict = false } = {}) {
     .select("id,term_id,code,program_code,curriculum_code,year_level,section_letter,capacity,planning_status,synthetic_source_key,is_synthetic_demo")
     .eq("term_id", PROJECT_TERM_ID)
     .like("curriculum_code", `${PROJECT_CURRICULUM_PREFIX}%`)
-    .like("synthetic_source_key", `${PROJECT_BLOCK_SOURCE_PREFIX}%`)
-    .eq("is_synthetic_demo", true)
+    // Protected roster RPC also supports Coordinator-created draft sections
+    // based on verified fictional Phase 8 curricula. Those have no source key.
+    .or(`and(is_synthetic_demo.eq.true,synthetic_source_key.like.${PROJECT_BLOCK_SOURCE_PREFIX}*),and(is_synthetic_demo.eq.false,synthetic_source_key.is.null)`)
     .order("code");
   assertQuery(error, "Load Phase 8 project block sections");
 
