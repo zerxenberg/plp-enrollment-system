@@ -36,7 +36,16 @@ export async function GET(request) {
     }
     return NextResponse.json(
       {
-        programs: [...(programResult.data || []), ...(trackResult.data || []).map(({ code, name, program_code }) => ({ code, name, program_code }))],
+        programs: [
+          ...(programResult.data || []),
+          ...(trackResult.data || []).map(({ code, name, program_code }) => ({ code, name, program_code })),
+          ...(aliasResult.data || []).map(({ source_code, display_name, program_code, program_track_code }) => ({
+            code: source_code,
+            name: display_name,
+            canonical_program_code: program_code,
+            program_track_code,
+          })),
+        ],
         admissions_aliases: aliasResult.data || [],
       },
       { headers: { "Cache-Control": "no-store" } },
