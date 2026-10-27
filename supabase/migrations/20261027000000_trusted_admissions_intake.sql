@@ -44,7 +44,7 @@ DECLARE
   v_attempt integer := 0;
   v_request_id uuid;
 BEGIN
-  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+  IF (auth.jwt() ->> 'role') IS DISTINCT FROM 'service_role' THEN
     RAISE EXCEPTION 'Trusted integration service required' USING ERRCODE='42501';
   END IF;
   IF coalesce(p_applicant_ref,'') !~ '^ADM-20[0-9]{2}-[0-9]{6,9}$'
