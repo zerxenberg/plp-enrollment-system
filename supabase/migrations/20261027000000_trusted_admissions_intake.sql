@@ -70,6 +70,8 @@ BEGIN
   END IF;
 END
 $migration$;
+DROP FUNCTION IF EXISTS public.integration_accept_admissions_intake_v1(text,text,text,text,date,text,text);
+
 CREATE OR REPLACE FUNCTION public.integration_accept_admissions_intake_v1(
   p_applicant_ref text,
   p_full_name text,
