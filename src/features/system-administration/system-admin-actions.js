@@ -225,16 +225,35 @@ export async function provisionExistingApplicationUser(payload) {
     const { error: updateError } = await supabase
       .from("app_users")
       .update({
+        auth_user_id: authData.user.id,
         account_status: targetStatus,
         login_enabled: targetStatus === "Active",
       })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .is("auth_user_id", null);
 
     if (updateError) {
       await adminClient.auth.admin.deleteUser(authData.user.id);
       return failure(
-        `Auth user was rolled back because the application account could not be updated: ${updateError.message}`,
+        `Auth user was rolled back because the application account could not be linked: ${updateError.message}`,
       );
+    }
+
+    const { data: linkedUser, error: linkCheckError } = await supabase
+      .from("app_users")
+      .select("id")
+      .eq("id", user.id)
+      .eq("auth_user_id", authData.user.id)
+      .maybeSingle();
+
+    if (linkCheckError || !linkedUser) {
+      await adminClient.from("app_users").update({
+        auth_user_id: null,
+        account_status: user.account_status,
+        login_enabled: user.login_enabled,
+      }).eq("id", user.id).eq("auth_user_id", authData.user.id);
+      await adminClient.auth.admin.deleteUser(authData.user.id);
+      return failure("Auth account was rolled back because the application identity link could not be verified.");
     }
 
     if (targetStatus === "Inactive") {
