@@ -12,6 +12,19 @@ The Admissions code derives the program reference URL by replacing the final `/i
 
 Both endpoints require the same server only secret in `ENROLLMENT_INTAKE_SECRET`. Keep the value out of browser code and source control. Require HTTPS in production.
 
+
+## Program code mapping
+
+Enrollment maintains an explicit, reviewable alias table named `admissions_program_code_map`. It maps known Admissions course codes to canonical Enrollment programs and, where appropriate, program tracks. Current aliases include BSED-ENG to BSED/BSEDENG, BSED-FIL to BSED/BSEDFIL, BSED-MATH to BSED/BSEDMATH, BSENT to BSBA/BSBAENT, AB Psych to BSP, and BSBA to BSBA/BSBAMM.
+
+The authenticated `/programs` endpoint includes canonical programs, tracks, and source aliases so Admissions' existing program compatibility check can recognize its codes. For new or custom codes, include `program_name` in the handoff payload. Enrollment only uses name similarity when the best candidate clears a confidence threshold and is sufficiently separated from the next candidate. Otherwise, it rejects the handoff for review rather than assigning the wrong program. Review alias changes against the live catalog before deploying a new code.
+
+## Supabase server keys
+
+Enrollment uses its own Supabase URL and a server-only key belonging to that same Enrollment project. The current server client accepts `SUPABASE_SECRET_KEY` or, as a fallback, `SUPABASE_SERVICE_ROLE_KEY`. Prefer a server-only secret key where available. Do not expose either value to browser code.
+
+Admissions separately uses its own database credentials and Supabase key in the Admissions deployment. Do not copy the Admissions key into Enrollment. Admissions sends HTTPS requests to the Enrollment API; it does not need the Enrollment Supabase key.
+
 ## Applicant eligibility and payload
 
 The Admissions handoff is triggered after an accepted applicant confirms enrollment intent. The existing Admissions code sends these fields:
