@@ -329,21 +329,19 @@ export async function getUsersAccessData() {
       .limit(150),
   ]);
 
-  const currentUserIds = (usersResult.data || []).map((row) => row.id);
-
   const [
     identifiersResult,
     studentProfilesResult,
     projectPlacementsResult,
     staffProfilesResult,
   ] = await Promise.all([
-    currentUserIds.length
-      ? supabase
-          .from("user_login_identifiers")
-          .select("id,user_id,identifier_type,identifier_value,is_primary")
-          .in("user_id", currentUserIds)
-          .order("identifier_type")
-      : Promise.resolve({ data: [], error: null }),
+    fetchAllRows(
+      () => adminClient
+        .from("user_login_identifiers")
+        .select("id,user_id,identifier_type,identifier_value,is_primary")
+        .order("identifier_type"),
+      "Load all login identifiers",
+    ),
     fetchAllRows(
       () => adminClient
         .from("student_profiles")
@@ -356,12 +354,12 @@ export async function getUsersAccessData() {
       .select("student_id,project_cohort_id,term_id,program_code,curriculum_code,year_level,academic_classification,progression_status,home_block_id")
       .eq("project_cohort_id", CURRENT_PROJECT_COHORT_ID)
       .eq("term_id", CURRENT_TERM_ID),
-    currentUserIds.length
-      ? supabase
-          .from("staff_profiles")
-          .select("user_id,employee_id,organizational_unit_code,position_title,office_name")
-          .in("user_id", currentUserIds)
-      : Promise.resolve({ data: [], error: null }),
+    fetchAllRows(
+      () => adminClient
+        .from("staff_profiles")
+        .select("user_id,employee_id,organizational_unit_code,position_title,office_name"),
+      "Load all staff profiles",
+    ),
   ]);
 
   [
