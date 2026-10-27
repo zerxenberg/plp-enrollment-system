@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { inflateSync } from "node:zlib";
 import { buildVerifiedCorDocument } from "../cor/cor-document.mjs";
 import { buildProjectCorPdf, renderVerifiedCorPdf } from "../cor/cor-pdf.mjs";
 
@@ -62,6 +63,30 @@ test("a single A4 COR PDF contains the template structure and confirmed record",
   assert.equal(normalized.totalFee, 300);
   assert.equal(normalized.subjects[0].meetings[0].professor, "Fictional Instructor");
   assert.equal(normalized.project, true);
+});
+
+test("verified project Registrar name is printed above its signature line without a crowded confirmation caption", async () => {
+  const pdf = await buildProjectCorPdf({
+    ...original, confirmed_by_registrar: "Maria Santos",
+  });
+  const source = pdf.toString("latin1");
+  const contents = [...source.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)]
+    .map((match) => {
+      try {
+        return inflateSync(Buffer.from(match[1], "latin1")).toString("latin1");
+      } catch {
+        return "";
+      }
+    }).join("\n");
+  const registrarName = Buffer.from("Maria Santos").toString("hex");
+  const registrarLabel = Buffer.from("UNIVERSITY REGISTRAR").toString("hex");
+  const namePosition = contents.toLowerCase().indexOf(registrarName);
+  const labelPosition = contents.toLowerCase().indexOf(registrarLabel);
+  assert.ok(namePosition >= 0, "registered confirming actor must appear in the PDF");
+  assert.ok(labelPosition > namePosition, "the confirming actor must be placed above the Registrar label");
+  assert.doesNotMatch(contents.toLowerCase(), new RegExp(
+    Buffer.from("Recorded project confirmation:").toString("hex"), "i"));
+  assert.equal((source.match(/\/Type \/Page\b/g) || []).length, 1);
 });
 
 test("COR embeds the high resolution Pasig seal rather than the old thumbnail", async () => {

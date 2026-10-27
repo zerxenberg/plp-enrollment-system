@@ -233,16 +233,27 @@ function drawSummaryAndCertification(doc, record, y) {
     : "This is to certify that the above student is officially enrolled for the specified academic term.";
   doc.fillColor(INK).font("Helvetica").fontSize(9)
     .text(wording, M + 10, y + 35, { width: CONTENT - 20 });
-  if (record.project && record.confirmedBy !== "Not recorded") {
-    doc.font("Helvetica").fontSize(7.5).fillColor(DARK)
-      .text(`Recorded project confirmation: ${record.confirmedBy}`, M + 10, y + 55, {
-        width: CONTENT - 20, align: "right", lineBreak: false,
-      });
-  }
   const sigY = y + 78;
-  [[M + 42, "STUDENT SIGNATURE"], [PAGE_WIDTH / 2 + 35, "UNIVERSITY REGISTRAR"]].forEach(([x, label]) => {
-    doc.moveTo(x, sigY).lineTo(x + 210, sigY).strokeColor(LINE).lineWidth(0.6).stroke();
-    doc.font("Helvetica-Bold").fontSize(8.6).text(label, x, sigY + 5, { width: 210, align: "center" });
+  const registrarX = PAGE_WIDTH / 2 + 35;
+  const signatureWidth = 210;
+  if (record.project && record.confirmedBy !== "Not recorded") {
+    // The confirmed actor is already verified by the protected COR reader.
+    // Keep that name centered above the Registrar line, never over the wording.
+    const registrarName = String(record.confirmedBy).trim();
+    let nameSize = 8.8;
+    doc.font("Helvetica-Bold").fontSize(nameSize).fillColor(DARK);
+    while (doc.widthOfString(registrarName) > signatureWidth - 10 && nameSize > 6.5) {
+      nameSize = Math.max(6.5, nameSize - 0.3);
+      doc.fontSize(nameSize);
+    }
+    doc.text(registrarName, registrarX, sigY - 15.5, {
+      width: signatureWidth, height: 12, align: "center", lineBreak: false, ellipsis: true,
+    });
+  }
+  [[M + 42, "STUDENT SIGNATURE"], [registrarX, "UNIVERSITY REGISTRAR"]].forEach(([x, label]) => {
+    doc.moveTo(x, sigY).lineTo(x + signatureWidth, sigY).strokeColor(LINE).lineWidth(0.6).stroke();
+    doc.font("Helvetica-Bold").fontSize(8.6)
+      .text(label, x, sigY + 5, { width: signatureWidth, align: "center" });
   });
   doc.font("Helvetica").fontSize(7.8)
     .text("Date: ___________________", M + 55, sigY + 25)
