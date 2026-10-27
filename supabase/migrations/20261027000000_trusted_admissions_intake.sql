@@ -1,5 +1,22 @@
 -- Trusted PLP Admissions intake. This migration is for reviewed deployment only.
 -- It does not create Supabase Auth users or official enrollments.
+ALTER TABLE public.admission_handoffs
+  ADD COLUMN IF NOT EXISTS approved_program_track_code text;
+
+DO $migration$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_constraint
+    WHERE conname='admission_handoffs_approved_program_track_code_fkey'
+      AND conrelid='public.admission_handoffs'::regclass
+  ) THEN
+    ALTER TABLE public.admission_handoffs
+      ADD CONSTRAINT admission_handoffs_approved_program_track_code_fkey
+      FOREIGN KEY (approved_program_track_code)
+      REFERENCES public.program_tracks(code) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END
+$migration$;
 CREATE OR REPLACE FUNCTION public.integration_accept_admissions_intake_v1(
   p_applicant_ref text,
   p_full_name text,
@@ -62,7 +79,7 @@ BEGIN
 
   -- Serialize requests per applicant, including retries from Admissions.
   PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('PLP_ADMISSIONS:'||p_applicant_ref,0));
-  SELECT h.student_id,s.student_number,s.program_code,u.id as user_id,u.email,u.full_name,u.role_code,u.is_synthetic_demo
+  SELECT h.student_id,h.approved_program_track_code,s.student_number,s.program_code,u.id as user_id,u.email,u.full_name,u.role_code,u.is_synthetic_demo
   INTO v_existing
   FROM public.admission_handoffs h
   JOIN public.student_profiles s ON s.id=h.student_id
@@ -71,6 +88,7 @@ BEGIN
   IF FOUND THEN
     IF lower(v_existing.email)<>lower(btrim(p_email))
        OR v_existing.program_code<>v_program_code
+       OR v_existing.approved_program_track_code IS DISTINCT FROM v_track_code
        OR v_existing.role_code<>'student'
        OR v_existing.is_synthetic_demo THEN
       RAISE EXCEPTION 'Existing applicant identity conflicts; requires administrator review'
@@ -153,11 +171,11 @@ BEGIN
   ) RETURNING id INTO v_request_id;
 
   INSERT INTO public.admission_handoffs(
-    applicant_reference,student_id,approved_program_code,admission_status,
-    admission_date,admission_type,integration_request_id,synchronization_status,
+    applicant_reference,student_id,approved_program_code,approved_program_track_code,
+    admission_status,admission_date,admission_type,integration_request_id,synchronization_status,
     received_at,source_name
   ) VALUES (
-    p_applicant_ref,v_student_id,v_program_code,'ACCEPTED',p_admission_date,
+    p_applicant_ref,v_student_id,v_program_code,v_track_code,'ACCEPTED',p_admission_date,
     p_admission_type,v_request_id,'Successful',now(),'PLP Admissions'
   );
 
