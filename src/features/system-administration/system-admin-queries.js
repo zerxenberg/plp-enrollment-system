@@ -549,6 +549,16 @@ export async function getSystemIntegrationData() {
   ].forEach(([label, error]) => assertQuery(error, label));
 
   return {
+    bridge: {
+      sourceSystem: "PLP Admissions",
+      destinationSystem: "PLP Enrollment",
+      admissionsDatabaseProject: "eljnvmncuhhfzqqjzlnn",
+      enrollmentDatabaseProject: "iwuphtvlcszziyvqcbsl",
+      sharedSecretConfigured: Boolean(process.env.ENROLLMENT_INTAKE_SECRET),
+      healthEndpointConfigured: Boolean(process.env.PLP_ADMISSIONS_HEALTH_URL),
+      // Without a trusted Admissions-side probe, database connectivity cannot be asserted.
+      connectivity: "Not verified",
+    },
     configurations: (configurationsResult.data || []).map((item) => ({
       ...item,
       updatedAtLabel: formatDateTime(item.updated_at),
