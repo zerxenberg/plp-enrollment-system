@@ -17,6 +17,17 @@ function assertQuery(error, label) {
   }
 }
 
+async function fetchAllRows(queryFactory, label, pageSize = 500) {
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const result = await queryFactory().range(offset, offset + pageSize - 1);
+    assertQuery(result.error, label);
+    rows.push(...(result.data || []));
+    if (!result.data || result.data.length < pageSize) break;
+  }
+  return { data: rows, error: null, count: rows.length };
+}
+
 function formatDateTime(value) {
   if (!value) return "Not recorded";
 
@@ -283,11 +294,14 @@ export async function getUsersAccessData() {
     programsResult,
     activityResult,
   ] = await Promise.all([
-    currentAccountScope(
-      supabase
-        .from("app_users")
-        .select("id,auth_user_id,source_account_key,role_code,full_name,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
-    ).order("full_name"),
+    fetchAllRows(
+      () => currentAccountScope(
+        adminClient
+          .from("app_users")
+          .select("id,auth_user_id,source_account_key,role_code,full_name,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
+      ).order("full_name"),
+      "Load all current operational application users",
+    ),
     supabase
       .from("roles")
       .select("code,name,default_redirect_path,description,is_active")
@@ -330,10 +344,13 @@ export async function getUsersAccessData() {
           .in("user_id", currentUserIds)
           .order("identifier_type")
       : Promise.resolve({ data: [], error: null }),
-    adminClient
-      .from("student_profiles")
-      .select("id,user_id,student_number,program_code,year_level,year_level_number,student_type,student_status,academic_classification,progression_status,current_term_id,current_curriculum_code,record_kind,project_cohort_id,is_synthetic_demo")
-      .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
+    fetchAllRows(
+      () => adminClient
+        .from("student_profiles")
+        .select("id,user_id,student_number,program_code,year_level,year_level_number,student_type,student_status,academic_classification,progression_status,current_term_id,current_curriculum_code,record_kind,project_cohort_id,is_synthetic_demo")
+        .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
+      "Load all current operational student profiles",
+    ),
     adminClient
       .from("project_student_academic_placements")
       .select("student_id,project_cohort_id,term_id,program_code,curriculum_code,year_level,academic_classification,progression_status,home_block_id")
