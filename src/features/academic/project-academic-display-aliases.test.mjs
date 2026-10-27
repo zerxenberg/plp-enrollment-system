@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   displayAcademicReference,
@@ -8,10 +8,20 @@ import {
   displaySubjectCode,
 } from "./project-academic-display-aliases.mjs";
 
-// The existing seeded curriculum manifest is the independent source of the
-// 600 actual identities. No second hardcoded subject codebook is maintained.
-const require = createRequire(import.meta.url);
-const { makePlan } = require("../../../scripts/database-normalization/academic-phase8/curriculum-fictional-seed.cjs");
+// The checked-in deterministic seed SQL is the independent source of the
+// 600 subject identities. Its original generator is not in this repository,
+// so read the persisted JSON manifests rather than inventing a second codebook.
+function makePlan() {
+  const seed = readFileSync(
+    new URL("../../../scripts/database-normalization/academic-phase8/curriculum-fictional-2026.sql", import.meta.url),
+    "utf8",
+  );
+  const manifests = [...seed.matchAll(/\$p8data\$(\[[\s\S]*?\])\$p8data\$/g)]
+    .map((match) => JSON.parse(match[1]));
+  assert.ok(manifests.length >= 3, "The seeded curriculum, subject and placement manifests must exist.");
+  const [curricula, subjects, placements] = manifests;
+  return { curricula, subjects, placements };
+}
 
 test("all 16 protected Phase 8 curricula have unambiguous readable code and name aliases", () => {
   const plan = makePlan();

@@ -1,0 +1,748 @@
+/* Registrar PROJECT_ONLY historical grade workflow.
+   Scoped to this module so the shared portal and other roles keep their styles. */
+
+.workspace {
+  --grade-ink: var(--portal-text, #17241d);
+  --grade-muted: var(--portal-muted, #66756d);
+  --grade-green: var(--portal-green-700, #11844e);
+  --grade-green-dark: var(--portal-green-900, #0a5135);
+  --grade-line: var(--portal-line, #dce7e1);
+  --grade-edge: var(--portal-tab-edge, rgba(83, 145, 110, .3));
+  --grade-ring: rgba(14, 124, 70, .7);
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  color: var(--grade-ink);
+  line-height: 1.5;
+}
+
+.workspace,
+.workspace *,
+.workspace *::before,
+.workspace *::after {
+  box-sizing: border-box;
+}
+
+/* The stage chooser and its active content are independent surfaces. */
+.stepNav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--portal-tab-gap, 9px);
+  min-width: 0;
+  margin-bottom: var(--portal-tab-content-gap, 24px);
+  padding: 12px;
+  border: 1px solid var(--grade-edge);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(230, 245, 235, .9), rgba(255, 255, 255, .93));
+  box-shadow: 0 9px 24px rgba(20, 92, 55, .085), inset 0 1px 0 rgba(255, 255, 255, .93);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.stepButton {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 78px;
+  padding: 15px 16px 19px;
+  border: 1px solid #cdded3;
+  border-radius: 11px;
+  color: #395748;
+  background: rgba(255, 255, 255, .91);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color var(--portal-motion, 200ms ease),
+    border-color var(--portal-motion, 200ms ease),
+    box-shadow var(--portal-motion, 200ms ease),
+    transform var(--portal-motion, 200ms ease);
+}
+
+.stepButton::after {
+  position: absolute;
+  inset: auto 0 0;
+  height: 4px;
+  border-radius: 0 0 10px 10px;
+  background: var(--grade-green);
+  content: "";
+  opacity: 0;
+  transition: opacity var(--portal-motion, 200ms ease);
+}
+
+.stepNumber {
+  display: inline-grid;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid #c2dfcc;
+  border-radius: 10px;
+  color: var(--grade-green-dark);
+  background: #e7f5ec;
+  font-size: .84rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepText {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  font-size: .9rem;
+  font-weight: 760;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.stepDescription {
+  display: block;
+  color: var(--grade-muted);
+  font-size: .72rem;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.stepButton.stepActive,
+.stepButton[aria-current="step"],
+.stepButton[aria-selected="true"] {
+  border-color: rgba(19, 126, 73, .56);
+  color: var(--grade-green-dark);
+  background: linear-gradient(175deg, #e3f5e9 0%, #f5fcf7 95%);
+  box-shadow: 0 4px 13px rgba(15, 113, 66, .12), inset 0 1px 0 rgba(255, 255, 255, .93);
+}
+
+.stepButton.stepActive::after,
+.stepButton[aria-current="step"]::after,
+.stepButton[aria-selected="true"]::after {
+  opacity: 1;
+}
+
+.stepButton.stepActive .stepNumber,
+.stepButton[aria-current="step"] .stepNumber,
+.stepButton[aria-selected="true"] .stepNumber {
+  border-color: #137b49;
+  color: #fff;
+  background: var(--grade-green-dark);
+}
+
+.stepButton.stepActive .stepDescription,
+.stepButton[aria-current="step"] .stepDescription,
+.stepButton[aria-selected="true"] .stepDescription {
+  color: #355e46;
+}
+
+.stepButton:focus-visible {
+  outline: 3px solid var(--grade-ring);
+  outline-offset: 3px;
+  z-index: 1;
+}
+
+.stepButton:disabled,
+.stepButton[aria-disabled="true"] {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.stepButton:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.stepPanel {
+  min-width: 0;
+  width: 100%;
+  padding: clamp(20px, 2vw, 24px);
+  border: 1px solid rgba(118, 160, 135, .32);
+  border-top-color: rgba(255, 255, 255, .9);
+  border-radius: var(--portal-radius, 16px);
+  color: var(--grade-ink);
+  background: linear-gradient(145deg, rgba(255, 255, 255, .98), rgba(246, 252, 248, .96));
+  box-shadow: 0 12px 28px rgba(24, 74, 49, .085), inset 0 1px 0 rgba(255, 255, 255, .93);
+}
+
+.stepPanel:focus-visible {
+  outline: 3px solid var(--grade-ring);
+  outline-offset: 3px;
+}
+
+.sectionIntro {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e1ebe5;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--grade-green-dark);
+  font-size: clamp(1.04rem, 1.5vw, 1.2rem);
+  font-weight: 780;
+  letter-spacing: -.012em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.sectionSubtitle {
+  max-width: 78ch;
+  margin: 0;
+  color: #5b7063;
+  font-size: .83rem;
+  line-height: 1.55;
+}
+
+.contextBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid #cce3d4;
+  border-radius: 12px;
+  color: #2c503a;
+  background: linear-gradient(125deg, rgba(230, 247, 235, .86), rgba(248, 253, 249, .9));
+  font-size: .8rem;
+  line-height: 1.5;
+}
+
+.contextBar > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.contextBar strong {
+  color: var(--grade-green-dark);
+  font-weight: 750;
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin-block: 16px 20px;
+}
+
+.summaryMetric {
+  display: flex;
+  min-width: 0;
+  min-height: 106px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 11px;
+  padding: 17px 18px;
+  border: 1px solid #d8e7de;
+  border-radius: 12px;
+  background: rgba(250, 253, 251, .93);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .96);
+}
+
+.summaryMetric :is(span, p, small) {
+  margin: 0;
+  color: #5a6e62;
+  font-size: .75rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.summaryMetric strong {
+  color: #174d31;
+  font-size: clamp(1.22rem, 1.75vw, 1.58rem);
+  font-weight: 790;
+  letter-spacing: -.025em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.twoColumns,
+.reviewGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+  min-width: 0;
+}
+
+.twoColumns > *,
+.reviewGrid > * {
+  min-width: 0;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px 18px;
+  min-width: 0;
+  margin-block: 14px 16px;
+}
+
+.fieldGrid > * {
+  min-width: 0;
+}
+
+.fieldGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  color: #375343;
+  font-size: .8rem;
+  font-weight: 690;
+  line-height: 1.45;
+}
+
+.fieldGrid :is(input:not([type="checkbox"]), select, textarea) {
+  width: 100%;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #cdded3;
+  border-radius: 10px;
+  color: #1e3327;
+  background: #fff;
+  font: inherit;
+  font-size: .8rem;
+}
+
+.fieldGrid textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.fieldGrid :is(input, select, textarea):focus-visible {
+  outline: 3px solid var(--grade-ring);
+  outline-offset: 2px;
+  border-color: var(--grade-green);
+}
+
+.fieldGrid :is(input, select, textarea):disabled {
+  cursor: not-allowed;
+  opacity: .66;
+}
+
+.fieldGrid :is(input, select, textarea):read-only:not(select) {
+  background: #f3f8f5;
+}
+
+.actionBar,
+.secondaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 16px;
+}
+
+.actionBar > *,
+.secondaryActions > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.actionBar button,
+.secondaryActions button {
+  min-height: 44px;
+}
+
+.secondaryActions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.helperText {
+  margin-block: 8px 12px;
+  color: var(--grade-muted);
+  font-size: .78rem;
+  font-weight: 450;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.helperText strong {
+  color: #345b45;
+}
+
+.tableWrap {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 12px;
+}
+
+.tableWrap :global(.table-scroll) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tableWrap :global(.data-table .status-badge) {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-overflow: clip;
+}
+
+.tableWrap :global(.data-table th),
+.tableWrap :global(.data-table td) {
+  vertical-align: middle;
+}
+
+.emptyMessage {
+  display: grid;
+  min-height: 118px;
+  place-items: center;
+  padding: 20px;
+  border: 1px dashed #cadae0;
+  border-radius: 12px;
+  color: #586c60;
+  background: rgba(247, 251, 248, .9);
+  font-size: .82rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.subSection {
+  min-width: 0;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e2ece6;
+}
+
+.subSection > :first-child {
+  margin-top: 0;
+}
+
+/* Give the release summary, action and any blocked-state messages
+   individual breathing room without affecting grade publication logic. */
+.releaseSection {
+  margin-top: 30px;
+  padding-top: 26px;
+}
+
+.releaseSection > .sectionTitle {
+  margin-bottom: 18px;
+}
+
+.releaseContent {
+  display: grid;
+  align-items: start;
+  gap: 18px;
+  min-width: 0;
+}
+
+.releaseContent > .releaseNotice,
+.releaseContent > .releaseWarning,
+.releaseSection > .releaseNotice {
+  margin: 0;
+  padding: 15px 17px;
+  line-height: 1.6;
+}
+
+.releaseActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.releaseActions button {
+  min-height: 44px;
+}
+
+.releaseSection + .subSection {
+  margin-top: 30px;
+  padding-top: 26px;
+}
+
+.progressBar {
+  display: block;
+  width: 100%;
+  height: 12px;
+  min-height: 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  color: var(--grade-green);
+  background: #deeee3;
+  accent-color: var(--grade-green);
+  appearance: none;
+}
+
+.progressBar::-webkit-progress-bar {
+  border-radius: 999px;
+  background: #deeee3;
+}
+
+.progressBar::-webkit-progress-value {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #36af70, #11844e);
+}
+
+.progressBar::-moz-progress-bar {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #36af70, #11844e);
+}
+
+.progressBar > * {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #36af70, #11844e);
+}
+
+.compactNotice {
+  min-width: 0;
+  margin-block: 12px;
+  padding: 12px 14px;
+  border: 1px solid #d4e6db;
+  border-left: 3px solid var(--grade-green);
+  border-radius: 10px;
+  color: #395346;
+  background: #f3faf6;
+  font-size: .79rem;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.compactNotice[role="alert"] {
+  border-color: #e5d3a5;
+  border-left-color: #b2791b;
+  color: #654916;
+  background: #fff9e9;
+}
+
+.compactNotice p,
+.emptyMessage p {
+  margin: 0;
+}
+
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 18px;
+  min-width: 0;
+  padding-block: 12px;
+  border-bottom: 1px solid #e5eee9;
+  font-size: .8rem;
+  line-height: 1.5;
+}
+
+.statusRow > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.statusRow strong {
+  color: #244d34;
+  font-weight: 750;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stepButton:hover:not(:disabled):not([aria-disabled="true"]):not(.stepActive):not([aria-current="step"]):not([aria-selected="true"]) {
+    border-color: rgba(21, 138, 80, .55);
+    color: var(--grade-green-dark);
+    background: #eef8f1;
+    box-shadow: 0 5px 12px rgba(24, 74, 49, .1);
+    transform: translateY(-1px);
+  }
+
+  .fieldGrid :is(input:not([type="checkbox"]), select, textarea):hover:not(:disabled) {
+    border-color: rgba(19, 132, 78, .45);
+  }
+}
+
+@media (max-width: 1100px) {
+  .summaryRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .twoColumns,
+  .reviewGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .stepNav {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: 18px;
+  }
+
+  .stepButton {
+    min-height: 66px;
+    padding: 11px 14px 15px;
+  }
+
+  .stepPanel {
+    padding: 20px;
+  }
+
+  .fieldGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 440px) {
+  .stepNav {
+    padding: 8px;
+  }
+
+  .stepPanel {
+    padding: 20px;
+  }
+
+  .stepNumber {
+    width: 31px;
+    height: 31px;
+    flex-basis: 31px;
+  }
+
+  .stepText {
+    font-size: .85rem;
+  }
+
+  .summaryRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summaryMetric {
+    min-height: 88px;
+    padding: 14px 15px;
+  }
+
+  .contextBar {
+    padding: 12px 14px;
+  }
+
+  .actionBar,
+  .secondaryActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .actionBar > *,
+  .secondaryActions > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  .actionBar button,
+  .secondaryActions button {
+    width: 100%;
+  }
+
+  .releaseSection {
+    margin-top: 24px;
+    padding-top: 22px;
+  }
+
+  .releaseContent {
+    gap: 16px;
+  }
+
+  .releaseActions button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepButton,
+  .stepButton::after {
+    transition: none;
+  }
+
+  .stepButton:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .stepNav,
+  .stepPanel,
+  .summaryMetric,
+  .contextBar,
+  .emptyMessage,
+  .compactNotice,
+  .statusRow {
+    border-color: CanvasText;
+    color: CanvasText;
+    background: Canvas;
+    box-shadow: none;
+  }
+
+  .stepButton {
+    border-color: ButtonText;
+    color: ButtonText;
+    background: ButtonFace;
+    box-shadow: none;
+  }
+
+  .stepButton.stepActive,
+  .stepButton[aria-current="step"],
+  .stepButton[aria-selected="true"] {
+    border: 2px solid Highlight;
+    color: Highlight;
+    background: Canvas;
+  }
+
+  .stepButton::after {
+    background: Highlight;
+  }
+
+  .stepButton .stepNumber {
+    border-color: ButtonText;
+    color: ButtonText;
+    background: ButtonFace;
+  }
+
+  .stepButton:focus-visible,
+  .stepPanel:focus-visible,
+  .fieldGrid :is(input, select, textarea):focus-visible {
+    outline-color: Highlight;
+  }
+
+  .progressBar {
+    border: 1px solid CanvasText;
+  }
+}
+
+@media print {
+  .stepNav {
+    display: none;
+  }
+
+  .stepPanel {
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  .summaryMetric,
+  .contextBar {
+    box-shadow: none;
+  }
+}

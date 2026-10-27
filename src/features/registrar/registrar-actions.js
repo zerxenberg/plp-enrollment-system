@@ -113,6 +113,31 @@ export async function performProjectEnrollmentAction(payload) {
   }
 }
 
+export async function recoverRegistrarLegacyProjectEnrollment(payload) {
+  try {
+    await requireRole("registrar");
+    const studentId = payload?.studentId;
+    const reason = String(payload?.reason || "").trim();
+    if (!studentId || reason.length < 20 || reason.length > 1000) {
+      return failure("A detailed recovery explanation of at least 20 characters is required.");
+    }
+    const client = await createClient();
+    const { data, error } = await client.rpc("project_phase8_recover_legacy_registration_v1", {
+      p_student_id: studentId,
+      p_reason: reason,
+    });
+    if (error || data?.project_only !== true || data.recovered !== true ||
+        data.student_id !== studentId || data.status !== "RETURNED") {
+      return failure("Legacy demonstration enrollment recovery was not authorized or the record no longer qualifies.");
+    }
+    for (const route of ["/registrar/enrollment", "/registrar/dashboard",
+      "/student/dashboard", "/student/enrollment", "/student/class-schedule"]) revalidatePath(route);
+    return success("Legacy project confirmation was preserved in audit history and enrollment was returned for a new student registration.", data);
+  } catch (error) {
+    return failure(messageFromError(error, "Authorized project enrollment recovery was rejected."));
+  }
+}
+
 export async function confirmProjectEnrollmentBatch(studentIds, sourceReference) {
   try {
     await requireRole("registrar");

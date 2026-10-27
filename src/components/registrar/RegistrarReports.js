@@ -90,6 +90,7 @@ export default function RegistrarReports({ reportsData }) {
               <Metric label="Visible Students" value={reportsData.students.length} hint="Current student records" />
               <Metric label="Official Enrollments" value={reportsData.officialEnrollments.length} hint="Official enrollment records" />
               <Metric label="Demonstration Enrollments" value={reportsData.projectEnrollments.length} hint="Demonstration enrollment records" />
+              <Metric label="Project Grade Import Batches" value={(reportsData.gradeBatches || []).length} hint="Persisted project source batches" />
             </div>
 
             <Panel
@@ -157,7 +158,7 @@ export default function RegistrarReports({ reportsData }) {
                     { key: "program_code", label: "Program" },
                     { key: "home_block", label: "Block" },
                     { key: "current_term_id", label: "Academic Term", render: (row) => termMap.get(row.current_term_id) || row.current_term_id },
-                    { key: "status", label: "Simulation Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={titleStatus(row.status)} /> },
+                    { key: "status", label: "Project Status", render: (row) => <StatusBadge value={row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Enrolled (Project)" : titleStatus(row.status)} /> },
                   ]}
                 />
               ) : null}
@@ -179,8 +180,24 @@ export default function RegistrarReports({ reportsData }) {
 
 
 
-              <div className="notice" style={{ marginTop: 14 }}>
-                Grade Import History is currently unavailable from this report.
+              <div style={{ marginTop: 20 }}>
+                <h3>Project Grade Import History</h3>
+                {reportsData.gradeHistoryAvailable ? (
+                  <DataTable
+                    rowKey="id"
+                    rows={reportsData.gradeBatches || []}
+                    emptyMessage="No project grade source batches have been staged yet."
+                    columns={[
+                      { key: "source_system", label: "Record Source" },
+                      { key: "term_id", label: "Prior Term" },
+                      { key: "subject_code", label: "Subject" },
+                      { key: "file_name", label: "Source File" },
+                      { key: "row_count", label: "Rows" },
+                      { key: "status", label: "Review Status", render: (row) => <StatusBadge value={row.status} /> },
+                      { key: "publication_reference", label: "Project Release", render: (row) => row.publication_reference || "Pending" },
+                    ]}
+                  />
+                ) : <p role="status">Authorized grade import history is unavailable.</p>}
               </div>
             </Panel>
           </>

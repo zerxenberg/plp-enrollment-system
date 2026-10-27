@@ -10,6 +10,7 @@ import {
 import { Details, Panel } from "./RegistrarShared";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import RegistrarGradeUploadPicker from "./RegistrarGradeUploadPicker";
+import RegistrarProjectGradeWorkspace from "@/features/grade-import/RegistrarProjectGradeWorkspace";
 import {
   previewRegistrarGradeImport,
   publishRegistrarGradeImport,
@@ -63,8 +64,26 @@ function statusLabel(status) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function GradeSourceSelector({ value, onChange }) {
+  return <div className="summary-strip" style={{ alignItems: "center", gap: 14, padding: "10px 14px", marginBottom: 12 }}>
+    <label className="field" style={{ flex: "0 1 430px", minWidth: "min(100%, 260px)" }}>
+      <span>Grade Record Type</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="PROJECT_ONLY">Project demonstration grades (PROJECT_ONLY)</option>
+        <option value="INSTITUTIONAL">Official university grades (INSTITUTIONAL)</option>
+      </select>
+    </label>
+    <p style={{ flex: "1 1 240px", color: "var(--portal-muted)", fontSize: ".74rem", lineHeight: 1.5 }}>
+      {value === "PROJECT_ONLY"
+        ? "Practice records only. These uploads never change official student grades."
+        : "Official academic records. Importing and publishing requires verified institutional evidence."}
+    </p>
+  </div>;
+}
+
 export default function RegistrarGradeImports({ data, historyOnly = false }) {
-  const contexts = data.gradeImportContexts || [];
+  const contexts = useMemo(() => data.gradeImportContexts || [], [data.gradeImportContexts]);
+  const [sourceKind, setSourceKind] = useState("PROJECT_ONLY");
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState(null);
   const [academicYear, setAcademicYear] = useState(NONE);
@@ -259,8 +278,17 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
     });
   }
 
+  if (sourceKind === "PROJECT_ONLY") {
+    return <>
+      <GradeSourceSelector value={sourceKind} onChange={setSourceKind} />
+      <RegistrarProjectGradeWorkspace historyOnly={historyOnly} />
+    </>;
+  }
+
   if (historyOnly) {
     return (
+      <>
+      <GradeSourceSelector value={sourceKind} onChange={setSourceKind} />
       <Panel
         title="Grade Import History"
         subtitle="Review previously imported and published grade files."
@@ -278,11 +306,13 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
           <div className="detail-row"><span>Corrections / Revisions</span><strong>Unavailable</strong></div>
         </div>
       </Panel>
+      </>
     );
   }
 
   return (
     <>
+      <GradeSourceSelector value={sourceKind} onChange={setSourceKind} />
       <Panel
         title="Official Grades Import"
         subtitle="Upload one official XLSX or CSV grade file for each subject section from the selected academic term."

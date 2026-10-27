@@ -107,13 +107,13 @@ export default function RegistrarStudents({ studentsData }) {
     <>
       <PageHeader
         title="Students"
-        description="Current 2026 demonstration block sections, student rosters, and official grade processing."
+        description="Current 2026 demonstration block sections, student rosters, and grade imports."
       />
 
       <InternalTabs
         items={[
           { value: "blocks", label: "Block Section Student List" },
-          { value: "grades", label: "Official Grades Import" },
+          { value: "grades", label: "Import Grades" },
           { value: "history", label: "Grade Import History" },
         ]}
         selected={tab}

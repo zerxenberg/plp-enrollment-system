@@ -34,7 +34,7 @@ export default function RegistrarAcademic({ academicData }) {
   const [selectedKind, setSelectedKind] = useState("");
 
   const programMap = new Map(academicData.programs.map((item) => [item.code, item]));
-  const subjectMap = new Map(academicData.subjects.map((item) => [item.code, item]));
+  const subjectMap = useMemo(() => new Map(academicData.subjects.map((item) => [item.code, item])), [academicData.subjects]);
   const termMap = new Map(academicData.terms.map((item) => [item.id, item.label || item.id]));
 
   const referenceRows = useMemo(() => {
@@ -63,7 +63,7 @@ export default function RegistrarAcademic({ academicData }) {
     return academicData.curricula
       .filter((item) => `${item.code} ${item.name || ""} ${item.program_code}`.toLowerCase().includes(search.toLowerCase()) && (program === ALL || item.program_code === program) && (status === ALL || item.status === status))
       .map((item) => ({ ...item, rowKind: "Curriculum" }));
-  }, [academicData, referenceType, search, program, curriculum, year, status]);
+  }, [academicData, referenceType, search, program, curriculum, year, status, subjectMap]);
 
   const blockRows = academicData.blocks.filter((item) =>
     `${item.code} ${item.program_code} ${item.curriculum_code}`.toLowerCase().includes(search.toLowerCase()) &&

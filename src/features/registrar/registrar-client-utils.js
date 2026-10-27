@@ -47,7 +47,10 @@ export function registrarDebug(level, area, message, details = null) {
 
 export function registrarResultDebug(result, area = "Action") {
   if (typeof window === "undefined" || !result) return;
-  const level = result.ok ? "info" : "error";
+  // Expected, safely returned action refusals are not runtime exceptions.
+  // Next.js development overlays console.error calls even for valid
+  // fail-closed validations such as a missing COR registration snapshot.
+  const level = result.ok ? "info" : "warn";
   const label = `[Registrar][${result.debug?.scope || area}][${level.toUpperCase()}]`;
   console.groupCollapsed(`${label} ${result.message || "Registrar action result"}`);
   if (result.debug) console[level]("Technical details", result.debug);

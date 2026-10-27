@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   Button, DataTable, FilterControl, InternalTabs, Modal, PageHeader,
@@ -11,9 +12,12 @@ import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoor
 import { displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { getTrackCode } from "@/features/block-planning/block-planning-seed";
 import { getMeetingConflict, summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
+import { activateReadyProjectClassSections } from "@/features/academic/project-section-activation-actions";
 import { Details, Feedback, Metric } from "@/components/registrar/RegistrarShared";
 
 const TABS = [{ value: "sections", label: "Sections" }, { value: "schedules", label: "Class Schedule" }];
+const SYNTHETIC_PLANNING_URL = "/academic-coordinator/sections-schedules?dataset=synthetic";
+const ACTIVATION_FEEDBACK_KEY = "plp-coordinator-verified-demo-activation-feedback";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_NAMES = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 const YEARS = [1, 2, 3, 4];
@@ -96,6 +100,32 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const [transferReason, setTransferReason] = useState("");
   const [feedback, setFeedback] = useState(null);
   const [formError, setFormError] = useState("");
+  const [activationRunning, setActivationRunning] = useState(false);
+
+  useEffect(() => {
+    if (isLive && (query.get("dataset") === "synthetic") !== isSyntheticDemo) {
+      // The provider chooses its dataset on mount, not on query-only navigation.
+      window.location.reload();
+    }
+  }, [isLive, isSyntheticDemo, query]);
+
+  useEffect(() => {
+    if (!isSyntheticDemo) return;
+    let active = true;
+    try {
+      const message = window.sessionStorage.getItem(ACTIVATION_FEEDBACK_KEY);
+      if (message) {
+        Promise.resolve().then(() => {
+          if (!active) return;
+          window.sessionStorage.removeItem(ACTIVATION_FEEDBACK_KEY);
+          setFeedback({ message, warning: false });
+        });
+      }
+    } catch {
+      // Activation feedback remains optional when browser storage is disabled.
+    }
+    return () => { active = false; };
+  }, [isSyntheticDemo]);
 
   const section = sections.find((item) => item.id === sectionId);
   const meeting = meetings.find((item) => item.id === meetingId);
@@ -172,6 +202,28 @@ export default function AcademicCoordinatorSectionsSchedules() {
     && !confirmedRecord(item) && count(item.id) < Number(item.capacity)) : [];
 
   function close() { setDialog(""); setFormError(""); }
+  async function activateDemoTimetables() {
+    if (!isLive || !isSyntheticDemo || activationRunning) return;
+    setActivationRunning(true);
+    try {
+      const answer = await activateReadyProjectClassSections();
+      setFeedback({ message: answer.message, warning: !answer.ok });
+      if (answer.ok) {
+        try {
+          window.sessionStorage.setItem(ACTIVATION_FEEDBACK_KEY, answer.message);
+        } catch {
+          // Reload still refreshes the synthetic dataset without session storage.
+        }
+        // The Coordinator provider does not expose refresh in its context.
+        // Reload to re-fetch the explicitly selected synthetic dataset.
+        window.location.reload();
+      }
+    } catch {
+      setFeedback({ warning: true, message: "Verified classroom timetable activation was not completed." });
+    } finally {
+      setActivationRunning(false);
+    }
+  }
   async function result(response, fallback) {
     try {
       const outcome = await response;
@@ -276,8 +328,19 @@ export default function AcademicCoordinatorSectionsSchedules() {
     <div className="block-planning">
       <PageHeader title="Sections & Schedules" description="Plan block sections, student assignments, subject classes and weekly meeting times across academic terms." />
       <InternalTabs items={TABS} selected={tab} onSelect={(value) => { setTab(value); close(); setFeedback(null); }} label="Sections and class schedule navigation" panelCard>
-      <p className="portal-demo-caption block-note"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Planning (Read Only)" : isLive ? "Live Academic Planning" : "Demo Planning"}</strong> · Proposed block assignments and planned schedules are separate from Registrar-confirmed enrollment.</p>
+      <p className="portal-demo-caption block-note"><strong>{isSyntheticDemo ? "Supabase Synthetic Demo Planning" : isLive ? "Live Academic Planning" : "Demo Planning"}</strong> · Proposed block assignments and planned schedules are separate from Registrar-confirmed enrollment.</p>
         {feedback && <Feedback message={feedback.message} warning={feedback.warning} />}
+        {isLive && !isSyntheticDemo ? <div className="notice" role="note" style={{ marginBlock: 12 }}>
+          <strong>Project demonstration section activation</strong>
+          <p>Activate verified fictional sections for student enrollment from the separate synthetic dataset. This view remains focused on live academic planning.</p>
+          <Link className="portal-button portal-button-secondary" href={SYNTHETIC_PLANNING_URL}>Open Synthetic Demo Planning</Link>
+        </div> : null}
+        {isLive && isSyntheticDemo ? <div className="action-row" style={{ marginBlock: 12, justifyContent: "flex-end" }}>
+          <span>Only validated fictional blocks are activated. Draft and institutional sections stay unchanged.</span>
+          <Button disabled={activationRunning} onClick={activateDemoTimetables}>
+            {activationRunning ? "Activating verified sections..." : "Activate Verified Demo Sections"}
+          </Button>
+        </div> : null}
         <div className="toolbar block-filters">
           <SearchControl value={search} onChange={setSearch} label="Search block sections" placeholder="Search block, program or major" />
           <FilterControl label="College" value={college} onChange={(value) => { setCollege(value); setProgram("ALL"); }}

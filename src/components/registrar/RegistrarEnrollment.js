@@ -21,10 +21,12 @@ import {
   confirmProjectEnrollmentBatch,
   loadRegistrarProjectEnrollmentDetail,
   performProjectEnrollmentAction,
+  recoverRegistrarLegacyProjectEnrollment,
   readRegistrarOfficialCOR,
   readRegistrarProjectCOR,
 } from "@/features/registrar/registrar-actions";
 import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
+import { projectEnrollmentDisplayStatus } from "@/features/registrar/registrar-project-enrollment-view.mjs";
 
 const ALL = "ALL";
 const PROJECT = "PROJECT";
@@ -197,8 +199,12 @@ export default function RegistrarEnrollment({ enrollmentData }) {
     if (recordType === PROJECT) {
       const action = decisionType;
       run(
-        () =>
-          performProjectEnrollmentAction({
+        () => action === "RECOVER"
+          ? recoverRegistrarLegacyProjectEnrollment({
+            studentId: selectedCase.student_id,
+            reason: decisionValue,
+          })
+          : performProjectEnrollmentAction({
             studentId: selectedCase.student_id,
             action,
             reason: decisionValue,
@@ -443,7 +449,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
                 {
                   key: "status",
                   label: "Status",
-                  render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed (Demonstration)" : titleStatus(row.status)} />,
+                  render: (row) => <StatusBadge value={row.status} label={projectEnrollmentDisplayStatus(row) || titleStatus(row.status)} />,
                 },
                 {
                   key: "confirmed",
@@ -508,7 +514,7 @@ export default function RegistrarEnrollment({ enrollmentData }) {
               { key: "studentName", label: "Student Name", render: (row) => recordType === PROJECT ? row.full_name : row.studentName },
               { key: "program_code", label: "Program" },
               { key: "block", label: "Block", render: (row) => recordType === PROJECT ? row.home_block : row.currentBlock },
-              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status === "CONFIRMED_SIMULATION" ? "CONFIRMED" : row.status} label={row.status === "CONFIRMED_SIMULATION" ? "Confirmed (Demonstration)" : titleStatus(row.status)} /> },
+              { key: "status", label: "Status", render: (row) => <StatusBadge value={row.status} label={projectEnrollmentDisplayStatus(row) || titleStatus(row.status)} /> },
             ]}
           />
         ) : null}
@@ -534,14 +540,18 @@ export default function RegistrarEnrollment({ enrollmentData }) {
               <Button variant="ghost" onClick={() => setSelectedCase(null)}>Close</Button>
               {recordType === PROJECT ? (
                 <>
-                  {selectedCase.status === "SUBMITTED" ? <Button onClick={() => startDecision("VALIDATE")}>Validate</Button> : null}
+                  {selectedCase.status === "SUBMITTED" && projectDetail?.selectedSubjectCount > 0 ?
+                    <Button onClick={() => startDecision("VALIDATE")}>Validate</Button> : null}
                   {selectedCase.status === "VALIDATED" ? (
                     <>
                       <Button variant="secondary" onClick={() => startDecision("RETURN")}>Return for Correction</Button>
                       <Button onClick={() => startDecision("CONFIRM")}>Confirm Demonstration</Button>
                     </>
                   ) : null}
-                  {selectedCase.status === "CONFIRMED_SIMULATION" ? <Button onClick={() => openProjectCor(selectedCase)}>View COR</Button> : null}
+                  {selectedCase.status === "CONFIRMED_SIMULATION" && projectDetail?.corReady === true ?
+                    <Button onClick={() => openProjectCor(selectedCase)}>View COR</Button> : null}
+                  {selectedCase.status === "CONFIRMED_SIMULATION" && projectDetail?.legacyConfirmationWithoutRegistration ?
+                    <Button variant="secondary" onClick={() => startDecision("RECOVER")}>Recover Legacy Enrollment</Button> : null}
                 </>
               ) : (
                 <>
@@ -570,21 +580,42 @@ export default function RegistrarEnrollment({ enrollmentData }) {
                 ["Classification", titleStatus(projectDetail?.snapshot?.academic_classification)],
                 ["Progression", titleStatus(projectDetail?.snapshot?.progression_status)],
                 ["Home Block", projectDetail?.snapshot?.home_block || selectedCase.home_block],
-                ["Enrollment Status", titleStatus(selectedCase.status)],
+                ["Enrollment Status", projectEnrollmentDisplayStatus(selectedCase, projectDetail?.corReady) || titleStatus(selectedCase.status)],
               ]}
             />
 
-            <h3 style={{ marginTop: 18 }}>Eligible Subjects</h3>
+            {selectedCase.status === "CONFIRMED_SIMULATION" &&
+              projectDetail?.legacyConfirmationWithoutRegistration ? (
+                <div className="notice warning" role="status" style={{ marginTop: 16 }}>
+                  This older project simulation was confirmed before registered subjects were saved.
+                  A COR cannot be generated without an authenticated subject registration snapshot.
+                  The original confirmation is preserved. Registrar review and an authorized correction
+                  workflow are required before treating this as a completed registration.
+                </div>
+              ) : null}
+
+            <h3 style={{ marginTop: 22 }}>{selectedCase.status === "SUBMITTED"
+              ? "Student Submitted Subject Registration" : "Saved Enrollment Subject Selection"}</h3>
+            <p style={{ fontSize: ".77rem", color: "#607168", marginBottom: 12 }}>
+              These are the actual student selected subjects saved in Supabase for this
+              enrollment. They are not confirmed registrations until Registrar confirmation.
+            </p>
+            <Details items={[
+              ["Submitted Subjects", projectDetail?.selectedSubjectCount ?? "Not loaded"],
+              ["Submitted Units", projectDetail?.selectedUnits ?? "Not loaded"],
+              ["Registration State", titleStatus(selectedCase.status)],
+            ]} />
             <DataTable
               rowKey="subject_code"
-              rows={projectDetail?.snapshot?.subjects || []}
-              emptyMessage="No project subject eligibility rows are available."
+              rows={projectDetail?.selectedSubjects || []}
+              emptyMessage="No subject selections have been saved for this enrollment."
               columns={[
                 { key: "subject_code", label: "Subject Code" },
-                { key: "subject_name", label: "Subject Name" },
+                { key: "subject_name", label: "Submitted Subject" },
                 { key: "academic_units", label: "Units" },
-                { key: "eligibility", label: "Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> },
-                { key: "reason", label: "Reason", render: (row) => row.reason || "Not available" },
+                { key: "section_code", label: "Selected Section" },
+                { key: "currentEligibility", label: "Current Eligibility", render: (row) =>
+                  <StatusBadge value={row.currentEligibility} /> },
               ]}
             />
 
@@ -655,6 +686,8 @@ export default function RegistrarEnrollment({ enrollmentData }) {
         title={
           decisionType === "VALIDATE"
             ? "Validate Project Enrollment"
+            : decisionType === "RECOVER"
+              ? "Recover Legacy Project Enrollment"
             : decisionType === "RETURN"
               ? "Return Project Enrollment for Correction"
               : recordType === PROJECT
@@ -666,7 +699,8 @@ export default function RegistrarEnrollment({ enrollmentData }) {
           <>
             <Button variant="ghost" onClick={() => setDecisionOpen(false)}>Cancel</Button>
             <Button
-              disabled={isPending || (["RETURN", "CONFIRM"].includes(decisionType) && !decisionValue.trim())}
+              disabled={isPending || (["RETURN", "CONFIRM"].includes(decisionType) && !decisionValue.trim()) ||
+                (decisionType === "RECOVER" && decisionValue.trim().length < 20)}
               onClick={submitDecision}
             >
               {isPending ? "Processing..." : "Confirm Action"}
@@ -692,6 +726,20 @@ export default function RegistrarEnrollment({ enrollmentData }) {
             <textarea value={decisionValue} onChange={(event) => setDecisionValue(event.target.value)} />
           </label>
         ) : null}
+
+        {decisionType === "RECOVER" ? <>
+          <div className="notice warning">
+            This is an audited, project only correction for a confirmed legacy simulation
+            without registered subjects. The original Registrar confirmation and audit
+            history are retained. The student must select subjects and submit again,
+            then receive separate Registrar validation and confirmation.
+          </div>
+          <label className="field full">
+            <span>Recovery explanation (at least 20 characters)</span>
+            <textarea value={decisionValue} maxLength={1000}
+              onChange={(event) => setDecisionValue(event.target.value)} />
+          </label>
+        </> : null}
 
         {decisionType === "CONFIRM" ? (
           <>

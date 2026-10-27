@@ -27,7 +27,7 @@ function validateSelection(files) {
   return null;
 }
 
-export default function RegistrarGradeUploadPicker({ file, onFileSelected, disabled = false }) {
+export default function RegistrarGradeUploadPicker({ file, onFileSelected, disabled = false, projectOnly = false }) {
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
@@ -65,6 +65,10 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
   function receiveFiles(files) {
     const selections = Array.from(files || []);
     const problem = validateSelection(selections);
+    if (!problem && projectOnly && !/\.(xlsx|csv)$/i.test(selections[0]?.name || "")) {
+      setError("Project historical grade sources require an XLSX or CSV file.");
+      return;
+    }
     if (problem) {
       setError(problem);
       return;
@@ -105,7 +109,7 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
   return (
     <>
       <div className={styles.fileField}>
-        <span className={styles.fieldLabel} id="registrar-grade-file-label">Official Grade File (XLSX or CSV)</span>
+        <span className={styles.fieldLabel} id="registrar-grade-file-label">{projectOnly ? "Grade File (Excel .xlsx or CSV)" : "Official Grade File (XLSX or CSV)"}</span>
         <div className={styles.fileRow} aria-labelledby="registrar-grade-file-label">
           <button type="button" className={styles.chooseButton} onClick={openPicker} disabled={disabled} aria-haspopup="dialog">
             Choose File
@@ -118,7 +122,9 @@ export default function RegistrarGradeUploadPicker({ file, onFileSelected, disab
       {open && createPortal(
         <div className={styles.modalScope}>
           <Modal open={open} title="Upload Grade File" onClose={close} footer={<div className={styles.modalFooter}><Button type="button" variant="secondary" onClick={close}>Cancel</Button></div>}>
-            <p className={styles.description}>Upload one XLSX or CSV file for one official subject section. The file will be previewed and validated before publication.</p>
+            <p className={styles.description}>{projectOnly
+              ? "Choose one Excel (.xlsx) file with a Grades worksheet, or a CSV file, for the selected historical subject. You can review the grades before they are saved."
+              : "Upload one XLSX or CSV file for one official subject section. The file will be previewed and validated before publication."}</p>
             <div
               className={`${styles.dropZone} ${dragging ? styles.dragging : ""} ${error ? styles.invalid : ""}`}
               onDragEnter={onDragEnter}

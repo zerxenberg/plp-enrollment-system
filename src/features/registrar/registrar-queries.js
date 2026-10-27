@@ -1,6 +1,14 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requireRole } from "@/lib/auth/require-role";
+import { loadStudentPublishedReadiness } from "@/features/students/student-published-readiness-server";
+import {
+  currentProjectEnrollmentSubjects,
+  hasVerifiedProjectCor,
+  verifiedRegistrarSelectedSubjects,
+} from "./registrar-project-enrollment-view.mjs";
 
 const PROJECT_TERM_ID = "TERM-2026-1";
 const PROJECT_COHORT_ID = "PLP_PROJECT_600_2026_1";
@@ -684,6 +692,7 @@ export async function getRegistrarStudentsData() {
 }
 
 export async function getRegistrarEnrollmentData() {
+  await requireRole("registrar");
   const supabase = await createClient();
 
   const [
@@ -711,6 +720,16 @@ export async function getRegistrarEnrollmentData() {
   );
   const project = mapProjectQueue(projectQueueRaw, projectBlockMap);
   const profileMap = new Map(profiles.map((row) => [row.id, row]));
+
+  const officialAppUserIds = [...new Set(officialRows.map((row) =>
+    profileMap.get(row.student_id)?.user_id).filter(Boolean))];
+  const officialNamesResult = officialAppUserIds.length
+    ? await createAdminClient().from("app_users").select("id,full_name")
+      .in("id", officialAppUserIds)
+    : { data: [], error: null };
+  assertQuery(officialNamesResult.error, "Load authorized institutional student names");
+  const officialNames = new Map((officialNamesResult.data || [])
+    .map((user) => [user.id, user.full_name]));
 
   const officialStudentIds = [
     ...new Set(officialRows.map((row) => row.student_id).filter(Boolean)),
@@ -838,7 +857,7 @@ export async function getRegistrarEnrollmentData() {
     return {
       ...row,
       studentNumber: profile?.student_number || "Not available",
-      studentName: "Not available",
+      studentName: officialNames.get(profile?.user_id) || "Not available",
       academicClassification: profile?.academic_classification || "Not available",
       currentBlock: block?.code || "Not available",
       targetBlock: block?.code || "Not available",
@@ -885,7 +904,12 @@ export async function getRegistrarEnrollmentData() {
 
 
 export async function getRegistrarAcademicData() {
+  // Project planning rows are intentionally hidden by Coordinator-focused RLS.
+  // The Registrar needs a read-only view of the same verified project schedule.
+  // Require the business role before using the server-only privileged reader.
+  await requireRole("registrar");
   const supabase = await createClient();
+  const projectReader = createAdminClient();
 
   const [curriculaResult, termResult, projectBlocks] = await Promise.all([
     supabase
@@ -948,7 +972,7 @@ export async function getRegistrarAcademicData() {
 
   const blockIds = projectBlocks.map(({ block }) => block.id);
   const blockLinks = await loadRowsByInChunks(
-    supabase,
+    projectReader,
     "block_subject_sections",
     "block_id,section_id,created_at",
     "block_id",
@@ -958,7 +982,7 @@ export async function getRegistrarAcademicData() {
 
   const linkedSectionIds = [...new Set(blockLinks.map((row) => row.section_id).filter(Boolean))];
   const rawSections = await loadRowsByInChunks(
-    supabase,
+    projectReader,
     "sections",
     "id,source_system,source_key,term_id,subject_code,section_code,capacity,status,schedule_status,is_synthetic_demo,created_at,updated_at",
     "id",
@@ -977,7 +1001,7 @@ export async function getRegistrarAcademicData() {
 
   const sectionIds = sections.map((row) => row.id);
   const [meetingsResult, sectionInstructors] = await Promise.all([
-    supabase
+    projectReader
       .from("section_meetings")
       .select("id,section_id,day_of_week,start_time,end_time,room_id,display_time,meeting_status,is_synthetic_demo,synthetic_source_key,meeting_component_type,meeting_contact_minutes")
       .eq("is_synthetic_demo", true)
@@ -985,7 +1009,7 @@ export async function getRegistrarAcademicData() {
       .order("day_of_week")
       .order("start_time"),
     loadRowsByInChunks(
-      supabase,
+      projectReader,
       "section_instructors",
       "section_id,instructor_id,assignment_role,created_at",
       "section_id",
@@ -1013,7 +1037,7 @@ export async function getRegistrarAcademicData() {
 
   const [rawInstructors, rawRooms] = await Promise.all([
     loadRowsByInChunks(
-      supabase,
+      projectReader,
       "instructors",
       "id,display_name,is_synthetic_demo,synthetic_source_key",
       "id",
@@ -1021,7 +1045,7 @@ export async function getRegistrarAcademicData() {
       "display_name",
     ),
     loadRowsByInChunks(
-      supabase,
+      projectReader,
       "rooms",
       "id,room_code,building_name,is_active,is_synthetic_demo,synthetic_source_key",
       "id",
@@ -1113,8 +1137,9 @@ export async function getRegistrarAcademicData() {
 
 
 export async function getRegistrarReportsData() {
+  await requireRole("registrar");
   const supabase = await createClient();
-  const [studentsData, enrollmentData, activityResult] = await Promise.all([
+  const [studentsData, enrollmentData, activityResult, projectGradeHistory] = await Promise.all([
     getRegistrarStudentsData(),
     getRegistrarEnrollmentData(),
     supabase
@@ -1123,17 +1148,23 @@ export async function getRegistrarReportsData() {
       .eq("actor_role_code", "registrar")
       .order("occurred_at", { ascending: false })
       .limit(1000),
+    createAdminClient().from("project_grade_import_batches")
+      .select("id,project_cohort_id,block_id,term_id,target_term_id,subject_code,source_system,file_name,row_count,status,source_reference,created_at,verified_at,published_at,publication_reference")
+      .eq("project_cohort_id", PROJECT_COHORT_ID)
+      .order("created_at", { ascending: false })
+      .limit(1000),
   ]);
 
   assertQuery(activityResult.error, "Load Registrar activity history");
+  assertQuery(projectGradeHistory.error, "Load protected project grade import reporting history");
 
   return {
     students: studentsData.students,
     groups: studentsData.groups,
     officialEnrollments: enrollmentData.official,
     projectEnrollments: enrollmentData.project,
-    gradeBatches: [],
-    gradeHistoryAvailable: false,
+    gradeBatches: projectGradeHistory.data || [],
+    gradeHistoryAvailable: true,
     terms: enrollmentData.terms,
     programs: enrollmentData.programs,
     // The existing data_quality_issues table is a historical normalization
@@ -1223,19 +1254,122 @@ export async function getRegistrarProfileData(userId) {
 }
 
 export async function getRegistrarProjectEnrollmentDetail(studentId) {
+  await requireRole("registrar");
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("project_phase8_student_snapshot_v2", {
     p_student_id: studentId,
   });
   assertQuery(error, "Load protected project student snapshot");
+  if (data?.project_only !== true || data.verified_institutionally !== false ||
+      data.data_origin !== "GENERATED_PROJECT" || data.term_id !== PROJECT_TERM_ID) {
+    throw new Error("Protected project student information could not be verified.");
+  }
+  const admin = createAdminClient();
+  const [profileResult, placementResult, termResult, simulationResult] = await Promise.all([
+    admin.from("student_profiles")
+      .select("id,student_number,student_type,record_kind,project_cohort_id")
+      .eq("id", studentId).maybeSingle(),
+    admin.from("project_student_academic_placements")
+      .select("student_id,curriculum_code,term_id,year_level,academic_classification,progression_status,home_block_id,project_cohort_id")
+      .eq("student_id", studentId).eq("term_id", PROJECT_TERM_ID).maybeSingle(),
+    admin.from("academic_terms").select("id,semester")
+      .eq("id", PROJECT_TERM_ID).maybeSingle(),
+    // This protected role-scoped queue provides the simulation state without
+    // granting the service_role direct access to the enrollment ledger.
+    supabase.rpc("project_phase8_registrar_simulation_queue_v1"),
+  ]);
+  for (const [result, label] of [
+    [profileResult, "student"], [placementResult, "placement"],
+    [termResult, "term"], [simulationResult, "registration"],
+  ]) assertQuery(result.error, `Load project ${label} for Registrar review`);
+  const profile = profileResult.data;
+  const placement = placementResult.data;
+  const term = termResult.data;
+  if (simulationResult.data?.fictional_only !== true ||
+      simulationResult.data?.verified_institutionally !== false ||
+      !Array.isArray(simulationResult.data.records)) {
+    throw new Error("Protected Registrar project enrollment records could not be verified.");
+  }
+  const matchingSimulations = (simulationResult.data?.records || []).filter((row) =>
+    row.student_id === studentId && row.term_id === PROJECT_TERM_ID);
+  if (matchingSimulations.length > 1) {
+    throw new Error("More than one current project registration requires Registrar review.");
+  }
+  const simulation = matchingSimulations[0] || null;
+  if (!profile || profile.id !== studentId || profile.record_kind !== "PROJECT_ONLY" ||
+      profile.project_cohort_id !== PROJECT_COHORT_ID ||
+      profile.student_number !== data.student_number || !placement ||
+      placement.project_cohort_id !== PROJECT_COHORT_ID ||
+      placement.curriculum_code !== data.curriculum_code ||
+      (simulation && placement.home_block_id !== simulation.home_block_id) ||
+      placement.year_level !== data.year_level || !term ||
+      (simulation && (simulation.source_provenance !== "GENERATED_PROJECT" ||
+        simulation.verified_institutionally !== false))) {
+    throw new Error("Registrar project placement and registration records do not match.");
+  }
+  const curriculumResult = await admin.from("curriculum_subjects")
+    .select("subject_code")
+    .eq("curriculum_code", placement.curriculum_code)
+    .eq("year_level_number", placement.year_level)
+    .eq("semester", term.semester);
+  assertQuery(curriculumResult.error, "Load current project semester subjects");
+  const currentTermCodes = new Set((curriculumResult.data || []).map((row) => row.subject_code));
+  const published = await loadStudentPublishedReadiness({
+    admin, studentId, studentType: profile.student_type,
+  }, PROJECT_TERM_ID, placement.curriculum_code, currentTermCodes);
+  const currentSubjects = currentProjectEnrollmentSubjects(
+    data.subjects, currentTermCodes, published.subjectDecisions);
+  // Unlike generated eligibility rows, this protected Registrar RPC reads
+  // the actual immutable subject selections saved on Student SUBMIT.
+  // It never grants the browser direct access to the subject snapshot table.
+  const { data: selectedResult, error: selectedError } = await supabase.rpc(
+    "project_phase8_registrar_selected_subjects_v1", { p_student_id: studentId });
+  assertQuery(selectedError, "Load protected submitted project subject selection");
+  const selectedSubjects = verifiedRegistrarSelectedSubjects(
+    selectedResult, studentId, simulation, currentTermCodes, published.subjectDecisions);
+
+  // Reuse the same authorization-controlled RPC as the actual COR action.
+  // A legacy CONFIRMED_SIMULATION with no registered subjects must not be
+  // promoted into a certificate merely because it has a confirmation date.
+  let corReady = false;
+  let legacyConfirmationWithoutRegistration = false;
+  if (simulation?.status === "CONFIRMED_SIMULATION" && simulation.confirmed_at) {
+    const { data: cor, error: corError } = await supabase.rpc(
+      "project_phase8_demonstration_cor_v1", { p_simulation_id: simulation.id });
+    if (corError) {
+      // The RPC intentionally rejects a confirmed legacy simulation without
+      // registered subjects. All other errors should not masquerade as a
+      // missing registration snapshot.
+      if (corError.code === "23514" &&
+          /(?:subject snapshot|meeting snapshot) is incomplete/i.test(corError.message || "")) {
+        legacyConfirmationWithoutRegistration = true;
+      } else {
+        throw new Error("The protected project registration document could not be verified.");
+      }
+    } else {
+      corReady = hasVerifiedProjectCor(simulation, cor);
+    }
+  }
   return {
-    snapshot: data,
+    snapshot: {
+      ...data,
+      academic_classification: published.readiness.classification,
+      progression_status: placement.progression_status,
+      subjects: currentSubjects,
+    },
+    academicReadiness: published.readiness,
+    selectedSubjects,
+    selectedSubjectCount: selectedSubjects.length,
+    selectedUnits: selectedSubjects.reduce((total, row) => total + Number(row.academic_units), 0),
+    corReady,
+    legacyConfirmationWithoutRegistration,
     events: null,
     eventHistoryAvailable: false,
   };
 }
 
 export async function getRegistrarStudentRecordDetail(studentId, projectOnly = false) {
+  await requireRole("registrar");
   const supabase = await createClient();
 
   if (projectOnly) {
@@ -1295,11 +1429,17 @@ export async function getRegistrarStudentRecordDetail(studentId, projectOnly = f
     // than failing the entire student record when no admission row is visible.
   }
 
+  const { data: officialOwner, error: ownerError } = await createAdminClient()
+    .from("app_users")
+    .select("id,full_name")
+    .eq("id", profileResult.data.user_id)
+    .maybeSingle();
+  assertQuery(ownerError, "Load authorized institutional student identity");
   return {
     source: "INSTITUTIONAL",
     profile: {
       ...profileResult.data,
-      full_name: "Not available",
+      full_name: officialOwner?.full_name || "Not available",
     },
     admission: handoffResult.data || null,
     officialEnrollments: (enrollmentsResult.data || []).map((row) => ({

@@ -16,6 +16,10 @@ import { Tabs, Details, Feedback, Info } from "@/components/registrar/RegistrarS
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { loadAuthorizedAcademicReviewCases } from "@/features/academic/academic-review-cases";
+import {
+  loadProjectGradeCorrectionReviews,
+  decideProjectGradeCorrection,
+} from "@/features/grade-import/project-grade-correction-review-actions";
 import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import {
   ACADEMIC_REVIEW_STATUS,
@@ -24,6 +28,31 @@ import {
 } from "@/features/academic/academic-review-workflow";
 
 const ALL = "ALL";
+const PROJECT_GRADE_VIEW = "project-grade-corrections";
+const PROJECT_GRADE_DECISION_LABELS = {
+  APPROVE_IMPORTED: "Approve Imported Grade",
+  REJECT_IMPORTED: "Reject Imported Grade",
+};
+
+function gradeDisplay(value) {
+  return value === null || value === undefined || value === "" ? "Not recorded" : String(value);
+}
+
+function gradeReviewSubject(request) {
+  return displaySubjectCode(request.subject_code || "Not recorded");
+}
+
+function gradeReviewStudent(request) {
+  return request.student_number || "Not recorded";
+}
+
+function gradeReviewSource(request) {
+  return request.source_reference || request.file_name || request.batch_id || "Not recorded";
+}
+
+function gradeReviewPending(request) {
+  return request.status === "REQUESTED";
+}
 const RESOLVED_DECISIONS = new Set([
   ACADEMIC_REVIEW_STATUS.APPROVED,
   ACADEMIC_REVIEW_STATUS.REJECTED,
@@ -106,6 +135,17 @@ export default function AcademicCoordinatorAcademicReview() {
   const { registrar, catalog, blockPlanning, decideAcademicReview } = useDemoData();
   const [officialCases, setOfficialCases] = useState({ rows: [], loading: true, error: "" });
   const [view, setView] = useState("pending");
+  const [gradeReviewQueue, setGradeReviewQueue] = useState({ requests: [], loading: true, error: "" });
+  const [gradeReviewRefresh, setGradeReviewRefresh] = useState(0);
+  const [gradeSearch, setGradeSearch] = useState("");
+  const [gradeReviewSelected, setGradeReviewSelected] = useState(null);
+  const [gradeReviewDecision, setGradeReviewDecision] = useState("");
+  const [gradeReviewReason, setGradeReviewReason] = useState("");
+  const [gradeReviewEvidence, setGradeReviewEvidence] = useState("");
+  const [gradeReviewConfirmed, setGradeReviewConfirmed] = useState(false);
+  const [gradeReviewBusy, setGradeReviewBusy] = useState(false);
+  const [gradeReviewError, setGradeReviewError] = useState("");
+  const [gradeReviewFeedback, setGradeReviewFeedback] = useState("");
   const [search, setSearch] = useState("");
   const [programFilter, setProgramFilter] = useState(ALL);
   const [subjectFilter, setSubjectFilter] = useState(ALL);
@@ -137,6 +177,40 @@ export default function AcademicCoordinatorAcademicReview() {
       });
     return () => { cancelled = true; };
   }, [isOfficial, registrar.enrollments, blockPlanning.students]);
+
+  useEffect(() => {
+    // Fetch immediately on mount so the correction tab never advertises a
+    // misleading zero before the protected Academic Coordinator read runs.
+    let active = true;
+    loadProjectGradeCorrectionReviews()
+      .then((response) => {
+        if (!active) return;
+        if (!response?.ok || !Array.isArray(response.data?.requests)) {
+          setGradeReviewQueue({ requests: [], loading: false,
+            error: response?.message || "Protected project grade correction requests could not be loaded." });
+          return;
+        }
+        setGradeReviewQueue({ requests: response.data.requests, loading: false, error: "" });
+      })
+      .catch(() => {
+        if (active) setGradeReviewQueue({ requests: [], loading: false,
+          error: "Protected grade correction reviews could not be loaded. Try refreshing this tab." });
+      });
+    return () => { active = false; };
+  }, [gradeReviewRefresh]);
+
+  const filteredGradeReviews = useMemo(() => {
+    const query = gradeSearch.trim().toLowerCase();
+    if (!query) return gradeReviewQueue.requests;
+    return gradeReviewQueue.requests.filter((request) => [
+      request.id, gradeReviewStudent(request), request.student_name,
+      gradeReviewSubject(request), request.status, request.reason,
+      request.source_reference, request.file_name, request.source_checksum,
+      request.batch_id, request.review_reference,
+    ].some((value) => String(value ?? "").toLowerCase().includes(query)));
+  }, [gradeReviewQueue.requests, gradeSearch]);
+
+  const pendingGradeReviewCount = gradeReviewQueue.requests.filter(gradeReviewPending).length;
 
   const reviewCases = isOfficial ? officialCases.rows : registrar.enrollments;
 
@@ -214,8 +288,67 @@ export default function AcademicCoordinatorAcademicReview() {
 
   function changeView(nextView) {
     setView(nextView);
+    if (nextView === PROJECT_GRADE_VIEW && !gradeReviewQueue.loading) {
+      // Revisiting this tab checks for new Registrar requests and decisions.
+      setGradeReviewQueue((previous) => ({ ...previous, loading: true, error: "" }));
+      setGradeReviewRefresh((count) => count + 1);
+    }
     clearFilters();
     setFeedback({ message: "", warning: false });
+  }
+
+  function openGradeReview(request) {
+    if (!gradeReviewPending(request)) return;
+    setGradeReviewSelected(request);
+    setGradeReviewDecision("");
+    setGradeReviewReason("");
+    setGradeReviewEvidence("");
+    setGradeReviewConfirmed(false);
+    setGradeReviewError("");
+    setGradeReviewFeedback("");
+  }
+
+  function closeGradeReview() {
+    if (gradeReviewBusy) return;
+    setGradeReviewSelected(null);
+    setGradeReviewDecision("");
+    setGradeReviewReason("");
+    setGradeReviewEvidence("");
+    setGradeReviewConfirmed(false);
+    setGradeReviewError("");
+  }
+
+  async function confirmGradeReview() {
+    if (gradeReviewBusy || !gradeReviewSelected || !gradeReviewPending(gradeReviewSelected)) return;
+    if (!["APPROVE_IMPORTED", "REJECT_IMPORTED"].includes(gradeReviewDecision) ||
+        gradeReviewReason.trim().length < 15 || gradeReviewReason.trim().length > 2000 ||
+        gradeReviewEvidence.trim().length < 8 || gradeReviewEvidence.trim().length > 240 || !gradeReviewConfirmed) {
+      setGradeReviewError("Select a decision, enter a reason (15–2,000 characters), add an evidence reference (8–240 characters), and confirm the historical grade effect.");
+      return;
+    }
+    setGradeReviewBusy(true);
+    setGradeReviewError("");
+    try {
+      const response = await decideProjectGradeCorrection(
+        gradeReviewSelected.id, gradeReviewDecision, gradeReviewReason.trim(), gradeReviewEvidence.trim(),
+      );
+      if (!response?.ok) {
+        setGradeReviewError(response?.message || "The protected correction decision was rejected. Refresh the review record.");
+        return;
+      }
+      setGradeReviewFeedback(response.message || "Project grade correction decision recorded. Refreshing the protected review queue.");
+      setGradeReviewSelected(null);
+      setGradeReviewDecision("");
+      setGradeReviewReason("");
+      setGradeReviewEvidence("");
+      setGradeReviewConfirmed(false);
+      setGradeReviewQueue((previous) => ({ ...previous, loading: true, error: "" }));
+      setGradeReviewRefresh((count) => count + 1);
+    } catch {
+      setGradeReviewError("The correction decision could not be saved. No successful decision has been confirmed; refresh the queue before retrying.");
+    } finally {
+      setGradeReviewBusy(false);
+    }
   }
 
   function closeDialog() {
@@ -305,6 +438,15 @@ export default function AcademicCoordinatorAcademicReview() {
 
       {isOfficial && officialCases.loading && <p role="status">Loading authorized academic review cases...</p>}
       {isOfficial && officialCases.error && <p role="alert" className="notice warning">{officialCases.error}</p>}
+      <p className="notice" style={{ marginBottom: 14 }}>
+        Pending and Resolved Reviews are enrollment academic exceptions. Historical PROJECT_ONLY grade corrections have a separate review queue and count.
+      </p>
+      {!gradeReviewQueue.loading && gradeReviewQueue.error ? (
+        <p className="notice warning" role="alert" style={{ marginBottom: 14 }}>
+          Project Grade Corrections could not be loaded: {gradeReviewQueue.error}
+          {" "}<Button variant="secondary" onClick={() => changeView(PROJECT_GRADE_VIEW)}>Open correction reviews and retry</Button>
+        </p>
+      ) : null}
 
       <Tabs
         selected={view}
@@ -313,10 +455,49 @@ export default function AcademicCoordinatorAcademicReview() {
         title="Academic Review Queue"
         subtitle={isLive ? "Decisions are recorded in the academic database. Official enrollment confirmation belongs to the Registrar." : "Decisions update this demo session only. Official enrollment confirmation belongs to the Registrar."}
         items={[
-          { value: "pending", label: `Pending Reviews (${pendingCases.length})` },
-          { value: "resolved", label: `Resolved Reviews (${resolvedCases.length})` },
+          { value: "pending", label: `Pending Reviews (${isOfficial && officialCases.loading ? "Loading…" : pendingCases.length})` },
+          { value: "resolved", label: `Resolved Reviews (${isOfficial && officialCases.loading ? "Loading…" : resolvedCases.length})` },
+          { value: PROJECT_GRADE_VIEW, label: `Project Grade Corrections (${gradeReviewQueue.loading ? "Loading…" : gradeReviewQueue.error ? "Unavailable" : pendingGradeReviewCount})` },
         ]}
       >
+        {view === PROJECT_GRADE_VIEW ? (
+          <section aria-label="Protected project grade correction review queue">
+            <p className="notice" style={{ marginBottom: 14 }}>
+              Review only PROJECT_ONLY fictional historical grade discrepancies. Approving an imported grade explicitly changes its protected fictional academic result. Rejecting it requires the Registrar to cancel and reupload an accurate grade source. Official institutional grades are not decided here.
+            </p>
+            <div className="toolbar">
+              <SearchControl label="Search project grade correction requests" value={gradeSearch}
+                onChange={setGradeSearch} placeholder="Search student, subject, source or request status" />
+              <Button variant="secondary" disabled={gradeReviewBusy || gradeReviewQueue.loading}
+                onClick={() => {
+                  setGradeReviewQueue((previous) => ({ ...previous, loading: true, error: "" }));
+                  setGradeReviewRefresh((count) => count + 1);
+                }}>Refresh Requests</Button>
+            </div>
+            {gradeReviewFeedback ? <p className="notice" role="status">{gradeReviewFeedback}</p> : null}
+            {gradeReviewQueue.error ? <p className="notice warning" role="alert">{gradeReviewQueue.error}</p> : null}
+            <div className="summary-strip" role="status" aria-live="polite" style={{ marginBottom: 14 }}>
+              <span><strong>{filteredGradeReviews.length}</strong> of {gradeReviewQueue.requests.length} correction requests displayed</span>
+              <span><strong>{pendingGradeReviewCount}</strong> awaiting an Academic Coordinator decision</span>
+            </div>
+            <DataTable rowKey="id" rows={filteredGradeReviews}
+              emptyMessage={gradeReviewQueue.loading ? "Loading protected grade corrections..." : gradeReviewQueue.error ? "Correction requests are unavailable." : "No project grade correction requests match this search."}
+              columns={[
+                { key: "student", label: "Student Number", render: gradeReviewStudent },
+                { key: "subject", label: "Historical Subject", render: gradeReviewSubject },
+                { key: "previous", label: "Existing Grade", render: (request) => `${gradeDisplay(request.previous_grade)} (${gradeDisplay(request.previous_status)})` },
+                { key: "proposed", label: "Imported Grade", render: (request) => `${gradeDisplay(request.proposed_grade)} (${gradeDisplay(request.proposed_status)})` },
+                { key: "source", label: "Source Reference", render: gradeReviewSource },
+                { key: "reason", label: "Request Reason", render: (request) => request.reason || "Not recorded" },
+                { key: "checksum", label: "Source SHA256", render: (request) => request.source_checksum || "Not recorded" },
+                { key: "status", label: "Status", render: (request) => <StatusBadge value={request.status} /> },
+                { key: "actions", label: "Action", render: (request) => gradeReviewPending(request) ? (
+                  <TableActions><TableActionButton tone="review" onClick={() => openGradeReview(request)}>Review Correction</TableActionButton></TableActions>
+                ) : "Decision recorded" },
+              ]}
+            />
+          </section>
+        ) : <>
         <div className="toolbar">
           <SearchControl
             value={search}
@@ -390,6 +571,7 @@ export default function AcademicCoordinatorAcademicReview() {
             ]}
           />
         )}
+        </>}
       </Tabs>
 
       <Modal
@@ -515,6 +697,76 @@ export default function AcademicCoordinatorAcademicReview() {
           </>
           )
         ) : null}
+      </Modal>
+
+      <Modal
+        open={Boolean(gradeReviewSelected)}
+        title={gradeReviewSelected ? `Project Grade Correction · ${gradeReviewStudent(gradeReviewSelected)} · ${gradeReviewSubject(gradeReviewSelected)}` : "Project Grade Correction"}
+        onClose={closeGradeReview}
+        className="academic-setup-wide-modal academic-review-case-modal"
+        footer={gradeReviewSelected ? <>
+          <Button variant="ghost" disabled={gradeReviewBusy} onClick={closeGradeReview}>Cancel</Button>
+          <Button variant={gradeReviewDecision === "REJECT_IMPORTED" ? "danger" : "primary"}
+            disabled={gradeReviewBusy || !gradeReviewPending(gradeReviewSelected) ||
+              !PROJECT_GRADE_DECISION_LABELS[gradeReviewDecision] ||
+              gradeReviewReason.trim().length < 15 || gradeReviewReason.trim().length > 2000 ||
+              gradeReviewEvidence.trim().length < 8 || gradeReviewEvidence.trim().length > 240 || !gradeReviewConfirmed}
+            onClick={confirmGradeReview}>
+            {gradeReviewBusy ? "Saving Decision..." : `Confirm ${PROJECT_GRADE_DECISION_LABELS[gradeReviewDecision] || "Decision"}`}
+          </Button>
+        </> : null}
+      >
+        {gradeReviewSelected ? <section aria-label="Protected historical grade correction decision">
+          <div className="notice warning" style={{ marginBottom: 14 }} role="status">
+            <strong>PROJECT_ONLY historical grades</strong>
+            <p>Approval explicitly changes the existing fictional historical result to the proposed imported grade through a protected server decision. Rejection preserves the existing grade and requires the Registrar to cancel and reupload a corrected source. Neither action approves official institutional grades.</p>
+          </div>
+          <Details items={[
+            ["Student Number", gradeReviewStudent(gradeReviewSelected)],
+            ["Student Name", gradeReviewSelected.student_name || "Not recorded"],
+            ["Historical Subject", gradeReviewSubject(gradeReviewSelected)],
+            ["Existing Canonical Grade", gradeDisplay(gradeReviewSelected.previous_grade)],
+            ["Existing Completion Status", gradeDisplay(gradeReviewSelected.previous_status)],
+            ["Proposed Imported Grade", gradeDisplay(gradeReviewSelected.proposed_grade)],
+            ["Proposed Completion Status", gradeDisplay(gradeReviewSelected.proposed_status)],
+            ["Registrar Request Reason", gradeReviewSelected.reason || "Not recorded"],
+            ["Grade Source Reference", gradeReviewSource(gradeReviewSelected)],
+            ["Source File", gradeReviewSelected.file_name || "Not recorded"],
+            ["Source SHA256 Checksum", gradeReviewSelected.source_checksum || "Not recorded"],
+            ["Request Status", gradeDisplay(gradeReviewSelected.status)],
+          ]} />
+          <fieldset disabled={gradeReviewBusy} style={{ border: 0, padding: 0, margin: "18px 0" }}>
+            <legend style={{ fontWeight: 700, marginBottom: 8 }}>Academic Coordinator Decision (required)</legend>
+            <label className="field" style={{ flexDirection: "row", alignItems: "flex-start" }}>
+              <input type="radio" name="project-grade-correction-decision" value="APPROVE_IMPORTED"
+                checked={gradeReviewDecision === "APPROVE_IMPORTED"}
+                onChange={() => { setGradeReviewDecision("APPROVE_IMPORTED"); setGradeReviewConfirmed(false); setGradeReviewError(""); }} />
+              Approve imported grade — update the fictional historical grade to the proposed value.
+            </label>
+            <label className="field" style={{ flexDirection: "row", alignItems: "flex-start", marginTop: 10 }}>
+              <input type="radio" name="project-grade-correction-decision" value="REJECT_IMPORTED"
+                checked={gradeReviewDecision === "REJECT_IMPORTED"}
+                onChange={() => { setGradeReviewDecision("REJECT_IMPORTED"); setGradeReviewConfirmed(false); setGradeReviewError(""); }} />
+              Reject imported grade — preserve the historical grade; Registrar must cancel and reupload a correct source.
+            </label>
+          </fieldset>
+          <label className="field full">Reviewer Reason (required, 15–2,000 characters)
+            <textarea value={gradeReviewReason} rows={3} minLength={15} maxLength={2000}
+              disabled={gradeReviewBusy} required placeholder="Explain the academic evidence supporting approval or rejection"
+              onChange={(event) => { setGradeReviewReason(event.target.value); setGradeReviewConfirmed(false); setGradeReviewError(""); }} />
+          </label>
+          <label className="field full" style={{ marginTop: 12 }}>Reviewer Evidence Reference (required, 8–240 characters)
+            <input type="text" value={gradeReviewEvidence} minLength={8} maxLength={240} disabled={gradeReviewBusy} required
+              placeholder="e.g. approved academic record or document reference"
+              onChange={(event) => { setGradeReviewEvidence(event.target.value); setGradeReviewConfirmed(false); setGradeReviewError(""); }} />
+          </label>
+          <label className="field full" style={{ flexDirection: "row", alignItems: "flex-start", marginTop: 16 }}>
+            <input type="checkbox" checked={gradeReviewConfirmed} disabled={gradeReviewBusy || !gradeReviewDecision}
+              onChange={(event) => { setGradeReviewConfirmed(event.target.checked); setGradeReviewError(""); }} />
+            I have checked the student, subject, before/after grade, source checksum and evidence. I understand the effect of this PROJECT_ONLY decision.
+          </label>
+          {gradeReviewError ? <p className="notice warning" role="alert" style={{ marginTop: 12 }}>{gradeReviewError}</p> : null}
+        </section> : null}
       </Modal>
     </>
   );

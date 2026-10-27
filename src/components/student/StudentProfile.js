@@ -204,7 +204,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             <div><dt>Curriculum</dt><dd>{missing(displayCurriculumCode(profile.curriculum))}</dd></div>
             <div><dt>Academic Classification</dt><dd>{classification}</dd></div>
             <div><dt>Enrollment Eligibility</dt><dd>{missing(profile.enrollmentEligibility || (isProject ? "Not yet evaluated" : null))}</dd></div>
-            <div><dt>Enrollment Status</dt><dd>{isProject ? missing(profile.projectEnrollmentStatus === "CONFIRMED_SIMULATION" ? "Confirmed (demo only)" : profile.projectEnrollmentStatus || "Not started (demonstration)") : academicStatus}</dd></div>
+            <div><dt>Enrollment Status</dt><dd>{isProject ? missing(profile.projectEnrollmentStatus === "CONFIRMED_SIMULATION" ? "Enrolled (Project)" : profile.projectEnrollmentStatus || "Not started") : academicStatus}</dd></div>
           </dl>
           {isProject ? <p className={styles.proposedNote}>Program and year are proposed project data only.</p> : null}
         </aside>

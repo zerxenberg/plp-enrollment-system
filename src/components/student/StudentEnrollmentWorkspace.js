@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Button, Card, DataTable, FilterControl, InternalTabs, Modal, PageHeader, SearchControl, StatusBadge, TableActionButton } from "@/components/ui/PortalUI";
 import { submitPreparedProjectEnrollment, getConfirmedProjectDemonstrationCor } from "@/features/students/student-portal-actions";
+import CorDocumentPreview from "@/components/cor/CorDocumentPreview";
 import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { groupMeetingSchedules, formatMeetingSchedule } from "@/features/students/class-meeting-format.mjs";
 
@@ -17,7 +18,7 @@ const ENROLLMENT_REVIEW_LABELS = Object.freeze({
   SUBMITTED: "Submitted",
   VALIDATED: "Validated",
   RETURNED: "Returned",
-  CONFIRMED_SIMULATION: "Confirmed (demo only)",
+  CONFIRMED_SIMULATION: "Enrolled (Project)",
   CONFIRMED_FOR_PROJECT_SIMULATION: "Confirmed (demonstration only)",
 });
 
@@ -61,7 +62,8 @@ export default function StudentEnrollmentWorkspace({ data }) {
     semester: data.term.semester,
     program: data.student.program,
     block: data.homeBlock,
-    units: data.proposedUnits,
+    registeredUnits: data.simulation.status === "CONFIRMED_SIMULATION"
+      ? data.confirmedRegistration?.units ?? null : null,
     status: data.simulation.status,
     submittedAt: data.simulation.submittedAt,
   }] : [], [data]);
@@ -72,6 +74,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
     (statusFilter === "ALL" || statusFilter === item.status));
 
   function handleSubmit() {
+    if (!canReview) return;
     setMessage("");
     startTransition(async () => {
       try {
@@ -90,6 +93,9 @@ export default function StudentEnrollmentWorkspace({ data }) {
     startTransition(async () => {
       try {
         const result = await getConfirmedProjectDemonstrationCor();
+        if (result.registration_snapshot_complete !== true) {
+          throw new Error("Registered subjects and class meetings have not been verified.");
+        }
         setCor(result);
       } catch (error) {
         setMessage(error?.message || "The registration demonstration is unavailable.");
@@ -98,15 +104,39 @@ export default function StudentEnrollmentWorkspace({ data }) {
   }
 
   if (data.kind !== "ready") {
+    const recordsUnavailable = data.reason === "records";
     return <><PageHeader title="Enrollment" description="Current Enrollment and Enrollment History" />
-      <Card><div className="notice" role="alert">Your authenticated enrollment data could not be verified. Please sign in again or contact the System Administrator.</div></Card></>;
+      <Card><div className="notice" role="alert">{recordsUnavailable
+        ? "Your enrollment records are temporarily unavailable. Your account has not been identified as the problem. Please try again or contact the System Administrator."
+        : "Your authenticated student account could not be verified. Please sign in again or contact the System Administrator."}</div></Card></>;
   }
 
   const simulationStatus = data.simulation?.status || "NOT_STARTED";
   const locked = ["SUBMITTED", "VALIDATED", "CONFIRMED_SIMULATION"].includes(simulationStatus);
   const isConfirmedSimulation = simulationStatus === "CONFIRMED_SIMULATION";
+  const confirmedRegistration = isConfirmedSimulation ? data.confirmedRegistration : null;
   const selectedCount = data.proposedSubjects.length;
-  const eligibility = data.canSubmit ? "ELIGIBLE" : "NOT_ELIGIBLE";
+  const selectedCodes = new Set(data.proposedSubjects.map((subject) => subject.code));
+  const selectedFees = new Map((data.projectFeeEstimate?.subjects || []).map((subject) =>
+    [subject.code, subject.estimatedFee]));
+  const plannedCount = data.proposedSubjects.filter((subject) => subject.sectionStatus === "PLANNED").length;
+  const allSectionsOpen = selectedCount > 0 && data.proposedSubjects.every((subject) =>
+    subject.sectionStatus === "OPEN");
+  const canReview = data.canSubmit === true && allSectionsOpen && !locked;
+  const unitFeeFor = (item) => selectedCodes.has(item.code)
+    ? (selectedFees.has(item.code) ? formatProjectPeso(selectedFees.get(item.code)) : "Fee unavailable")
+    : "Not in current proposal";
+  const verifiedRate = data.projectFeeEstimate?.ratePerUnit;
+  const rateLabel = typeof verifiedRate === "number" && Number.isFinite(verifiedRate)
+    ? `${formatProjectPeso(verifiedRate)} per unit` : "unit rate not verified";
+  const blockingReasons = data.blockingReasons || [];
+  const hasActivationReason = blockingReasons.some((reason) =>
+    /activate|activation|still PLANNED/i.test(reason));
+  const submissionAvailability = locked ? "Read only after submission"
+    : plannedCount > 0 ? "Awaiting section activation"
+      : canReview ? "Ready for submission" : "Not currently available";
+  const displayedReviewStatus = isConfirmedSimulation && !confirmedRegistration
+    ? "Confirmation Recorded (Details Unverified)" : enrollmentReviewLabel(simulationStatus);
 
   return <>
     <PageHeader title="Enrollment" description="Review your prepared subjects, submit for review, and follow your enrollment progress." />
@@ -117,28 +147,40 @@ export default function StudentEnrollmentWorkspace({ data }) {
           <div className="section-header"><div>
             <h2>Current Enrollment</h2>
             <p>Review the subjects and class meetings prepared for the selected academic term.</p>
-          </div><StatusBadge value={simulationStatus} label={enrollmentReviewLabel(simulationStatus)} /></div>
+          </div><StatusBadge value={simulationStatus} label={displayedReviewStatus} /></div>
 
           <div className="info-grid" style={{ marginTop: 16 }}>
             <Field label="Student" value={`${data.student.name} (${data.student.number})`} />
             <Field label="Program and Curriculum" value={`${data.student.program} · ${displayCurriculumCode(data.student.curriculum)}`} />
             <Field label="Academic Term" value={data.term.label} />
             <Field label="Proposed Home Block" value={data.homeBlock || "No validated block"} />
-            <Field label="Prepared Eligible Subjects" value={String(selectedCount)} />
+            <Field label="Proposed Eligible Subjects" value={String(selectedCount)} />
             <Field label="Proposed Units" value={String(data.proposedUnits)} />
-            <Field label="Estimated Tuition (Demonstration)" value={formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)} />
+            <Field label="Proposed Estimated Tuition" value={formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)} />
+            {isConfirmedSimulation && <>
+              <Field label="Registered Subjects (Project)"
+                value={confirmedRegistration ? String(confirmedRegistration.subjects.length) : "Not verified"} />
+              <Field label="Registered Units (Project)"
+                value={confirmedRegistration ? String(confirmedRegistration.units) : "Not verified"} />
+              <Field label="Registered Estimated Tuition"
+                value={formatProjectPeso(confirmedRegistration?.projectFeeEstimate?.estimatedAmount)} />
+            </>}
             <Field label="Academic Classification" value={<StatusBadge value={data.student.classification || "NOT_VERIFIED"} />} />
-            <Field label="Current Eligibility" value={<StatusBadge value={eligibility} />} />
+            <Field label="Submission Availability" value={submissionAvailability} />
           </div>
 
-          <div className="notice" style={{ marginTop: 16 }}>
-            <strong>Enrollment period:</strong> {data.term.enrollmentStart || "Not configured"} to {data.term.enrollmentEnd || "Not configured"}.
-            {data.term.windowOpen ? " Currently open." : " Currently closed or unavailable."}
-          </div>
-          {data.blockingReasons.map((reason) => <div key={reason} className="notice" role="status" style={{ marginTop: 10 }}>{reason}</div>)}
-          {locked && <div className="notice" role="status" style={{ marginTop: 12 }}>
-            Your submitted demonstration enrollment is read only. The Registrar controls validation, return for correction, and demonstration-only confirmation.
+          {!locked && plannedCount > 0 && !hasActivationReason && <div className="notice warning" role="status" style={{ marginTop: 10 }}>
+            {plannedCount} proposed subject section{plannedCount === 1 ? " is" : "s are"} still PLANNED. The Academic Coordinator must activate {plannedCount === 1 ? "this section" : "these sections"} before enrollment can be submitted.
           </div>}
+          {!locked && blockingReasons.filter((reason) =>
+            reason !== "No currently eligible subjects have open sections and a verified class timetable.")
+            .map((reason) => <div key={reason} className="notice warning" role="status" style={{ marginTop: 10 }}>{reason}</div>)}
+          {isConfirmedSimulation && !confirmedRegistration ? (
+            <div className="notice warning" role="alert" style={{ marginTop: 12 }}>
+              Registration is incomplete. Ask the Registrar to recover this legacy demonstration
+              enrollment, then submit your current eligible subjects again.
+            </div>
+          ) : null}
           {simulationStatus === "RETURNED" && <div className="notice warning" role="status" style={{ marginTop: 12 }}>
             <strong>Returned by Registrar for correction.</strong>
             <p>{data.simulation?.correctionReason || "Please review your prepared enrollment and contact the Registrar for the recorded return reason."}</p>
@@ -147,21 +189,40 @@ export default function StudentEnrollmentWorkspace({ data }) {
 
           <div className="section-header" style={{ marginTop: 22 }}><div>
             <h2>Prepared Subject Registration</h2>
-            <p>Current semester subjects and their actual proposed class sections.</p>
+            <p>Academically eligible subjects with planned or open sections are included in the proposal. Registration requires every proposed section to be OPEN.</p>
           </div></div>
           <DataTable rowKey="code" rows={data.subjects} columns={[
             { key: "code", label: "Subject Code", render: (item) => displaySubjectCode(item.code) },
             { key: "name", label: "Subject Name", render: (item) => displaySubjectCode(item.name) },
             { key: "units", label: "Units" },
+            { key: "unitFee", label: "Estimated Subject Fee", render: unitFeeFor },
             { key: "section", label: "Assigned Section", render: (item) => item.section || "Not assigned" },
-            { key: "meetings", label: "Class Schedule", render: (item) => <ScheduleText meetings={item.meetings} /> },
+            { key: "sectionStatus", label: "Section Status", render: (item) => item.sectionStatus || "Unavailable" },
             { key: "eligibility", label: "Eligibility", render: (item) => <StatusBadge value={item.eligibility} /> },
             { key: "action", label: "Action", render: (item) =>
               <TableActionButton onClick={() => setDetail({ type: "subject", value: item })}>View Details</TableActionButton> },
           ]} />
+          <div className="summary-strip" style={{ marginTop: 18 }}>
+            <span>Estimated Tuition for {selectedCount} Proposed Eligible Subjects ({data.proposedUnits} units at {rateLabel})</span>
+            <strong>{formatProjectPeso(data.projectFeeEstimate?.estimatedAmount)}</strong>
+          </div>
+          <p style={{ marginTop: 8, fontSize: "0.8rem" }}>Fictional classroom estimate only. Planned sections are included in the proposed amount but cannot be registered until activated. This is not an official tuition assessment.</p>
+          {confirmedRegistration && <>
+            <div className="section-header" style={{ marginTop: 22 }}><div>
+              <h2>Registered Subjects (Demonstration)</h2>
+              <p>Preserved from the Registrar confirmed registration snapshot. Reference: {confirmedRegistration.reference}.</p>
+            </div></div>
+            <DataTable rowKey="code" rows={confirmedRegistration.subjects} columns={[
+              { key: "code", label: "Subject Code", render: (item) => displaySubjectCode(item.code) },
+              { key: "name", label: "Subject Name", render: (item) => displaySubjectCode(item.name) },
+              { key: "units", label: "Registered Units" },
+              { key: "section", label: "Registered Section" },
+              { key: "meetings", label: "Registered Class Schedule", render: (item) => <ScheduleText meetings={item.meetings} /> },
+            ]} />
+          </>}
           <div className="action-row" style={{ marginTop: 18 }}>
-            {data.canSubmit ? <Button onClick={() => setReviewOpen(true)} disabled={isPending}>Review Enrollment</Button> : null}
-            {isConfirmedSimulation ? <Button onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
+            {canReview ? <Button onClick={() => setReviewOpen(true)} disabled={isPending}>Review Enrollment</Button> : null}
+            {confirmedRegistration ? <Button onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
           </div>
           {message && <div className="notice" role="status" style={{ marginTop: 12 }}>{message}</div>}
 
@@ -180,11 +241,13 @@ export default function StudentEnrollmentWorkspace({ data }) {
             { key: "academicYear", label: "Academic Year" },
             { key: "semester", label: "Semester" },
             { key: "program", label: "Program and Block", render: (r) => `${r.program} · ${r.block || "Unassigned"}` },
-            { key: "units", label: "Proposed Units" },
-            { key: "status", label: "Review Status", render: (r) => <StatusBadge value={r.status} label={enrollmentReviewLabel(r.status)} /> },
+            { key: "registeredUnits", label: "Registered Units", render: (row) => row.registeredUnits
+              ?? (row.status === "CONFIRMED_SIMULATION" ? "Not verified" : "Not registered") },
+            { key: "status", label: "Review Status", render: (r) => <StatusBadge value={r.status}
+              label={r.status === simulationStatus ? displayedReviewStatus : enrollmentReviewLabel(r.status)} /> },
             { key: "actions", label: "Actions", render: (r) => <TableActionButton onClick={() => setDetail({ type: "history", value: r })}>View Details</TableActionButton> },
           ]} /> : <div className="empty-state"><strong>No enrollment transactions found.</strong><p>Your generated academic placement is separate from an enrollment submission.</p></div>}
-          {isConfirmedSimulation ? <Button variant="secondary" onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
+          {confirmedRegistration ? <Button variant="secondary" onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
           {message && <div className="notice" role="status">{message}</div>}
         </>}
       </InternalTabs>
@@ -195,11 +258,9 @@ export default function StudentEnrollmentWorkspace({ data }) {
       {detail?.type === "subject" ? <div className="detail-list">
         <div className="detail-row"><span>Subject</span><strong>{displaySubjectCode(detail.value.code)} · {displaySubjectCode(detail.value.name)}</strong></div>
         <div className="detail-row"><span>Units</span><strong>{detail.value.units}</strong></div>
-        <div className="detail-row"><span>Estimated Subject Fee</span><strong>{(() => {
-          const selectedFee = data.projectFeeEstimate?.subjects?.find((item) => item.code === detail.value.code);
-          return selectedFee ? formatProjectPeso(selectedFee.estimatedFee) : "Not included in prepared registration";
-        })()}</strong></div>
+        <div className="detail-row"><span>Estimated Subject Fee</span><strong>{unitFeeFor(detail.value)}</strong></div>
         <div className="detail-row"><span>Proposed Section</span><strong>{detail.value.section || "Not assigned"}</strong></div>
+        <div className="detail-row"><span>Section Status</span><strong>{detail.value.sectionStatus || "Unavailable"}</strong></div>
         <div className="detail-row"><span>Eligibility</span><StatusBadge value={detail.value.eligibility} /></div>
         <p>{detail.value.reason || "No additional academic restriction was supplied."}</p>
         {(detail.value.meetings || []).map((meeting, i) => <div className="info-item" key={i}>
@@ -210,11 +271,12 @@ export default function StudentEnrollmentWorkspace({ data }) {
         <Field label="Term" value={`${detail.value.academicYear} · ${detail.value.semester}`} />
         <Field label="Program and Block" value={`${detail.value.program} · ${detail.value.block}`} />
         <Field label="Submitted At" value={detail.value.submittedAt ? new Date(detail.value.submittedAt).toLocaleString() : "Not submitted"} />
-        <Field label="Review Status" value={enrollmentReviewLabel(detail.value.status)} />
+        <Field label="Review Status" value={detail.value.status === simulationStatus
+          ? displayedReviewStatus : enrollmentReviewLabel(detail.value.status)} />
       </div> : null}
     </Modal>
 
-    <Modal open={reviewOpen} title="Review and Submit Enrollment"
+    <Modal open={reviewOpen && canReview} title="Review and Submit Enrollment"
       onClose={() => { if (!isPending) setReviewOpen(false); }} footer={<>
         <Button variant="secondary" disabled={isPending} onClick={() => setReviewOpen(false)}>Cancel</Button>
         <Button disabled={isPending} onClick={handleSubmit}>{isPending ? "Submitting..." : "Confirm Submission"}</Button>
@@ -224,25 +286,9 @@ export default function StudentEnrollmentWorkspace({ data }) {
       {message && <p role="alert">{message}</p>}
     </Modal>
 
-    <Modal open={Boolean(cor)} title="Enrollment Registration Demonstration"
-      onClose={() => setCor(null)} footer={<>
-        <Button variant="secondary" onClick={() => setCor(null)}>Close</Button>
-        <Button onClick={() => window.print()}>Print Demonstration</Button>
-      </>}>
-      {cor ? <div className="detail-list">
-        <div className="notice"><strong>FICTIONAL CLASSROOM DEMONSTRATION ONLY. NOT AN OFFICIAL CERTIFICATE OF REGISTRATION.</strong></div>
-        <div className="detail-row"><span>Student</span><strong>{cor.student?.student_name}</strong></div>
-        <div className="detail-row"><span>Student Number</span><strong>{cor.student?.student_number}</strong></div>
-        <div className="detail-row"><span>Program and Term</span><strong>{cor.student?.program_code} · {cor.student?.term_id}</strong></div>
-        <div className="detail-row"><span>Registrar Review</span><strong>{enrollmentReviewLabel(cor.registration_status)}</strong></div>
-        {(cor.projectFeeEstimate?.subjects || []).map((item) =>
-          <div className="detail-row" key={item.code}>
-            <span>{displaySubjectCode(item.code)} · {displaySubjectCode(item.name)} ({item.units} units)</span>
-            <strong>{formatProjectPeso(item.estimatedFee)}</strong>
-          </div>)}
-        <div className="detail-row"><span>Registered Units (Demonstration)</span><strong>{cor.projectFeeEstimate?.totalUnits ?? "Not available"}</strong></div>
-        <div className="detail-row"><span>Estimated Tuition (Not Official)</span><strong>{formatProjectPeso(cor.projectFeeEstimate?.estimatedAmount)}</strong></div>
-      </div> : null}
-    </Modal>
+    <CorDocumentPreview open={Boolean(cor)}
+      onClose={() => setCor(null)}
+      documentUrl={cor ? "/api/student/project-cor" : null}
+      project />
   </>;
 }

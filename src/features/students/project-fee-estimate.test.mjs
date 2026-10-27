@@ -163,9 +163,12 @@ test("Student backend only: Enrollment and demo COR price from DB; official COR 
   assert.match(corAction, /project_phase8_demonstration_cor_v1/);
   assert.match(corAction, /result\.data\.official !== false/);
   assert.match(corAction, /certificate_of_official_registration !== false/);
-  assert.match(corAction, /selectedProjectSnapshotSubjects\(result\.data\.student\)/);
+  assert.match(corAction, /result\.data\.registration_snapshot_complete !== true/);
+  assert.match(corAction, /result\.data\.registered_subjects\.map\(/);
+  assert.match(corAction, /result\.data\.registered_schedule\.some\(/);
   assert.match(corAction, /loadVerifiedProjectSubjectPrices\(/);
-  assert.match(corAction, /estimateProjectSnapshotSelection\(result\.data\.student, prices\)/);
+  assert.match(corAction, /estimateProjectSelectedSubjects\(selected, prices\)/);
+  assert.doesNotMatch(corAction, /selectedProjectSnapshotSubjects\(result\.data\.student\)/);
   assert.match(official, /\.eq\("status", "CONFIRMED"\)/);
   assert.match(official, /enrollments\?\.length && enrollments\[0\]\.confirmed_at/);
   assert.match(official, /cor\?\.official === true && cor\.schedule_complete === true/);

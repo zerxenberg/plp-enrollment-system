@@ -38,7 +38,32 @@ function studentResults(snapshot) {
     source: "Approved transfer credit",
     note: `Source course: ${item.source_course || "Not recorded"}.`,
   }));
-  return [...grades, ...transfer].sort((a, b) => b.term.localeCompare(a.term) || a.code.localeCompare(b.code));
+  const projectTransfer = (snapshot.projectTransferDecisions || []).map((item, index) => ({
+    key: `project-transfer:${item.target_subject}:${index}`,
+    code: item.target_subject,
+    name: snapshot.curriculum.find((row) => row.code === item.target_subject)?.name || item.target_subject,
+    units: item.decision_status === "PROJECT_CREDITED" ? item.credited_units : null,
+    term: "Project transfer assessment",
+    grade: null,
+    status: item.decision_status,
+    source: "Fictional project transfer decision",
+    note: `Source course: ${item.source_course}. Source institution: ${item.source_institution}. ${item.decision_status === "PROJECT_PENDING" ? "This fictional equivalency remains pending and grants no project credit." : "This is a fictional project credit decision, not institutionally approved transfer credit."}`,
+  }));
+  const acceptedProject = (snapshot.acceptedProjectResults || []).map((item, index) => ({
+    key: `project:${item.term}:${item.subject_code}:${index}`,
+    code: item.subject_code,
+    name: item.subject_name || item.subject_code,
+    units: item.units,
+    term: item.term,
+    grade: item.grade,
+    status: item.result,
+    professor: item.professorProvenance === "PROJECT_FICTIONAL_ASSIGNMENT"
+      ? item.previousSubjectProfessor : null,
+    source: "Accepted project result",
+    note: "This grade was accepted for the project enrollment demonstration. It is not an institutionally verified academic result. Any displayed previous professor is a fictional project assignment, not verified university faculty.",
+  }));
+  return [...grades, ...acceptedProject, ...transfer, ...projectTransfer]
+    .sort((a, b) => b.term.localeCompare(a.term) || a.code.localeCompare(b.code));
 }
 
 function curriculumRows(snapshot) {
@@ -58,15 +83,33 @@ function curriculumRows(snapshot) {
     snapshot.previousResults.filter((item) => item.result === "INCOMPLETE")
       .map((item) => item.subject_code),
   );
+  // The ledger-backed project results may contribute to project curriculum
+  // progress but must remain visibly separate from institutional achievements.
+  const acceptedProject = new Map();
+  for (const item of [...(snapshot.acceptedProjectResults || [])]
+    .sort((a, b) => String(a.term).localeCompare(String(b.term)))) {
+    acceptedProject.set(item.subject_code, item.result);
+  }
+  const projectTransfer = new Map((snapshot.projectTransferDecisions || [])
+    .map((item) => [item.target_subject, item.decision_status]));
   const eligibility = new Map(snapshot.eligibility.map((item) => [item.subject_code, item]));
-  return snapshot.curriculum.map((row) => ({
-    ...row,
-    status: credited.has(row.code) ? "CREDITED" :
+  return snapshot.curriculum.map((row) => {
+    const institutionalStatus = credited.has(row.code) ? "CREDITED" :
       completed.has(row.code) ? "COMPLETED" :
       incomplete.has(row.code) ? "INCOMPLETE" :
-      failed.has(row.code) ? "FAILED" : eligibility.get(row.code)?.eligibility || "NOT_TAKEN",
-    reason: eligibility.get(row.code)?.reason || null,
-  }));
+      failed.has(row.code) ? "FAILED" : null;
+    const projectStatus = acceptedProject.get(row.code);
+    const transferStatus = projectTransfer.get(row.code);
+    return {
+      ...row,
+      status: institutionalStatus || projectStatus || transferStatus ||
+        eligibility.get(row.code)?.eligibility || "NOT_TAKEN",
+      source: institutionalStatus ? "Institutional result or approved credit" :
+        projectStatus ? "Accepted project result" :
+          transferStatus ? "Fictional project transfer decision" : "Enrollment eligibility",
+      reason: eligibility.get(row.code)?.reason || null,
+    };
+  });
 }
 
 export default function StudentAcademicRecords({ mode = "unavailable", snapshot }) {
@@ -105,9 +148,21 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
   const safePage = Math.max(1, Math.min(page, totalPages));
   const pagedRows = currentRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const totalUnits = curriculum.reduce((sum, row) => sum + (Number(row.units) || 0), 0);
-  const completedUnits = curriculum.reduce((sum, row) =>
-    sum + (["COMPLETED", "CREDITED"].includes(row.status) ? Number(row.units) || 0 : 0), 0);
-  const progressPercent = totalUnits ? Math.round(100 * completedUnits / totalUnits) : 0;
+  const institutionalUnits = curriculum.reduce((sum, row) =>
+    sum + (row.source === "Institutional result or approved credit" &&
+      ["COMPLETED", "CREDITED"].includes(row.status) ? Number(row.units) || 0 : 0), 0);
+  const acceptedProjectUnits = curriculum.reduce((sum, row) =>
+    sum + (row.source === "Accepted project result" && row.status === "COMPLETED" ?
+      Number(row.units) || 0 : 0), 0);
+  const projectTransferUnits = curriculum.reduce((sum, row) =>
+    sum + (row.source === "Fictional project transfer decision" &&
+      row.status === "PROJECT_CREDITED" ? Number(row.units) || 0 : 0), 0);
+  const institutionalPercent = totalUnits ? Math.round(100 * institutionalUnits / totalUnits) : 0;
+  const projectPercent = totalUnits ?
+    Math.round(100 * (acceptedProjectUnits + projectTransferUnits) / totalUnits) : 0;
+  const hasProjectGrades = Boolean(snapshot?.acceptedProjectResults?.length);
+  const hasProjectTransfer = Boolean(snapshot?.projectTransferDecisions?.length);
+  const hasProjectProgress = hasProjectGrades || hasProjectTransfer;
 
   return (
     <>
@@ -123,6 +178,12 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
             <span>Curriculum: <strong>{displayCurriculumCode(snapshot.curriculumCode)}</strong></span>
             <span>Year: <strong>{snapshot.yearLevel}</strong></span>
           </div>
+          {hasProjectTransfer && <div className="summary-strip" style={{ marginBottom: 16 }}>
+            <span>Fictional transfer decisions: <strong>{snapshot.projectTransferSummary?.total ?? 0}</strong></span>
+            <span>Project credited: <strong>{snapshot.projectTransferSummary?.projectCredited ?? 0}</strong></span>
+            <span>Project pending: <strong>{snapshot.projectTransferSummary?.projectPending ?? 0}</strong></span>
+            <span>Fictional transfer source: <strong>Not institutionally verified</strong></span>
+          </div>}
           <InternalTabs items={TABS.map((item) => ({ value: item, label: item }))}
             selected={tab} onSelect={(value) => { setTab(value); setStatus("ALL"); setSearch(""); setPage(1); }}
             label="Academic record sections" panelCard>
@@ -140,12 +201,13 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                     options={[{value:"NEWEST",label:"Newest term"},{value:"OLDEST",label:"Oldest term"},{value:"SUBJECT",label:"Subject code"}]} />
                 </div>
                 <DataTable rows={pagedRows} rowKey="key"
-                  emptyMessage="No published grades or approved transfer credits match these filters."
-                  onRowClick={setSelected} rowTitle="View published academic result"
-                  getRowAriaLabel={(row) => `View ${displaySubjectCode(row.code)} published result`}
+                  emptyMessage="No project decisions, accepted project results or published academic records match these filters."
+                  onRowClick={setSelected} rowTitle="View academic result"
+                  getRowAriaLabel={(row) => `View ${displaySubjectCode(row.code)} academic result`}
                   columns={[
                     { key: "code", label: "Code", render: (row) => displaySubjectCode(row.code) },
                     { key: "name", label: "Subject", render: (row) => displaySubjectCode(row.name) },
+                    { key: "professor", label: "Previous Professor (Demo)", render: (row) => row.professor || "Not recorded" },
                     { key: "units", label: "Units", render: (row) => formatUnits(row.units) },
                     { key: "term", label: "Term" },
                     { key: "grade", label: "Grade", render: (row) => row.grade == null ? "Not recorded" : String(row.grade) },
@@ -160,14 +222,25 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
               <>
                 <div className="summary-strip">
                   <span>Assigned curriculum units: <strong>{formatUnits(totalUnits)}</strong></span>
-                  <span>Published completed or credited units: <strong>{formatUnits(completedUnits)}</strong></span>
-                  <span>Verified curriculum progress: <strong>{progressPercent}%</strong></span>
+                  <span>Institutionally completed or credited units: <strong>{formatUnits(institutionalUnits)}</strong></span>
+                  {hasProjectGrades && <span>Accepted project completed units: <strong>{formatUnits(acceptedProjectUnits)}</strong></span>}
+                  {hasProjectTransfer && <span>Fictional project transfer credited units: <strong>{formatUnits(projectTransferUnits)}</strong></span>}
                 </div>
+                <div style={{ marginTop: 12 }}>Institutional curriculum progress: <strong>{institutionalPercent}%</strong></div>
                 <div className="progress-track" style={{ marginTop: 12, marginBottom: 16 }}
-                  role="progressbar" aria-label="Verified curriculum progress"
-                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPercent}>
-                  <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+                  role="progressbar" aria-label="Institutional curriculum progress"
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={institutionalPercent}>
+                  <div className="progress-fill" style={{ width: `${institutionalPercent}%` }} />
                 </div>
+                {hasProjectProgress && <>
+                  <div>Project demonstration curriculum progress: <strong>{projectPercent}%</strong></div>
+                  <div className="progress-track" style={{ marginTop: 12, marginBottom: 16 }}
+                    role="progressbar" aria-label="Project demonstration curriculum progress"
+                    aria-valuemin={0} aria-valuemax={100} aria-valuenow={projectPercent}>
+                    <div className="progress-fill" style={{ width: `${projectPercent}%` }} />
+                  </div>
+                  <div className="notice" style={{ marginBottom: 16 }}>Project progress is fictional and separate from institutional completion. Pending transfer decisions grant no completed credits.</div>
+                </>}
 
                 <div className="toolbar">
                   <SearchControl value={search} onChange={reset(setSearch)} placeholder="Search curriculum subjects" />
@@ -191,6 +264,7 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                     { key: "semester", label: "Semester" },
                     { key: "units", label: "Curriculum Units", render: (row) => formatUnits(row.units) },
                     { key: "status", label: "Academic Progress", render: (row) => <StatusBadge value={row.status} /> },
+                    { key: "source", label: "Provenance" },
                   ]} />
                 {filteredCurriculum.length > PAGE_SIZE && <TablePagination
                   page={safePage} pageSize={PAGE_SIZE} total={filteredCurriculum.length}
@@ -206,17 +280,19 @@ export default function StudentAcademicRecords({ mode = "unavailable", snapshot 
                 <div className="info-grid">
                   <div className="info-item"><span>Subject Code</span><strong>{displaySubjectCode(selected.code)}</strong></div>
                   <div className="info-item"><span>Units</span><strong>{formatUnits(selected.units)}</strong></div>
-                  <div className="info-item"><span>Academic Result Status</span><strong><StatusBadge value={selected.status} /></strong></div>
+                  <div className="info-item"><span>Result or Decision Status</span><strong><StatusBadge value={selected.status} /></strong></div>
                   {"term" in selected ? (
                     <>
                       <div className="info-item"><span>Term</span><strong>{selected.term}</strong></div>
-                      <div className="info-item"><span>Published Grade</span><strong>{selected.grade == null ? "Not recorded" : selected.grade}</strong></div>
+                      <div className="info-item"><span>{selected.source === "Accepted project result" ? "Accepted Project Grade" : selected.source === "Published Registrar result" ? "Published Grade" : "Grade"}</span><strong>{selected.grade == null ? "Not applicable" : selected.grade}</strong></div>
                       <div className="info-item"><span>Source</span><strong>{selected.source}</strong></div>
+                      {selected.professor ? <div className="info-item"><span>Previous Professor (Fictional Demo)</span><strong>{selected.professor}</strong></div> : null}
                     </>
                   ) : (
                     <>
                       <div className="info-item"><span>Year</span><strong>{selected.yearLevel}</strong></div>
                       <div className="info-item"><span>Semester</span><strong>{selected.semester}</strong></div>
+                      <div className="info-item"><span>Source</span><strong>{selected.source}</strong></div>
                     </>
                   )}
                 </div>

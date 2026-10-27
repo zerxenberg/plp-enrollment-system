@@ -1,81 +1,91 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import CorDocumentPreview from "@/components/cor/CorDocumentPreview";
 import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
-import { formatClockTime, formatRoomCode, formatWeekday } from "@/features/students/class-meeting-format.mjs";
+import {
+  buildClassScheduleMeetings, resolveClassScheduleView, scheduledDays, scheduledTimeSlots,
+} from "./student-class-schedule-view.mjs";
 import {
   Button, Card, DataTable, EmptyState, FilterControl, InternalTabs, Modal,
   PageHeader, StatusBadge,
 } from "@/components/ui/PortalUI";
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const TABS = ["Weekly Schedule", "List View"];
 
 function displayValue(value) {
   return value && value !== "NOT_RECORDED_IN_SOURCE" ? value : "Not recorded";
 }
 
-export default function StudentClassSchedule({ mode = "unavailable", officialSchedule }) {
+export default function StudentClassSchedule({
+  mode = "unavailable", officialSchedule, projectSchedule, proposedSchedule,
+}) {
   const [view, setView] = useState(TABS[0]);
   const [dayFilter, setDayFilter] = useState("ALL");
   const [subjectFilter, setSubjectFilter] = useState("ALL");
   const [selected, setSelected] = useState(null);
-  const isConfirmed = mode === "project" && Boolean(officialSchedule?.reference &&
-    officialSchedule?.items?.length);
-
-  const classes = useMemo(() => {
-    if (!isConfirmed) return [];
-    const subjects = new Map(officialSchedule.subjects.map((item) =>
-      [item.subject_code, item]));
-    return officialSchedule.items.map((item, index) => ({
-      key: `${item.subject_code}:${item.day_of_week}:${item.start_time}:${index}`,
-      code: item.subject_code,
-      name: subjects.get(item.subject_code)?.subject_name || item.subject_code,
-      sectionId: subjects.get(item.subject_code)?.section_id || null,
-      units: subjects.get(item.subject_code)?.units ?? null,
-      day: formatWeekday(item.day_of_week),
-      start: formatClockTime(item.start_time),
-      end: formatClockTime(item.end_time),
-      room: formatRoomCode(item.room),
-      instructor: displayValue(item.professor),
-      component: displayValue(item.lecture_lab_type),
-    }));
-  }, [isConfirmed, officialSchedule]);
-
-  const days = [...new Set([
-    ...DAYS.slice(0, 5), ...classes.map((item) => item.day),
-  ])].sort((a, b) => {
-    const aIndex = DAYS.indexOf(a);
-    const bIndex = DAYS.indexOf(b);
-    return (aIndex < 0 ? 7 : aIndex) - (bIndex < 0 ? 7 : bIndex);
+  const [corOpen, setCorOpen] = useState(false);
+  const resolved = resolveClassScheduleView({
+    mode, officialSchedule, projectSchedule, proposedSchedule,
   });
+  const isConfirmed = resolved.kind === "registered";
+  const isProposed = resolved.kind === "proposed";
+  const isProjectDemonstration = resolved.provenance === "demonstration";
+  const corUrl = isConfirmed
+    ? isProjectDemonstration
+      ? "/api/student/project-cor"
+      : resolved.schedule?.enrollmentId
+        ? `/api/student/official-cor/${encodeURIComponent(resolved.schedule.enrollmentId)}`
+        : null
+    : null;
+  const classes = useMemo(() =>
+    buildClassScheduleMeetings(resolved.schedule, resolved.kind),
+  [resolved.schedule, resolved.kind]);
+
+  const days = scheduledDays(classes);
   const visibleDays = dayFilter === "ALL" ? days : days.filter((day) => day === dayFilter);
   const subjects = [...new Map(classes.map((item) =>
     [item.code, { value: item.code, label: `${displaySubjectCode(item.code)} · ${displaySubjectCode(item.name)}` }])).values()];
   const filtered = classes.filter((item) =>
     (dayFilter === "ALL" || item.day === dayFilter) &&
     (subjectFilter === "ALL" || item.code === subjectFilter));
+  const timeSlots = scheduledTimeSlots(filtered);
+  const canShowSchedule = (isConfirmed || isProposed) && classes.length > 0;
 
   return (
     <>
       <PageHeader title="Class Schedule"
-        description="View the personal timetable from your Registrar confirmed enrollment."
-        actions={isConfirmed ?
-          <Button variant="secondary" onClick={() => window.print()}>Print Schedule</Button> : null} />
+        description={isProposed
+          ? "Review your planned weekly timetable while your enrollment awaits Registrar confirmation."
+          : isProjectDemonstration
+            ? "View the timetable preserved from your Registrar confirmed classroom demonstration."
+            : "View the personal timetable from your Registrar confirmed enrollment."}
+        actions={canShowSchedule ? <div className="action-row">
+          {corUrl ? <Button onClick={() => setCorOpen(true)}>View COR</Button> : null}
+          <Button variant="secondary" onClick={() => window.print()}>Print Schedule</Button>
+        </div> : null} />
       {mode === "unavailable" ? (
         <Card><EmptyState title="Class schedule unavailable"
           description="Your authenticated student record could not be verified. Sign in again or contact the System Administrator." /></Card>
-      ) : !isConfirmed ? (
+      ) : !canShowSchedule ? (
         <Card>
-            <EmptyState title="Awaiting confirmed class schedule"
-            description="Your confirmed class schedule will appear after Registrar confirmation. Review proposed classes in Enrollment." />
+          <EmptyState title="Class timetable not yet available"
+            description="Your verified class timetable will appear once your block schedule has been prepared. Registered classes appear only after Registrar confirmation." />
         </Card>
       ) : (
         <>
+          {isProjectDemonstration && <div className="notice" style={{ marginBottom: 12 }}>
+            {isProposed
+              ? "Classroom demonstration only. This timetable is proposed and your classes are not registered. Registrar confirmation is required."
+              : "Academic classroom demonstration only. This registered timetable is not an official PLP enrollment record."}
+          </div>}
           <div className="summary-strip" style={{ marginBottom: 16 }}>
-            <span>Term: <strong>{officialSchedule.term}</strong></span>
-            <span>Confirmation Reference: <strong>{officialSchedule.reference}</strong></span>
-            <span>Status: <StatusBadge value="CONFIRMED" /></span>
+            <span>Term: <strong>{displayValue(resolved.schedule.term)}</strong></span>
+            {resolved.schedule.homeBlock && <span>Block: <strong>{resolved.schedule.homeBlock}</strong></span>}
+            {isConfirmed && <span>{isProjectDemonstration ? "Demonstration Reference" : "Confirmation Reference"}: <strong>{resolved.schedule.reference}</strong></span>}
+            <span>Status: <StatusBadge
+              value={isProposed ? "PROPOSED" : isProjectDemonstration ? "CONFIRMED_SIMULATION" : "CONFIRMED"}
+              label={isProposed ? "Proposed (not registered)" : isProjectDemonstration ? "Registered (demo only)" : "Registered"} /></span>
           </div>
           <InternalTabs items={TABS.map((item) => ({ value: item, label: item }))}
             selected={view} onSelect={setView} label="Class schedule views" panelCard>
@@ -86,45 +96,60 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
               <FilterControl label="Subject" value={subjectFilter} onChange={setSubjectFilter}
                 options={[{ value: "ALL", label: "All subjects" }, ...subjects]} />
             </div>
-            {view === TABS[0] ? (
+            {!filtered.length ? (
+              <EmptyState title="No classes match the selected filters." />
+            ) : view === TABS[0] ? (
               <div className="table-scroll" role="region" tabIndex={0}
-                aria-label="Weekly confirmed class timetable">
+                aria-label={`Weekly ${isProposed ? "proposed" : "registered"} class timetable`}>
                 <div className="schedule-grid"
-                  style={{ gridTemplateColumns: `80px repeat(${visibleDays.length}, minmax(155px, 1fr))` }}>
-                  <div className="schedule-cell header">Day</div>
+                  style={{ gridTemplateColumns: `minmax(95px, 110px) repeat(${visibleDays.length}, minmax(180px, 1fr))` }}>
+                  <div className="schedule-cell header">Time</div>
                   {visibleDays.map((day) => <div className="schedule-cell header" key={day}>{day}</div>)}
-                  <div className="schedule-cell header">Classes</div>
-                  {visibleDays.map((day) => {
-                    const items = filtered.filter((item) => item.day === day);
-                    return (
-                      <div className="schedule-cell" key={day}>
-                        {items.length ? items.map((item) => (
-                          <button key={item.key} type="button" className="schedule-event"
-                            onClick={() => setSelected(item)}
-                            style={{ display: "block", width: "100%", padding: 9, marginBottom: 7, textAlign: "left", border: "1px solid #a8d8ba", cursor: "pointer" }}
-                            aria-label={`View ${displaySubjectCode(item.code)} ${day} details`}>
-                            <strong>{displaySubjectCode(item.code)}</strong>
-                            <span style={{ display: "block", fontWeight: 500 }}>{item.start} to {item.end}</span>
-                            <span style={{ display: "block", fontWeight: 500 }}>{item.room}</span>
-                          </button>
-                        )) : <span>No class</span>}
-                      </div>
-                    );
-                  })}
+                  {timeSlots.map((slot) => (
+                    <div key={slot.label} style={{ display: "contents" }}>
+                      <div className="schedule-cell header">{slot.label}</div>
+                      {visibleDays.map((day) => {
+                        const meetings = filtered.filter((item) =>
+                          item.day === day && item.start === slot.label);
+                        return <div className="schedule-cell" key={`${slot.label}:${day}`}>
+                          {meetings.length ? meetings.map((item) => (
+                            <button key={item.key} type="button" className="schedule-event"
+                              onClick={() => setSelected(item)}
+                              style={{ display: "block", width: "100%", padding: 9, marginBottom: 7, textAlign: "left", border: "1px solid #a8d8ba", cursor: "pointer" }}
+                              aria-label={`View ${displaySubjectCode(item.code)} ${day} ${item.start} details`}>
+                              <strong>{displaySubjectCode(item.code)}</strong>
+                              <span style={{ display: "block", fontWeight: 500 }}>{item.start} to {item.end}</span>
+                              <span style={{ display: "block", fontWeight: 500 }}>{item.room}</span>
+                              <span style={{ display: "block", fontWeight: 500 }}>{item.instructor}</span>
+                              <span style={{ display: "block", fontWeight: 500 }}>{item.recordLabel}</span>
+                            </button>
+                          )) : <span>No class</span>}
+                        </div>;
+                      })}
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : (
               <DataTable rows={filtered} rowKey="key"
-                emptyMessage="No confirmed classes match the selected filters."
-                onRowClick={setSelected} rowTitle="View confirmed class details"
+                emptyMessage="No classes match the selected filters."
+                onRowClick={setSelected} rowTitle="View class meeting details"
                 getRowAriaLabel={(row) => `View ${displaySubjectCode(row.code)} meeting details`}
                 columns={[
                   { key: "code", label: "Subject Code", render: (row) => displaySubjectCode(row.code) },
                   { key: "name", label: "Subject", render: (row) => displaySubjectCode(row.name) },
                   { key: "day", label: "Day" },
                   { key: "time", label: "Time", render: (row) => `${row.start} to ${row.end}` },
+                  { key: "section", label: "Section" },
+                  ...(classes.some((row) => row.sectionStatus) ? [
+                    { key: "sectionStatus", label: "Section Status", render: (row) => row.sectionStatus
+                      ? <StatusBadge value={row.sectionStatus} /> : "Not recorded" },
+                  ] : []),
                   { key: "room", label: "Room" },
                   { key: "instructor", label: "Instructor" },
+                  { key: "component", label: "Class Type" },
+                  { key: "recordStatus", label: "Record", render: (row) =>
+                    <StatusBadge value={row.recordStatus} label={row.recordLabel} /> },
                 ]} />
             )}
           </InternalTabs>
@@ -139,12 +164,20 @@ export default function StudentClassSchedule({ mode = "unavailable", officialSch
                 <div className="info-item"><span>Room</span><strong>{selected.room}</strong></div>
                 <div className="info-item"><span>Instructor</span><strong>{selected.instructor}</strong></div>
                 <div className="info-item"><span>Class Type</span><strong>{selected.component}</strong></div>
+                <div className="info-item"><span>Section</span><strong>{selected.section}</strong></div>
+                {selected.sectionStatus && <div className="info-item"><span>Section Status</span><strong>
+                  <StatusBadge value={selected.sectionStatus} />
+                </strong></div>}
                 <div className="info-item"><span>Section ID</span><strong>{displayValue(selected.sectionId)}</strong></div>
+                <div className="info-item"><span>Record</span><strong><StatusBadge value={selected.recordStatus} label={selected.recordLabel} /></strong></div>
               </div>
             )}
           </Modal>
         </>
       )}
+      <CorDocumentPreview open={Boolean(corOpen && corUrl)}
+        onClose={() => setCorOpen(false)} documentUrl={corUrl}
+        project={isProjectDemonstration} />
     </>
   );
 }
