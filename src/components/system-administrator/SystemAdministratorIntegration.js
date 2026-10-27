@@ -26,14 +26,12 @@ const TABS = [
   { value: "requests", label: "API Requests" },
   { value: "synchronization", label: "Synchronization" },
   { value: "failed", label: "Failed Requests" },
-  { value: "imports", label: "Imported Records" },
-  { value: "settings", label: "Settings" },
 ];
 
 export default function SystemAdministratorIntegration({ integrationData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const { configurations, requests, synchronizations, handoffs } = integrationData;
+  const { configurations, requests, synchronizations, handoffs, bridge } = integrationData;
 
   const [tab, setTab] = useState("overview");
   const [search, setSearch] = useState("");
@@ -81,9 +79,8 @@ export default function SystemAdministratorIntegration({ integrationData }) {
     if (tab === "requests") return requests;
     if (tab === "synchronization") return synchronizations;
     if (tab === "failed") return failedRequests;
-    if (tab === "imports") return handoffs;
     return [];
-  }, [tab, requests, synchronizations, failedRequests, handoffs]);
+  }, [tab, requests, synchronizations, failedRequests]);
 
   const statusOptions = [
     { value: "ALL", label: "All Statuses" },
@@ -104,7 +101,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
     <>
       <PageHeader
         title="System Integration"
-        description="Live Supabase integration configuration, API request history, synchronization attempts, failures, and imported Admission handoffs."
+        description="PLP Admissions to PLP Enrollment handoff health, API activity, student synchronization, and technical failures."
         actions={
           <Button variant="secondary" onClick={() => router.refresh()}>
             Refresh
@@ -132,9 +129,9 @@ export default function SystemAdministratorIntegration({ integrationData }) {
           <>
             <div className="stats-grid" style={{ marginBottom: 14 }}>
               <Metric
-                label="Integration Status"
-                value={primaryConfiguration?.is_enabled ? "Enabled" : "Disabled"}
-                hint={primaryConfiguration?.name || "No configuration"}
+                label="Admissions Bridge"
+                value={bridge?.connectivity || "Not verified"}
+                hint="External Admissions connectivity is not inferred from Supabase availability"
               />
               <Metric
                 label="Recorded Requests"
@@ -157,7 +154,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 hint="Queued or pending attempts"
               />
               <Metric
-                label="Imported Applicant Records"
+                label="Received Admission Handoffs"
                 value={handoffs.length}
                 hint="Admission handoff records"
               />
@@ -188,6 +185,16 @@ export default function SystemAdministratorIntegration({ integrationData }) {
 
         {tab === "status" ? (
           <>
+            <div className="notice" style={{ marginBottom: 14 }}>This page monitors the PLP Admissions → PLP Enrollment handoff. Database availability alone is not proof that the Admissions API is connected.</div>
+            <div className="info-grid">
+              <Info label="External Admissions Connection" value={bridge?.connectivity || "Not verified"} />
+              <Info label="Admissions Supabase Project" value={bridge?.admissionsDatabaseProject || "Not configured"} />
+              <Info label="Enrollment Supabase Project" value={bridge?.enrollmentDatabaseProject || "Not configured"} />
+              <Info label="Intake Shared Secret" value={bridge?.sharedSecretConfigured ? "Configured on Enrollment server" : "Missing on Enrollment server"} />
+              <Info label="Received Applicants" value={handoffs.length} />
+              <Info label="Recorded API Requests" value={requests.length} />
+              <Info label="Recorded Synchronizations" value={synchronizations.length} />
+            </div>
             {primaryConfiguration ? (
               <>
                 <div className="info-grid">
@@ -222,7 +229,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
           </>
         ) : null}
 
-        {["requests", "synchronization", "failed", "imports"].includes(tab) ? (
+        {["requests", "synchronization", "failed"].includes(tab) ? (
           <>
             <div className="toolbar">
               <SearchControl
@@ -250,7 +257,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 rowKey="id"
                 onRowClick={(row) => openDetails("request", row)}
                 getRowAriaLabel={(row) => `View request ${row.request_reference || row.id}`}
-                emptyMessage="No integration requests match the selected filters."
+                emptyMessage="No Admissions API requests are recorded yet. The Admissions server must send a handoff or a real connectivity test must run before history appears."
                 columns={[
                   { key: "request_reference", label: "Request" },
                   { key: "request_type", label: "Type" },
@@ -268,7 +275,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 rowKey="id"
                 onRowClick={(row) => openDetails("sync", row)}
                 getRowAriaLabel={(row) => `View synchronization ${row.sync_reference || row.id}`}
-                emptyMessage="No synchronization records match the selected filters."
+                emptyMessage={handoffs.length ? `No synchronization events have been recorded yet. There are ${handoffs.length} historical Admissions handoffs, but no matching synchronization history. New accepted handoffs will record attempts after the intake migration is deployed.` : "No synchronization events yet. Confirm the Admissions server is sending accepted applicants to the Enrollment intake endpoint."}
                 columns={[
                   { key: "sync_reference", label: "Synchronization" },
                   { key: "applicant_reference", label: "Applicant" },
