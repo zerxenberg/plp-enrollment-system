@@ -337,10 +337,15 @@ export default function SystemAdministratorAdministration({
         {activeTab === "Backup & Recovery" ? (
           <>
             <div className="notice" style={{ marginBottom: 14 }}>
-              This table is the application backup registry stored in Supabase.
-              Physical Supabase project backup creation and point in time restore
-              are platform operations, so this portal does not create a false
-              backup record or claim that a physical restore occurred.
+              Export selected Enrollment application records to an NDJSON file for secure offline
+              archiving or analysis. This is not a complete PostgreSQL database backup,
+              Supabase Auth export, or point in time recovery file. Treat downloads as
+              confidential student data and store them securely.
+            </div>
+            <div className="action-row" style={{ marginBottom: 14 }}>
+              <a className="btn btn-primary" href="/api/system-administrator/application-export">
+                Download Application Data Backup
+              </a>
             </div>
 
             <DataTable
