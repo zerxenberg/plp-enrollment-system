@@ -222,7 +222,7 @@ export async function provisionExistingApplicationUser(payload) {
     const targetStatus =
       payload?.accountStatus === "Inactive" ? "Inactive" : "Active";
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminClient
       .from("app_users")
       .update({
         auth_user_id: authData.user.id,
@@ -239,7 +239,7 @@ export async function provisionExistingApplicationUser(payload) {
       );
     }
 
-    const { data: linkedUser, error: linkCheckError } = await supabase
+    const { data: linkedUser, error: linkCheckError } = await adminClient
       .from("app_users")
       .select("id")
       .eq("id", user.id)
