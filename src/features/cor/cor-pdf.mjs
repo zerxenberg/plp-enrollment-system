@@ -152,7 +152,7 @@ function tableHeading(doc, y) {
 
 function rowCells(record) {
   return [
-    record.code, record.name, String(record.units),
+    record.displayCode || record.code, record.name, String(record.units),
     Number.isFinite(record.unitFee) ? peso(record.unitFee) : "Not recorded",
     record.meetings.map(meetingText).join("\n"),
     uniqueDetails(record.meetings, "room"),

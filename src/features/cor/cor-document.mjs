@@ -91,6 +91,9 @@ export function buildVerifiedCorDocument(cor, options = {}) {
     project ? cor.registered_schedule : cor.schedule,
     project ? cor.registered_units : undefined,
   );
+  for (const subject of subjects) {
+    subject.displayCode = options.subjectDisplayCodes?.get(subject.code) || subject.code;
+  }
   const totalFee = project ? verifiedPrice(subjects, options.projectFeeEstimate) : null;
   const year = options.academicYear || cor.academic_year ||
     (project ? null : cor.academic_term);

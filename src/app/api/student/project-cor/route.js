@@ -14,8 +14,7 @@ export async function GET(request) {
     stage = "verified COR document";
     const document = await verifiedProjectCorDocument(cor, cor.projectFeeEstimate);
     stage = "PDF renderer";
-    return await verifiedCorResponse(request, document,
-      cor.registration_reference || cor.simulation_id);
+    return await verifiedCorResponse(request, document);
   } catch (error) {
     const roleMismatch = String(error?.digest || "").startsWith("NEXT_REDIRECT;") ||
       error?.message === "Student account verification is required.";

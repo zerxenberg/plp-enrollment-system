@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, Modal } from "@/components/ui/PortalUI";
 import styles from "./CorDocumentPreview.module.css";
+import { corFilenameFromDisposition } from "@/features/cor/cor-filename.mjs";
 
 // The PDF response is the document. Preview, browser PDF printing, and saved
 // download all resolve through the same authenticated renderer and page size.
@@ -37,13 +38,17 @@ function OpenCorDocumentPreview({ onClose, documentUrl, project }) {
           throw new Error(result?.error ||
             "The registration document could not be loaded. Please reopen the confirmed enrollment.");
         }
+        const filename = corFilenameFromDisposition(response.headers.get("content-disposition"));
+        if (!filename) {
+          throw new Error("The verified registration PDF filename is missing.");
+        }
         const blob = await response.blob();
         if (!blob.size || await blob.slice(0, 5).text() !== "%PDF-") {
           throw new Error("The registration document response is not a valid PDF.");
         }
         if (controller.signal.aborted) return;
         objectUrl = URL.createObjectURL(blob);
-        setDocument({ state: "ready", url: objectUrl, error: null });
+        setDocument({ state: "ready", url: objectUrl, filename, error: null });
       } catch (error) {
         if (!controller.signal.aborted) {
           setDocument({
@@ -81,17 +86,17 @@ function OpenCorDocumentPreview({ onClose, documentUrl, project }) {
       footer={<>
         <Button variant="ghost" onClick={onClose}>Close</Button>
         {document.state === "ready" && document.url ? <>
-          <a className="portal-button portal-button-secondary" href={document.url} target="_blank"
+          <a className="portal-button portal-button-secondary" href={`${documentUrl}?view=1`} target="_blank"
             rel="noopener noreferrer">Open PDF</a>
           <Button variant="secondary" onClick={printDocument}>Print</Button>
           <a className="portal-button portal-button-primary" href={document.url}
-            download="PLP-Certificate-of-Registration.pdf">Download PDF</a>
+            download={document.filename}>Download PDF</a>
         </> : null}
       </>}
     >
       <div className={styles.viewer} role="region" aria-label="A4 certificate of registration preview">
         {document.state === "ready" && document.url ? (
-          <iframe ref={viewer} src={document.url}
+          <iframe ref={viewer} src={`${documentUrl}?view=1`}
             title="Certificate of Registration A4 PDF preview" className={styles.frame} />
         ) : documentUrl && document.state === "loading" ? (
           <div className={styles.message} role="status">Loading verified registration PDF…</div>

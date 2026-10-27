@@ -11,7 +11,7 @@ export async function GET(request, { params }) {
     if (!/^[0-9a-f]{8}-[0-9a-f-]{27,36}$/i.test(simulationId)) throw new Error("Invalid reference");
     const document = await registrarProjectCorDocument(simulationId);
     stage = "PDF renderer";
-    return await verifiedCorResponse(request, document, simulationId);
+    return await verifiedCorResponse(request, document);
   } catch (error) {
     const roleMismatch = String(error?.digest || "").startsWith("NEXT_REDIRECT;");
     console.warn(
