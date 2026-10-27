@@ -159,7 +159,10 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
     .filter((role) => ["registrar", "academic-coordinator", "system-administrator"].includes(role.code))
     .map((role) => ({ value: role.code, label: role.name }));
 
-  const unlinkedUsers = users.filter((user) => !user.authLinked);
+  // Historical synthetic accounts must not be promoted into institutional logins.
+  const unlinkedUsers = users.filter((user) => !user.authLinked && (
+    !user.isSyntheticDemo || user.projectCohortId === recordScope.currentProjectCohortId
+  ));
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
@@ -616,7 +619,11 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
 
           {createMode === "existing" ? (
             <label className="field full">
-              Existing User Without Supabase Auth
+              Existing User Without Supabase Auth ({unlinkedUsers.length} eligible)
+              <span className="muted" style={{ display: "block", fontSize: 12 }}>
+                This selector includes only current institutional records and approved current project accounts without Auth.
+                Other accounts are already linked or belong to retired fictional datasets.
+              </span>
               <select
                 value={createForm.existingUserId}
                 onChange={(event) => setCreateForm({ ...createForm, existingUserId: event.target.value })}
