@@ -94,7 +94,7 @@ BEGIN
     is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at
   ) VALUES (
     'PLP_ADMISSIONS:'||p_applicant_ref,'student',btrim(p_full_name),
-    lower(btrim(p_email)),'Inactive',false,false,'INSTITUTIONAL',null,now()
+    lower(btrim(p_email)),'Inactive',false,false,null,null,now()
   ) RETURNING id INTO v_user_id;
 
   -- Use the existing year allocator and reserve the chosen identifier.
