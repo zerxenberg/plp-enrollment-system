@@ -37,6 +37,7 @@ export async function POST(request) {
     fullName: String(body?.full_name ?? "").trim(),
     email: String(body?.email ?? "").trim().toLowerCase(),
     programCode: String(body?.program_code ?? "").trim(),
+    programName: String(body?.program_name ?? body?.course_name ?? "").trim(),
     admissionDate: String(body?.admission_date ?? "").trim(),
     admissionType: String(body?.admission_type ?? "").trim().toLowerCase(),
     sourceName: String(body?.source_name ?? "").trim(),
@@ -49,7 +50,8 @@ export async function POST(request) {
     payload.email.length > 254 ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email) ||
     payload.programCode.length < 2 ||
-    payload.programCode.length > 30 ||
+    payload.programCode.length > 60 ||
+    payload.programName.length > 240 ||
     !/^\d{4}-\d{2}-\d{2}$/.test(payload.admissionDate) ||
     !["new", "transferee"].includes(payload.admissionType) ||
     payload.sourceName !== "PLP Admissions"
@@ -64,6 +66,7 @@ export async function POST(request) {
       p_full_name: payload.fullName,
       p_email: payload.email,
       p_program_code: payload.programCode,
+      p_program_name: payload.programName,
       p_admission_date: payload.admissionDate,
       p_admission_type: payload.admissionType,
       p_source_name: payload.sourceName,
