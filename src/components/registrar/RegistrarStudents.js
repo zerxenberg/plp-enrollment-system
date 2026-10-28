@@ -185,6 +185,8 @@ export default function RegistrarStudents({ studentsData }) {
                 { key: "full_name", label: "Student Name" },
                 { key: "email", label: "PLP Email" },
                 { key: "program_code", label: "Program" },
+                { key: "inputted_gwa", label: "GWA", render: (row) => row.inputted_gwa ?? "Not provided" },
+                { key: "gwa_status", label: "GWA Check" },
                 { key: "student_status", label: "Student Status" },
                 { key: "auth_status", label: "Portal Auth" },
                 { key: "account_status", label: "Account" },
