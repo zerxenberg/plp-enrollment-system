@@ -16,6 +16,7 @@ import {
 import { Details, Feedback, Info, Metric, Tabs } from "@/components/registrar/RegistrarShared";
 import {
   queueSynchronizationRetry,
+  retryAdmissionsSourceSync,
   testIntegrationConnection,
   updateIntegrationConfiguration,
 } from "@/features/system-administration/system-admin-actions";
@@ -103,6 +104,9 @@ export default function SystemAdministratorIntegration({ integrationData }) {
         title="System Integration"
         description="PLP Admissions to PLP Enrollment handoff health, API activity, student synchronization, and technical failures."
         actions={
+          <Button disabled={isPending} onClick={() => run(() => retryAdmissionsSourceSync())}>
+            Retry Sync from Admissions
+          </Button>
           <Button variant="secondary" onClick={() => router.refresh()}>
             Refresh
           </Button>
