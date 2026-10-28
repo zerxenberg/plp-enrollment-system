@@ -112,6 +112,7 @@ export default function RegistrarStudents({ studentsData }) {
 
       <InternalTabs
         items={[
+          { value: "admissions", label: "Admitted Students" },
           { value: "blocks", label: "Block Section Student List" },
           { value: "grades", label: "Import Grades" },
           { value: "history", label: "Grade Import History" },
@@ -165,6 +166,29 @@ export default function RegistrarStudents({ studentsData }) {
                 { key: "yearLevel", label: "Year", render: (row) => yearLabel(row.yearLevel) },
                 { key: "termId", label: "Academic Term", render: (row) => termMap.get(row.termId) || row.termId },
                 { key: "assignedStudents", label: "Students", render: (row) => `${row.assignedStudents} / ${row.capacity ?? "?"}` },
+              ]}
+            />
+          </Panel>
+        ) : null}
+
+        {tab === "admissions" ? (
+          <Panel
+            title="Admitted Institutional Students"
+            subtitle="Accepted applicant records in Enrollment, including students awaiting Auth provisioning, Registrar review, and block assignment. Admission does not confirm enrollment."
+          >
+            <DataTable
+              rowKey="id"
+              rows={studentsData.admittedStudents || []}
+              emptyMessage="No institutional admitted student records were found."
+              columns={[
+                { key: "student_number", label: "Student Number" },
+                { key: "full_name", label: "Student Name" },
+                { key: "email", label: "PLP Email" },
+                { key: "program_code", label: "Program" },
+                { key: "student_status", label: "Student Status" },
+                { key: "auth_status", label: "Portal Auth" },
+                { key: "account_status", label: "Account" },
+                { key: "source", label: "Record Source" },
               ]}
             />
           </Panel>
