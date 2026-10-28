@@ -1,7 +1,6 @@
 -- Trusted PLP Admissions intake. This migration is for reviewed deployment only.
--- It does not create Supabase Auth users or official enrollments.
--- Controlled alias map between Admissions course codes and Enrollment programs.
--- Do not silently infer an academic program from a weak text match.
+-- No Supabase Auth users or official enrollments are created.
+-- Existing source-code mappings are explicit. Only high-confidence custom name matches are automatic.
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
 
@@ -49,11 +48,21 @@ LANGUAGE sql
 IMMUTABLE
 PARALLEL SAFE
 SET search_path = ''
-AS $
+AS $$
   SELECT btrim(regexp_replace(
     regexp_replace(
       regexp_replace(
-        lower(regexp_replace(coalesce(p_name,''), '\s*\([^()]*\)\s*ALTER TABLE public.admission_handoffs
+        lower(regexp_replace(coalesce(p_name,''), '\s*\([^()]*\)\s*$', '', 'g')),
+        '^(bachelor of science|bachelor of arts|bachelor of|bs|b\.s\.|ab|a\.b\.)\s+',
+        '', 'i'
+      ),
+      '\m(major|in|of|the|and|with|degree)\M', ' ', 'g'
+    ),
+    '\s+', ' ', 'g'
+  ));
+$$;
+
+ALTER TABLE public.admission_handoffs
   ADD COLUMN IF NOT EXISTS approved_program_track_code text;
 
 DO $migration$
@@ -70,7 +79,11 @@ BEGIN
   END IF;
 END
 $migration$;
-DROP FUNCTION IF EXISTS public.integration_accept_admissions_intake_v1(text,text,text,text,date,text,text);
+
+-- Replace the old seven-argument signature to avoid ambiguous PostgREST RPC overloads.
+DROP FUNCTION IF EXISTS public.integration_accept_admissions_intake_v1(
+  text,text,text,text,date,text,text
+);
 
 CREATE OR REPLACE FUNCTION public.integration_accept_admissions_intake_v1(
   p_applicant_ref text,
