@@ -678,8 +678,14 @@ export async function getRegistrarStudentsData() {
 
   // Institutional admission applicants may have no block or enrollment yet.
   // Keep them visible to the Registrar without treating them as enrolled.
-  const institutionalProfiles = profiles.filter((row) =>
-    row.is_synthetic_demo === false && row.record_kind !== "PROJECT_ONLY");
+  const institutionalProfileResult = await createAdminClient()
+    .from("student_profiles")
+    .select("id,user_id,student_number,program_code,student_type,student_status,is_synthetic_demo,record_kind")
+    .eq("is_synthetic_demo", false)
+    .order("student_number");
+  assertQuery(institutionalProfileResult.error, "Load admitted institutional student records");
+  const institutionalProfiles = (institutionalProfileResult.data || []).filter((row) =>
+    row.record_kind !== "PROJECT_ONLY");
   const institutionalUserIds = [...new Set(institutionalProfiles.map((row) => row.user_id).filter(Boolean))];
   const institutionalUsersResult = institutionalUserIds.length
     ? await createAdminClient().from("app_users")
