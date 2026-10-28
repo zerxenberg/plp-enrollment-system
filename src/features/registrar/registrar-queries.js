@@ -676,8 +676,38 @@ export async function getRegistrarStudentsData() {
     throw new Error("The verified Phase 8 roster does not cover the current project cohort.");
   }
 
+  // Institutional admission applicants may have no block or enrollment yet.
+  // Keep them visible to the Registrar without treating them as enrolled.
+  const institutionalProfiles = profiles.filter((row) =>
+    row.is_synthetic_demo === false && row.record_kind !== "PROJECT_ONLY");
+  const institutionalUserIds = [...new Set(institutionalProfiles.map((row) => row.user_id).filter(Boolean))];
+  const institutionalUsersResult = institutionalUserIds.length
+    ? await createAdminClient().from("app_users")
+        .select("id,full_name,email,auth_user_id,account_status,source_account_key")
+        .in("id", institutionalUserIds)
+    : { data: [], error: null };
+  assertQuery(institutionalUsersResult.error, "Load current institutional student identities");
+  const institutionalUsers = new Map((institutionalUsersResult.data || []).map((row) => [row.id, row]));
+  const admittedStudents = institutionalProfiles.map((profile) => {
+    const person = institutionalUsers.get(profile.user_id);
+    return {
+      id: profile.id,
+      student_number: profile.student_number,
+      full_name: person?.full_name || "Unlinked student record",
+      email: person?.email || "Not available",
+      program_code: profile.program_code,
+      student_type: profile.student_type,
+      student_status: profile.student_status,
+      account_status: person?.account_status || "Not available",
+      auth_status: person?.auth_user_id ? "Provisioned" : "Awaiting provisioning",
+      enrollment_status: "Not yet confirmed",
+      source: person?.source_account_key?.startsWith("PLP_ADMISSIONS:") ? "PLP Admissions" : "Institutional",
+    };
+  });
+
   return {
     students,
+    admittedStudents,
     groups: groups.sort((a, b) =>
       a.programCode.localeCompare(b.programCode) ||
       a.yearLevel - b.yearLevel ||
