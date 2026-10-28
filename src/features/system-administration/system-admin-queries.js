@@ -478,16 +478,26 @@ export async function getUsersAccessData() {
     };
   });
 
+  // One-pass indexes avoid rescanning all users for each role and permission.
+  const userCounts = new Map();
+  for (const user of users) {
+    userCounts.set(user.roleCode, (userCounts.get(user.roleCode) || 0) + 1);
+  }
+  const permissionRoles = new Map();
+  for (const assignment of rolePermissionsResult.data || []) {
+    const assigned = permissionRoles.get(assignment.permission_code) || [];
+    assigned.push(assignment.role_code);
+    permissionRoles.set(assignment.permission_code, assigned);
+  }
+
   const roles = (rolesResult.data || []).map((role) => ({
     ...role,
-    userCount: users.filter((user) => user.roleCode === role.code).length,
+    userCount: userCounts.get(role.code) || 0,
   }));
 
   const permissions = (permissionsResult.data || []).map((permission) => ({
     ...permission,
-    assignedRoles: (rolePermissionsResult.data || [])
-      .filter((item) => item.permission_code === permission.code)
-      .map((item) => item.role_code),
+    assignedRoles: permissionRoles.get(permission.code) || [],
   }));
 
   const accessActivity = (activityResult.data || []).map((item) => ({
