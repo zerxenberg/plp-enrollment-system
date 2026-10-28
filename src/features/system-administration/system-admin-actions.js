@@ -1159,6 +1159,47 @@ export async function queueSynchronizationRetry(payload) {
   }
 }
 
+export async function retryAdmissionsSourceSync() {
+  try {
+    const { actor, supabase } = await getAdminContext("system.integration_manage");
+    const rawUrl = process.env.ADMISSIONS_RETRY_SYNC_URL;
+    const secret = process.env.ENROLLMENT_INTAKE_SECRET;
+    if (!rawUrl || !secret) {
+      return failure("Configure ADMISSIONS_RETRY_SYNC_URL and ENROLLMENT_INTAKE_SECRET in the Enrollment server environment.");
+    }
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && ["localhost","127.0.0.1"].includes(url.hostname))) {
+      return failure("Admissions retry sync must use HTTPS outside local development.");
+    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + secret, Accept: "application/json" },
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(25000),
+    });
+    const body = await response.json().catch(() => null);
+    const summary = response.ok
+      ? "Admissions processed " + Number(body?.processed || 0) +
+        " handoff(s): " + Number(body?.sent || 0) + " sent, " +
+        Number(body?.failed || 0) + " unsuccessful."
+      : "Admissions retry endpoint responded with HTTP " + response.status + ".";
+    await writeAudit(supabase, actor, {
+      module: "System Integration",
+      action: "Admissions REST retry sync triggered",
+      entityType: "external_integration",
+      entityKey: "PLP Admissions",
+      newValue: { http_status: response.status, processed: body?.processed, sent: body?.sent, failed: body?.failed },
+      result: response.ok && !body?.failed ? "Successful" : "Failed",
+      reason: summary,
+    });
+    revalidateSystemAdministrator("/system-administrator/system-integration");
+    return response.ok && !body?.failed ? success(summary) : failure(summary);
+  } catch (error) {
+    return failure("Admissions retry sync request failed: " + (error?.message || "Network error") + ".");
+  }
+}
+
 export async function updateSystemSettings(payload) {
   try {
     const { actor, supabase } = await getAdminContext("system.settings_manage");
