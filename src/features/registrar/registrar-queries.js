@@ -693,6 +693,15 @@ export async function getRegistrarStudentsData() {
         .in("id", institutionalUserIds)
     : { data: [], error: null };
   assertQuery(institutionalUsersResult.error, "Load current institutional student identities");
+  const sourceStudentIds = institutionalProfiles.map((row) => row.id);
+  const sourceDetailsResult = sourceStudentIds.length
+    ? await createAdminClient().from("admissions_student_source_details")
+        .select("student_id,inputted_gwa,gwa_verified")
+        .in("student_id", sourceStudentIds)
+    : { data: [], error: null };
+  assertQuery(sourceDetailsResult.error, "Load verified Admissions GWA details");
+  const sourceDetailsByStudent = new Map((sourceDetailsResult.data || [])
+    .map((row) => [row.student_id, row]));
   const institutionalUsers = new Map((institutionalUsersResult.data || []).map((row) => [row.id, row]));
   const admittedStudents = institutionalProfiles.map((profile) => {
     const person = institutionalUsers.get(profile.user_id);
@@ -706,6 +715,8 @@ export async function getRegistrarStudentsData() {
       student_status: profile.student_status,
       account_status: person?.account_status || "Not available",
       auth_status: person?.auth_user_id ? "Provisioned" : "Awaiting provisioning",
+      inputted_gwa: sourceDetailsByStudent.get(profile.id)?.inputted_gwa ?? null,
+      gwa_status: sourceDetailsByStudent.get(profile.id)?.gwa_verified ? "Verified" : "Not verified",
       enrollment_status: "Not yet confirmed",
       source: person?.source_account_key?.startsWith("PLP_ADMISSIONS:") ? "PLP Admissions" : "Institutional",
     };
