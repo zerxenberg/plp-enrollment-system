@@ -104,12 +104,14 @@ export default function SystemAdministratorIntegration({ integrationData }) {
         title="System Integration"
         description="PLP Admissions to PLP Enrollment handoff health, API activity, student synchronization, and technical failures."
         actions={
-          <Button disabled={isPending} onClick={() => run(() => retryAdmissionsSourceSync())}>
-            Retry Sync from Admissions
-          </Button>
-          <Button variant="secondary" onClick={() => router.refresh()}>
-            Refresh
-          </Button>
+          <>
+            <Button disabled={isPending} onClick={() => run(() => retryAdmissionsSourceSync())}>
+              Retry Sync from Admissions
+            </Button>
+            <Button variant="secondary" onClick={() => router.refresh()}>
+              Refresh
+            </Button>
+          </>
         }
       />
 
