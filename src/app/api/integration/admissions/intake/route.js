@@ -22,6 +22,17 @@ function response(status, body) {
   return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 }
 
+export async function GET(request) {
+  if (!authorized(request)) {
+    return response(401, { error: "Unauthorized. Use a trusted server request with the integration Bearer secret." });
+  }
+  return response(200, {
+    status: "ready",
+    method: "POST",
+    purpose: "Admissions accepted applicant intake",
+  });
+}
+
 export async function POST(request) {
   if (!authorized(request)) return response(401, { error: "Unauthorized." });
 
