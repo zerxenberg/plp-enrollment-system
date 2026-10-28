@@ -80,14 +80,14 @@ BEGIN
     RAISE EXCEPTION 'Admissions student must be accepted before enrichment' USING ERRCODE='22023';
   END IF;
 
-  v_first := pg_catalog.nullif(pg_catalog.btrim(p_details->>'first_name'),'');
-  v_middle := pg_catalog.nullif(pg_catalog.btrim(p_details->>'middle_name'),'');
-  v_last := pg_catalog.nullif(pg_catalog.btrim(p_details->>'last_name'),'');
-  v_suffix := pg_catalog.nullif(pg_catalog.btrim(p_details->>'suffix'),'');
-  v_sex := pg_catalog.nullif(pg_catalog.btrim(p_details->>'sex'),'');
-  v_phone := pg_catalog.nullif(pg_catalog.btrim(p_details->>'contact_number'),'');
-  v_address := pg_catalog.nullif(pg_catalog.btrim(p_details->>'address'),'');
-  v_strand := pg_catalog.nullif(pg_catalog.btrim(p_details->>'shs_strand'),'');
+  v_first := nullif(pg_catalog.btrim(p_details->>'first_name'),'');
+  v_middle := nullif(pg_catalog.btrim(p_details->>'middle_name'),'');
+  v_last := nullif(pg_catalog.btrim(p_details->>'last_name'),'');
+  v_suffix := nullif(pg_catalog.btrim(p_details->>'suffix'),'');
+  v_sex := nullif(pg_catalog.btrim(p_details->>'sex'),'');
+  v_phone := nullif(pg_catalog.btrim(p_details->>'contact_number'),'');
+  v_address := nullif(pg_catalog.btrim(p_details->>'address'),'');
+  v_strand := nullif(pg_catalog.btrim(p_details->>'shs_strand'),'');
   IF pg_catalog.length(coalesce(v_first,'')) > 100
      OR pg_catalog.length(coalesce(v_middle,'')) > 100
      OR pg_catalog.length(coalesce(v_last,'')) > 100
@@ -130,7 +130,7 @@ BEGIN
     applicant_reference,student_id,personal_email,birthdate,sex,suffix,
     shs_strand,inputted_gwa,gwa_verified,verified_documents,source_updated_at
   ) VALUES (
-    p_applicant_ref,v_student_id,pg_catalog.nullif(pg_catalog.btrim(p_personal_email),''),
+    p_applicant_ref,v_student_id,nullif(pg_catalog.btrim(p_personal_email),''),
     v_birthdate,v_sex,v_suffix,v_strand,p_gwa,coalesce(p_gwa_verified,false),
     v_documents,now()
   )
