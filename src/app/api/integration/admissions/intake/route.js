@@ -52,6 +52,14 @@ export async function POST(request) {
     admissionDate: String(body?.admission_date ?? "").trim(),
     admissionType: String(body?.admission_type ?? "").trim().toLowerCase(),
     sourceName: String(body?.source_name ?? "").trim(),
+    details: body?.applicant_details && typeof body.applicant_details === "object"
+      && !Array.isArray(body.applicant_details) ? body.applicant_details : {},
+    gwa: body?.inputted_gwa === null || body?.inputted_gwa === undefined || body?.inputted_gwa === ""
+      ? null : Number(body.inputted_gwa),
+    gwaVerified: body?.gwa_verified === true,
+    verifiedDocuments: Array.isArray(body?.verified_documents)
+      ? body.verified_documents.filter((v) => typeof v === "string").slice(0, 30)
+      : [],
   };
 
   if (
@@ -65,6 +73,9 @@ export async function POST(request) {
     payload.programName.length > 240 ||
     !/^\d{4}-\d{2}-\d{2}$/.test(payload.admissionDate) ||
     !["new", "transferee"].includes(payload.admissionType) ||
+    (payload.gwa !== null && (!Number.isFinite(payload.gwa) || payload.gwa < 75 || payload.gwa > 100)) ||
+    (payload.gwaVerified && payload.gwa === null) ||
+    JSON.stringify(payload.details).length > 5000 ||
     payload.sourceName !== "PLP Admissions"
   ) {
     return response(422, { error: "Applicant handoff details are incomplete or unsupported." });
@@ -95,6 +106,27 @@ export async function POST(request) {
       });
     }
 
+    // The first RPC owns the student identity; this second idempotent RPC
+    // enriches the existing account without changing Auth or enrollment state.
+    const { error: enrichmentError } = await admin.rpc("integration_enrich_admissions_profile_v1", {
+      p_applicant_ref: payload.applicantRef,
+      p_details: payload.details,
+      p_personal_email: payload.email,
+      p_gwa: payload.gwa,
+      p_gwa_verified: payload.gwaVerified,
+      p_verified_documents: payload.verifiedDocuments,
+    });
+    if (enrichmentError) {
+      console.error("Admissions intake enrichment failed", {
+        applicantRef: payload.applicantRef,
+        code: enrichmentError.code,
+        detail: enrichmentError.message,
+      });
+      return response(503, {
+        error: "The student record was received but its profile details could not be synchronized. Apply the Enrollment enrichment migration and retry this applicant.",
+      });
+    }
+
     const status = data?.status;
     if (!["created", "updated", "unchanged"].includes(status) || !data?.student_number) {
       return response(500, { error: "Enrollment returned an invalid handoff result." });
@@ -103,6 +135,9 @@ export async function POST(request) {
       status,
       applicant_ref: payload.applicantRef,
       student_number: data.student_number,
+      school_email: data.school_email ?? null,
+      profile_synchronized: true,
+      gwa_verified: payload.gwaVerified,
     });
   } catch {
     return response(500, { error: "Enrollment intake is temporarily unavailable." });
