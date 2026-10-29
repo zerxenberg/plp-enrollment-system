@@ -14,41 +14,124 @@ import {
 import { summarizeProjectTransferDecisions } from "./published-grade-readiness.mjs";
 
 const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
-const HISTORICAL_BLOCK_ID = "456b850d-3241-505f-a718-f35ff3ce4be1";
-const HISTORICAL_TERM_ID = "TERM-2025-2";
-const HISTORICAL_CURRICULUM = "P8F26-BSIT-V1";
 const UNAVAILABLE = Object.freeze({ mode: "unavailable" });
 
-// Academic instructor attribution is for the explicitly scoped, fictional
-// historical block. It must not make unaccepted grades or official faculty claims.
+// Historical faculty attribution belongs only to this authenticated student's
+// accepted fictional grade sources. Never infer it from the student's *current*
+// block: a future placement change must not rewrite historical provenance.
 async function loadProjectHistoricalProfessors(admin, student, snapshot, acceptedResults) {
   if (!acceptedResults.length || student.student_type !== "CONTINUING_STUDENT" ||
-      snapshot.curriculum_code !== HISTORICAL_CURRICULUM) return new Map();
-  const { data: placement, error: placementError } = await admin.from("project_student_academic_placements")
-    .select("student_id")
-    .eq("student_id", student.id).eq("project_cohort_id", PROJECT_COHORT)
-    .eq("term_id", snapshot.term_id).eq("home_block_id", HISTORICAL_BLOCK_ID)
-    .eq("curriculum_code", HISTORICAL_CURRICULUM).maybeSingle();
-  if (placementError || !placement) return new Map();
+      !snapshot.curriculum_code) return new Map();
+  const acceptedTerms = [...new Set(acceptedResults.map((row) => row.term_id).filter(Boolean))];
+  if (!acceptedTerms.length) return new Map();
+
+  // The accepted-result loader validates the canonical grade and source ledger,
+  // but intentionally returns no batch_id. Re-read only this student's accepted
+  // ledger rows and match them to those already verified results. Never use an
+  // arbitrary project grade, current placement, or client-provided identity.
+  const acceptedKey = (row) => `${row.term_id}|${row.subject_code}`;
+  const acceptedByKey = new Map(acceptedResults.map((row) => [acceptedKey(row), row]));
+  if (acceptedByKey.size !== acceptedResults.length) return new Map();
+  const { data: acceptances, error: acceptanceError } = await admin
+    .from("project_grade_result_acceptances")
+    .select("result_id,batch_id,student_id,term_id,curriculum_code,subject_code,accepted_at,source_kind")
+    .eq("student_id", student.id).eq("curriculum_code", snapshot.curriculum_code)
+    .in("term_id", acceptedTerms);
+  if (acceptanceError || !acceptances?.length) return new Map();
+  const acceptedBatches = new Map();
+  for (const row of acceptances) {
+    const grade = acceptedByKey.get(acceptedKey(row));
+    if (!grade || !row.result_id || !row.batch_id ||
+        row.student_id !== student.id || row.curriculum_code !== snapshot.curriculum_code ||
+        row.accepted_at !== grade.accepted_at || row.source_kind !== grade.source_kind ||
+        acceptedBatches.has(acceptedKey(row))) return new Map();
+    acceptedBatches.set(acceptedKey(row), row.batch_id);
+  }
+  if (acceptedBatches.size !== acceptedResults.length) return new Map();
+
+  const { data: batches, error: batchError } = await admin.from("project_grade_import_batches")
+    .select("id,project_cohort_id,block_id,target_term_id,term_id,curriculum_code,previous_block_code,subject_code,source_system,status")
+    .in("id", [...new Set(acceptedBatches.values())])
+    .eq("project_cohort_id", PROJECT_COHORT).eq("source_system", "PROJECT_ONLY")
+    .eq("status", "PUBLISHED_PROJECT");
+  if (batchError || !batches?.length) return new Map();
+  const byBatchId = new Map(batches.map((row) => [row.id, row]));
+  if (byBatchId.size !== new Set(acceptedBatches.values()).size) return new Map();
+
+  const batchForGrade = new Map();
+  for (const [gradeKey, batchId] of acceptedBatches) {
+    const grade = acceptedByKey.get(gradeKey);
+    const batch = byBatchId.get(batchId);
+    if (!batch || !batch.block_id || !batch.target_term_id || !batch.previous_block_code ||
+        batch.project_cohort_id !== PROJECT_COHORT ||
+        batch.term_id !== grade.term_id ||
+        batch.subject_code !== grade.subject_code ||
+        batch.curriculum_code !== snapshot.curriculum_code ||
+        batch.source_system !== "PROJECT_ONLY" || batch.status !== "PUBLISHED_PROJECT") {
+      return new Map();
+    }
+    batchForGrade.set(gradeKey, batch);
+  }
+  // Validate the historical target block itself, without requiring it to be
+  // the student's current home block. It must remain a synthetic project block.
+  const blockIds = [...new Set(batches.map((row) => row.block_id))];
+  const { data: blocks, error: blockError } = await admin.from("block_sections")
+    .select("id,term_id,curriculum_code,is_synthetic_demo").in("id", blockIds);
+  if (blockError || blocks?.length !== blockIds.length) return new Map();
+  const blocksById = new Map(blocks.map((row) => [row.id, row]));
+  if (blocksById.size !== blockIds.length || batches.some((batch) => {
+    const block = blocksById.get(batch.block_id);
+    return !block || block.is_synthetic_demo !== true ||
+      block.term_id !== batch.target_term_id ||
+      block.curriculum_code !== batch.curriculum_code;
+  })) return new Map();
+
   const { data: mappings, error: mappingError } = await admin.from("project_historical_subject_instructors")
-    .select("subject_code,instructor_id,assignment_provenance,verified_institutionally")
-    .eq("project_cohort_id", PROJECT_COHORT).eq("target_block_id", HISTORICAL_BLOCK_ID)
-    .eq("prior_term_id", HISTORICAL_TERM_ID).eq("curriculum_code", HISTORICAL_CURRICULUM)
-    .eq("previous_block_code", "BSIT-1A");
+    .select("target_block_id,subject_code,prior_term_id,previous_block_code,instructor_id,assignment_provenance,verified_institutionally")
+    .eq("project_cohort_id", PROJECT_COHORT)
+    .eq("curriculum_code", snapshot.curriculum_code)
+    .in("target_block_id", blockIds).in("prior_term_id", acceptedTerms)
+    .in("subject_code", [...new Set(acceptedResults.map((row) => row.subject_code))]);
   if (mappingError || !mappings?.length) return new Map();
-  const validMappings = mappings.filter((row) =>
-    row.instructor_id && row.assignment_provenance === "PROJECT_FICTIONAL_ASSIGNMENT" &&
-    row.verified_institutionally === false);
+  const mappingKey = (row) =>
+    `${row.target_block_id}|${row.prior_term_id}|${row.previous_block_code}|${row.subject_code}`;
+  const mapped = new Map();
+  for (const row of mappings) {
+    const trustedProjectMapping = row.instructor_id &&
+      row.assignment_provenance === "PROJECT_FICTIONAL_ASSIGNMENT" &&
+      row.verified_institutionally === false;
+    if (!trustedProjectMapping) continue;
+    const key = mappingKey(row);
+    if (mapped.has(key)) return new Map();
+    mapped.set(key, row);
+  }
+  const validMappings = [...batchForGrade.values()].map((batch) => mapped.get(mappingKey({
+    target_block_id: batch.block_id,
+    prior_term_id: batch.term_id,
+    previous_block_code: batch.previous_block_code,
+    subject_code: batch.subject_code,
+  }))).filter(Boolean);
   if (!validMappings.length) return new Map();
   const { data: instructors, error: instructorError } = await admin.from("instructors")
-    .select("id,display_name,is_synthetic_demo,synthetic_source_key")
-    .in("id", validMappings.map((row) => row.instructor_id));
+    .select("id,display_name,app_user_id,is_synthetic_demo,synthetic_source_key")
+    .in("id", [...new Set(validMappings.map((row) => row.instructor_id))]);
   if (instructorError || !instructors) return new Map();
   const names = new Map(instructors.filter((item) => item.is_synthetic_demo === true &&
-    item.synthetic_source_key?.startsWith("PROJECT_ONLY_BSIT1A_TERM2025_2:"))
+    item.app_user_id == null &&
+    typeof item.display_name === "string" && item.display_name.trim() &&
+    (item.synthetic_source_key?.startsWith("PROJECT_ONLY_") ||
+      item.synthetic_source_key?.startsWith("PHASE8_FICTIONAL_SCHEDULE_V1:FACULTY:")))
     .map((item) => [item.id, item.display_name]));
-  return new Map(validMappings.filter((row) => names.has(row.instructor_id))
-    .map((row) => [row.subject_code, names.get(row.instructor_id)]));
+  return new Map([...batchForGrade].flatMap(([gradeKey, batch]) => {
+    const mapping = mapped.get(mappingKey({
+      target_block_id: batch.block_id,
+      prior_term_id: batch.term_id,
+      previous_block_code: batch.previous_block_code,
+      subject_code: batch.subject_code,
+    }));
+    return mapping && names.has(mapping.instructor_id)
+      ? [[gradeKey, names.get(mapping.instructor_id)]] : [];
+  }));
 }
 
 // All identifiers originate from verified Auth and the trusted student profile
@@ -201,10 +284,9 @@ export async function loadStudentAcademicForPage() {
       result: row.result_status,
       acceptedAt: row.accepted_at,
       sourceKind: row.source_kind,
-      previousSubjectProfessor: row.term_id === HISTORICAL_TERM_ID
-        ? projectProfessors.get(row.subject_code) || null : null,
-      professorProvenance: row.term_id === HISTORICAL_TERM_ID &&
-        projectProfessors.has(row.subject_code) ? "PROJECT_FICTIONAL_ASSIGNMENT" : null,
+      previousSubjectProfessor: projectProfessors.get(`${row.term_id}|${row.subject_code}`) || null,
+      professorProvenance: projectProfessors.has(`${row.term_id}|${row.subject_code}`)
+        ? "PROJECT_FICTIONAL_ASSIGNMENT" : null,
     }));
 
     // Academic records remain readable when enrollment preparation is blocked

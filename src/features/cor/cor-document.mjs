@@ -1,5 +1,7 @@
 // The confirmed COR RPCs are the only source of registered subjects and meetings.
 // This model is shared by both portals and the single PDF document renderer.
+import { displaySubjectCode } from "../academic/project-academic-display-aliases.mjs";
+
 const missing = (value) => value === null || value === undefined || String(value).trim() === "";
 const present = (value) => missing(value) ? "Not recorded" : String(value).trim();
 
@@ -92,7 +94,12 @@ export function buildVerifiedCorDocument(cor, options = {}) {
     project ? cor.registered_units : undefined,
   );
   for (const subject of subjects) {
-    subject.displayCode = options.subjectDisplayCodes?.get(subject.code) || subject.code;
+    // Preserve the immutable P8F26 subject identity for every registration,
+    // meeting, fee lookup and validation. Only the COR-facing label is aliased.
+    // The server's verified subject catalog map takes precedence; the shared
+    // Academic Coordinator formatter covers direct previews and PDF builders.
+    subject.displayCode = options.subjectDisplayCodes?.get(subject.code) ||
+      displaySubjectCode(subject.code);
   }
   const totalFee = project ? verifiedPrice(subjects, options.projectFeeEstimate) : null;
   const year = options.academicYear || cor.academic_year ||

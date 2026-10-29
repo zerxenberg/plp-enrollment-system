@@ -19,6 +19,7 @@ import {
   verifyRegistrarGradeSource,
 } from "@/features/registrar/registrar-actions";
 import { registrarDebug } from "@/features/registrar/registrar-client-utils";
+import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const NONE = "";
 
@@ -376,7 +377,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                 <span>Subject</span>
                 <select value={subjectCode} disabled={!previousBlockCode || Boolean(activeBatch)} onChange={(event) => { setSubjectCode(event.target.value); resetAfter("subject"); }}>
                   <option value="">Select subject</option>
-                  {uniqueOptions(subjectRows, "subjectCode", "subjectName").map((item) => <option key={item.value} value={item.value}>{item.value} · {item.label}</option>)}
+                  {uniqueOptions(subjectRows, "subjectCode", "subjectName").map((item) => <option key={item.value} value={item.value}>{displaySubjectCode(item.value)} · {item.label}</option>)}
                 </select>
               </label>
 
@@ -402,7 +403,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                     ["College", selectedContext.collegeName],
                     ["Program", `${selectedContext.programCode} · ${selectedContext.programName}`],
                     ["Previous Block Section", selectedContext.previousBlockCode],
-                    ["Subject", `${selectedContext.subjectCode} · ${selectedContext.subjectName}`],
+                    ["Subject", `${displaySubjectCode(selectedContext.subjectCode)} · ${selectedContext.subjectName}`],
                     ["Subject Section", selectedContext.sectionCode],
                     ["Professor", selectedContext.instructorName],
                     ["Students in Section", selectedContext.confirmedStudentCount],
@@ -424,7 +425,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
                   rowKey="id"
                   rows={groupContexts}
                   columns={[
-                    { key: "subjectCode", label: "Subject Code" },
+                    { key: "subjectCode", label: "Subject Code", render: (row) => displaySubjectCode(row.subjectCode) },
                     { key: "subjectName", label: "Subject" },
                     { key: "sectionCode", label: "Section" },
                     { key: "instructorName", label: "Professor" },
@@ -611,7 +612,7 @@ export default function RegistrarGradeImports({ data, historyOnly = false }) {
             ["Semester", selectedContext?.semester || "Not available"],
             ["Program", selectedContext ? `${selectedContext.programCode} · ${selectedContext.programName}` : "Not available"],
             ["Previous Block", selectedContext?.previousBlockCode || "Not available"],
-            ["Subject", selectedContext ? `${selectedContext.subjectCode} · ${selectedContext.subjectName}` : "Not available"],
+            ["Subject", selectedContext ? `${displaySubjectCode(selectedContext.subjectCode)} · ${selectedContext.subjectName}` : "Not available"],
             ["Section", selectedContext?.sectionCode || "Not available"],
             ["Professor", selectedContext?.instructorName || "Not available"],
             ["Source Reference", activeBatch?.sourceReference || "Not available"],

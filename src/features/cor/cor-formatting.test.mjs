@@ -11,10 +11,16 @@ const studentRoute = readFileSync(
   new URL("../../app/api/student/project-cor/route.js", import.meta.url), "utf8");
 const registrarRoute = readFileSync(
   new URL("../../app/api/registrar/project-cor/[simulationId]/route.js", import.meta.url), "utf8");
+const officialStudentRoute = readFileSync(
+  new URL("../../app/api/student/official-cor/[enrollmentId]/route.js", import.meta.url), "utf8");
+const officialRegistrarRoute = readFileSync(
+  new URL("../../app/api/registrar/official-cor/[enrollmentId]/route.js", import.meta.url), "utf8");
 const preview = readFileSync(
   new URL("../../components/cor/CorDocumentPreview.js", import.meta.url), "utf8");
 const renderer = readFileSync(new URL("./cor-pdf.mjs", import.meta.url), "utf8");
 const response = readFileSync(new URL("./cor-response.js", import.meta.url), "utf8");
+const documentSource = readFileSync(new URL("./cor-document.mjs", import.meta.url), "utf8");
+const accessSource = readFileSync(new URL("./cor-access-server.js", import.meta.url), "utf8");
 
 const miguel = {
   studentNumber: "25-50001", studentName: "Miguel Marie Garcia",
@@ -71,6 +77,102 @@ test("live catalog codes use the exact same Phase 8 display aliases as all three
     ...subjects.slice(1), { code: "UNREGISTERED", name: "Unknown" },
   ]), /inconsistent/);
   assert.match(renderer, /record\.displayCode \|\| record\.code/);
+});
+
+test("Student and Registrar preview, print and download share the verified subject-code PDF route", () => {
+  assert.match(accessSource, /verifiedCorSubjectDisplayCodes\(subjects, data\)/);
+  assert.match(accessSource, /verifiedProjectCorDocument\(await readProjectDemonstrationCOR/);
+  assert.match(accessSource, /officialCorDocument\(enrollmentId, role = "registrar"\)/);
+  assert.match(studentRoute, /verifiedProjectCorDocument\(cor, cor\.projectFeeEstimate\)/);
+  assert.match(registrarRoute, /registrarProjectCorDocument\(simulationId\)/);
+  assert.match(officialStudentRoute, /officialCorDocument\(enrollmentId, "student"\)/);
+  assert.match(officialRegistrarRoute, /officialCorDocument\(enrollmentId\)/);
+  assert.ok([studentRoute, registrarRoute, officialStudentRoute, officialRegistrarRoute]
+    .every((route) => route.includes("verifiedCorResponse")));
+  assert.match(preview, /fetch\(\`\$\{documentUrl\}\?view=1\`/);
+  assert.match(preview, /viewer\.current\?\.contentWindow\?\.print\(\)/);
+  assert.match(preview, /download=\{document\.filename\}/);
+  assert.match(documentSource, /displaySubjectCode\(subject\.code\)/);
+});
+
+function decodedPdfContent(pdf) {
+  const text = pdf.toString("latin1");
+  return [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)]
+    .map((match) => {
+      try {
+        return inflateSync(Buffer.from(match[1], "latin1")).toString("latin1");
+      } catch {
+        return "";
+      }
+    }).join("\n");
+}
+
+function assertPdfSubjectCode(pdf, displayCode, internalCode) {
+  const content = decodedPdfContent(pdf);
+  assert.match(content, new RegExp(Buffer.from(displayCode).toString("hex"), "i"),
+    `PDF must print the canonical academic subject code ${displayCode}`);
+  assert.doesNotMatch(content, new RegExp(Buffer.from(internalCode).toString("hex"), "i"),
+    "PDF must not display its internal P8F26 subject key");
+}
+
+test("Student and Registrar demonstration COR default preview and PDF use CS 151, retaining the original key", async () => {
+  const code = "P8F26-BSCS-T02-M1";
+  const cor = {
+    simulation_only: true, official: false, certificate_of_official_registration: false,
+    registration_status: "CONFIRMED FOR PROJECT SIMULATION", registration_snapshot_complete: true,
+    simulation_id: "project-registration-001", confirmed_at: "2026-10-29T08:30:00+08:00",
+    registered_units: 3, academic_year: "2025 to 2026", semester: "Second Semester",
+    student: {
+      student_number: "25-01001", student_name: "Verified Student",
+      program_code: "BSCS", home_block: "BSCS-2A", year_level: 2,
+    },
+    registered_subjects: [{
+      subject_code: code, subject_name: "Example Computing Subject",
+      section_id: "confirmed-section-1", academic_units: 3,
+    }],
+    registered_schedule: [{
+      subject_code: code, day_of_week: 2, start_time: "08:00", end_time: "11:00",
+      room: "Room 201", professor: "Fictional Demonstration Instructor",
+    }],
+  };
+  const original = structuredClone(cor);
+  const preview = buildVerifiedCorDocument(cor);
+  assert.equal(preview.subjects[0].displayCode, "CS 151");
+  assert.equal(preview.subjects[0].code, code);
+  assert.equal(preview.subjects[0].meetings[0].subject_code, code);
+  assert.deepEqual(cor, original, "formatting must not modify the confirmed registration snapshot");
+  assertPdfSubjectCode(await renderVerifiedCorPdf(preview), "CS 151", code);
+});
+
+test("Student and Registrar official COR also display academic subject codes without changing registered keys", async () => {
+  const general = "P8F26-GE-T02-2";
+  const major = "P8F26-BSCS-T02-M1";
+  const official = {
+    official: true, status: "OFFICIALLY ENROLLED", ready_to_print: true,
+    schedule_complete: true, registration_reference_complete: true,
+    confirmed_at: "2026-10-29T09:00:00+08:00",
+    student_number: "25-01001", student_name: "Verified Student",
+    program_name: "Bachelor of Science in Computer Science", year_level: 2,
+    home_block: "BSCS-2A", confirmation_reference: "OFFICIAL-2026-1",
+    subjects: [general, major].map((subject_code, index) => ({
+      subject_code, subject_name: `Verified Subject ${index + 1}`,
+      section_id: `confirmed-section-${index + 1}`, units: 3,
+    })),
+    schedule: [general, major].map((subject_code, index) => ({
+      subject_code, day_of_week: index + 1, start_time: "08:00", end_time: "10:00",
+      room: "Room 201",
+    })),
+  };
+  const original = structuredClone(official);
+  const document = buildVerifiedCorDocument(official, {
+    academicYear: "2025 to 2026", semester: "Second Semester",
+  });
+  assert.deepEqual(document.subjects.map((subject) => subject.displayCode), ["GE 152", "CS 151"]);
+  assert.deepEqual(document.subjects.map((subject) => subject.code), [general, major]);
+  assert.deepEqual(official, original);
+  const pdf = await renderVerifiedCorPdf(document);
+  assertPdfSubjectCode(pdf, "GE 152", general);
+  assertPdfSubjectCode(pdf, "CS 151", major);
 });
 
 test("rendered COR PDF prints the verified display code without mutating snapshot evidence", async () => {

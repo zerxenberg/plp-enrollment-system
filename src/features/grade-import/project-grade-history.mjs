@@ -1,5 +1,6 @@
 // Client-side presentation only. Callers must pass records already authorized
 // and scoped by the protected Registrar workspace server action.
+import { displaySubjectCode } from "../academic/project-academic-display-aliases.mjs";
 const normalize = (value) => String(value ?? "").trim().toLocaleLowerCase();
 
 // The protected publication RPC requires READY_FOR_REVIEW plus verified_at.
@@ -30,7 +31,8 @@ export function filterProjectGradeBatches(batches, query) {
     return matchesFields(batch, search, [
       "id", "file_name", "subject_code", "source_system", "source_reference",
       "issuer", "status", "publication_reference", "previous_block_code",
-    ]) || [displayStatus.label, displayStatus.detail].some((value) => normalize(value).includes(search));
+    ]) || [displayStatus.label, displayStatus.detail, displaySubjectCode(batch.subject_code)]
+      .some((value) => normalize(value).includes(search));
   });
 }
 

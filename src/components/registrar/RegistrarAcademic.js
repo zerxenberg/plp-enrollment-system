@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/PortalUI";
 import { Details, Panel } from "./RegistrarShared";
 import { titleStatus } from "@/features/registrar/registrar-client-utils";
+import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const ALL = "ALL";
 
@@ -46,7 +47,7 @@ export default function RegistrarAcademic({ academicData }) {
     if (referenceType === "subjects") {
       return academicData.curriculumSubjects
         .filter((item) =>
-          `${item.subject_code} ${subjectMap.get(item.subject_code)?.name || ""}`.toLowerCase().includes(search.toLowerCase()) &&
+          `${item.subject_code} ${displaySubjectCode(item.subject_code)} ${subjectMap.get(item.subject_code)?.name || ""}`.toLowerCase().includes(search.toLowerCase()) &&
           (program === ALL || academicData.curricula.find((c) => c.code === item.curriculum_code)?.program_code === program) &&
           (curriculum === ALL || item.curriculum_code === curriculum) &&
           (year === ALL || String(item.year_level) === year))
@@ -119,7 +120,7 @@ export default function RegistrarAcademic({ academicData }) {
       <Modal open={Boolean(selected)} title={selectedKind ? `${selectedKind} Details` : "Academic Details"} onClose={() => setSelected(null)} className="registrar-detail-modal" footer={<Button onClick={() => setSelected(null)}>Close</Button>}>
         {selected && selectedKind === "Program" ? <Details items={[["Program Code", selected.code], ["Program Name", selected.name], ["College / Department", selected.organizational_unit_code], ["Status", selected.status]]} /> : null}
         {selected && selectedKind === "Curriculum" ? <Details items={[["Curriculum Code", selected.code], ["Program", `${selected.program_code} · ${programMap.get(selected.program_code)?.name || "Not available"}`], ["Name", selected.name || "Not available"], ["Effective Year", selected.effective_year_start || "Not available"], ["Status", selected.status]]} /> : null}
-        {selected && selectedKind === "Subject" ? <><Details items={[["Program", selected.program_code], ["Curriculum", selected.curriculum_code], ["Year Level", selected.year_level], ["Semester", selected.semester], ["Subject", `${selected.subject_code} · ${selected.subject_name}`], ["Units", selected.units], ["Status", selected.subject_status], ["Prerequisites", selected.prerequisites?.length ? selected.prerequisites.join(", ") : "None recorded"]]} /></> : null}
+        {selected && selectedKind === "Subject" ? <><Details items={[["Program", selected.program_code], ["Curriculum", selected.curriculum_code], ["Year Level", selected.year_level], ["Semester", selected.semester], ["Subject", `${displaySubjectCode(selected.subject_code)} · ${selected.subject_name}`], ["Units", selected.units], ["Status", selected.subject_status], ["Prerequisites", selected.prerequisites?.length ? selected.prerequisites.map(displaySubjectCode).join(", ") : "None recorded"]]} /></> : null}
         {selected && selectedKind === "Block" ? <><Details items={[["Block Section", selected.code], ["Program", `${selected.program_code} · ${programMap.get(selected.program_code)?.name || "Not available"}`], ["Curriculum", selected.curriculum_code], ["Year Level", selected.year_level], ["Academic Term", termMap.get(selected.term_id) || selected.term_id], ["Capacity", selected.capacity], ["Assigned Students", selected.projectAssignedCount ?? "Not available"], ["Capacity Remaining", selected.capacity ? Math.max(0, selected.capacity - (selected.projectAssignedCount || 0)) : "Not available"], ["Planning Status", titleStatus(selected.planning_status)]]} /><h3 style={{ marginTop: 18 }}>Subject Sections and Schedule</h3><DataTable rowKey="id" rows={selected.sections || []} emptyMessage="No subject sections are linked to this block." columns={[{ key: "subject_code", label: "Subject Code" }, { key: "subjectName", label: "Subject Name" }, { key: "section_code", label: "Section" }, { key: "instructor", label: "Professor" }, { key: "schedule_status", label: "Schedule Status", render: (row) => titleStatus(row.schedule_status) }, { key: "meetings", label: "Meeting Schedule", render: (row) => row.meetings.length ? row.meetings.map((m) => `Day ${m.day_of_week} ${m.start_time}-${m.end_time} · ${m.roomCode}`).join("; ") : "Not available" }]} /></> : null}
       </Modal>
     </>

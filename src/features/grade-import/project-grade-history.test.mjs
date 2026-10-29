@@ -44,6 +44,18 @@ test("batch search covers file, ID, subject, source, reference, issuer and statu
   assert.deepEqual(filterProjectGradeBatches(batches, "no match"), []);
 });
 
+test("historical grade batch search accepts academic display codes while retaining database identities", () => {
+  const actual = [
+    { id: "c", subject_code: "P8F26-BSCS-T02-M1", status: "UPLOADED" },
+    { id: "i", subject_code: "P8F26-BSIT-T03-M1", status: "UPLOADED" },
+    { id: "g", subject_code: "P8F26-GE-T02-1", status: "UPLOADED" },
+  ];
+  assert.deepEqual(filterProjectGradeBatches(actual, "CS 151"), [actual[0]]);
+  assert.deepEqual(filterProjectGradeBatches(actual, "IT 201"), [actual[1]]);
+  assert.deepEqual(filterProjectGradeBatches(actual, "GE 151"), [actual[2]]);
+  assert.equal(actual[0].subject_code, "P8F26-BSCS-T02-M1");
+});
+
 test("batch search finds the displayed verified state without treating it as published", () => {
   const verified = { ...batches[1], verified_at: "2026-10-26T12:10:33Z" };
   assert.deepEqual(filterProjectGradeBatches([batches[0], verified], "verified"), [verified]);

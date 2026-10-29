@@ -44,7 +44,9 @@ const REQUEST_ID = "b611138f-0fa4-4fb5-9da7-c140096007a5";
 function makeData() {
   return {
     project_grade_import_batches: [{
-      id: BATCH_ID, subject_code: "P8F26-BSIT-T02-M1",
+      id: BATCH_ID, block_id: BLOCK_ID, target_term_id: "TERM-2026-1",
+      term_id: HISTORICAL_TERM, previous_block_code: "BSIT-1A",
+      subject_code: "P8F26-BSIT-T02-M1",
       source_reference: "HISTORICAL-SOURCE-001", file_name: "BSIT-source.xlsx",
       source_checksum: "a".repeat(64), status: "CONFLICT_REVIEW",
     }],
@@ -68,14 +70,14 @@ function mockServiceTables({ data = makeData(), errors = {}, roleAllowed = true 
   let serviceInitialized = false;
 
   function query(table) {
-    const call = { table, columns: "", eq: [], in: [], order: [], limit: [] };
+    const call = { table, columns: "", eq: [], in: [], order: [], ranges: [] };
     calls.push(call);
     const builder = {
       select: (columns) => { call.columns = columns; return builder; },
       eq: (field, value) => { call.eq.push([field, value]); return builder; },
       in: (field, values) => { call.in.push([field, values]); return builder; },
       order: (field, opts) => { call.order.push([field, opts]); return builder; },
-      limit: (amount) => { call.limit.push(amount); return builder; },
+      range: (start, end) => { call.ranges.push([start, end]); return builder; },
       then: (resolve, reject) => Promise.resolve({
         data: data[table] ?? [], error: errors[table] || null,
       }).then(resolve, reject),
@@ -85,6 +87,16 @@ function mockServiceTables({ data = makeData(), errors = {}, roleAllowed = true 
 
   const dependencies = {
     CURRENT_BLOCK_ID: BLOCK_ID, PROJECT_COHORT: COHORT, HISTORICAL_TERM,
+    readProjectReviewPages: async (queryFactory) => {
+      const { data: rows, error } = await queryFactory().range(0, 499);
+      if (error) throw error;
+      return rows || [];
+    },
+    readProjectReviewChunks: async (ids, queryFactory) => {
+      const { data: rows, error } = await queryFactory(ids).range(0, 499);
+      if (error) throw error;
+      return rows || [];
+    },
     requireRole: async (role) => {
       calls.push({ role });
       if (!roleAllowed) throw new Error("Academic Coordinator authorization denied");
@@ -99,7 +111,7 @@ function mockServiceTables({ data = makeData(), errors = {}, roleAllowed = true 
   return { load: dependencies.loader, calls, get serviceInitialized() { return serviceInitialized; } };
 }
 
-test("authorized Academic Coordinator sees one REQUESTED record from the three protected queries", async () => {
+test("authorized Academic Coordinator sees project-scoped REQUESTED records across academic blocks", async () => {
   const scenario = mockServiceTables();
   const result = await scenario.load();
   assert.equal(result.ok, true);
@@ -109,6 +121,9 @@ test("authorized Academic Coordinator sees one REQUESTED record from the three p
   assert.equal(request.id, REQUEST_ID);
   assert.equal(request.student_number, "25-50001");
   assert.equal(request.subject_code, "P8F26-BSIT-T02-M1");
+  assert.equal(request.current_block_id, BLOCK_ID);
+  assert.equal(request.historical_term_id, HISTORICAL_TERM);
+  assert.equal(request.previous_block_code, "BSIT-1A");
   assert.equal(request.batch_status, "CONFLICT_REVIEW");
   assert.equal(request.source_validation_status, "CONFLICT");
   assert.equal(request.source_checksum, "a".repeat(64));
@@ -118,13 +133,12 @@ test("authorized Academic Coordinator sees one REQUESTED record from the three p
     "project_grade_import_batches", "project_grade_correction_requests", "project_grade_import_rows",
   ]);
   assert.deepEqual(operations[0].eq, [
-    ["project_cohort_id", COHORT], ["block_id", BLOCK_ID],
-    ["term_id", HISTORICAL_TERM], ["source_system", "PROJECT_ONLY"],
+    ["project_cohort_id", COHORT], ["source_system", "PROJECT_ONLY"],
   ]);
-  assert.equal(operations[0].limit[0], 100);
+  assert.deepEqual(operations[0].ranges[0], [0, 499]);
   assert.equal(operations[1].in[0][0], "batch_id");
   assert.equal(operations[1].in[0][1][0], BATCH_ID);
-  assert.equal(operations[1].limit[0], 200);
+  assert.deepEqual(operations[1].ranges[0], [0, 499]);
   assert.equal(operations[2].in[0][0], "id");
   assert.equal(operations[2].in[0][1][0], ROW_ID);
   assert.equal(scenario.calls[0].role, "academic-coordinator");

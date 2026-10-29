@@ -18,7 +18,7 @@ import RegistrarGradeImports from "./RegistrarGradeImports";
 import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import { loadRegistrarStudentRecordDetail } from "@/features/registrar/registrar-actions";
 import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
-import { displayCurriculumCode, displayCurriculumName } from "@/features/academic/project-academic-display-aliases.mjs";
+import { displayCurriculumCode, displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 
 const ALL = "ALL";
 
@@ -272,7 +272,7 @@ export default function RegistrarStudents({ studentsData }) {
                   rows={studentDetail.snapshot?.subjects || []}
                   emptyMessage="No subject eligibility records are available."
                   columns={[
-                    { key: "subject_code", label: "Subject" },
+                    { key: "subject_code", label: "Subject", render: (row) => displaySubjectCode(row.subject_code) },
                     { key: "subject_name", label: "Subject Name" },
                     { key: "academic_units", label: "Units" },
                     { key: "eligibility", label: "Eligibility", render: (row) => <StatusBadge value={row.eligibility} /> },
@@ -286,7 +286,7 @@ export default function RegistrarStudents({ studentsData }) {
                   rows={studentDetail.snapshot?.transfer_credits || []}
                   emptyMessage="No project transfer equivalency reference is available."
                   columns={[
-                    { key: "target_subject", label: "Target Subject" },
+                    { key: "target_subject", label: "Target Subject", render: (row) => displaySubjectCode(row.target_subject) },
                     { key: "source_course", label: "Source Course" },
                     { key: "credited_units", label: "Credited Units" },
                     { key: "project_decision", label: "Decision" },
@@ -329,7 +329,7 @@ export default function RegistrarStudents({ studentsData }) {
                   emptyMessage="No official academic results are visible."
                   columns={[
                     { key: "term_id", label: "Term" },
-                    { key: "subject_code", label: "Subject" },
+                    { key: "subject_code", label: "Subject", render: (row) => displaySubjectCode(row.subject_code) },
                     { key: "official_grade_value", label: "Official Grade", render: (row) => row.official_grade_value ?? "Not available" },
                     { key: "result_status", label: "Result", render: (row) => <StatusBadge value={row.result_status} /> },
                   ]}

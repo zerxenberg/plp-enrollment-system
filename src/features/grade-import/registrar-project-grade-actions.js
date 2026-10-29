@@ -7,7 +7,8 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { REQUIRED_PROJECT_GRADE_COLUMNS, matchesProjectCanonicalGrade,
   parseProjectGradeSource, validateProjectGradeRows } from "./project-grade-source.mjs";
 import { PROJECT_GRADE_WORKSPACE_PERMISSION_CODE, PROJECT_GRADE_WORKSPACE_PERMISSION_MESSAGE,
-  resolveProjectGradeWorkspaceContract, unwrapProjectGradeWorkspaceQuery } from "./project-grade-workspace-contract.mjs";
+  unwrapProjectGradeWorkspaceQuery } from "./project-grade-workspace-contract.mjs";
+import { readProjectGradeCatalog } from "./project-grade-catalog-server";
 
 const CURRENT_BLOCK_ID = "456b850d-3241-505f-a718-f35ff3ce4be1";
 const CURRENT_TERM_ID = "TERM-2026-1";
@@ -185,14 +186,115 @@ async function readProtectedHistoricalWorkspace(admin) {
   };
 }
 
+async function readPagedProjectRows(factory, label) {
+  const rows = [];
+  for (let start = 0; ; start += 500) {
+    const data = assertResult(await factory().range(start, start + 499), label) || [];
+    rows.push(...data);
+    if (data.length < 500) return rows;
+    if (start >= 10000) throw new Error(`${label} exceeds the protected import history limit`);
+  }
+}
+
+// Keep the already published BSIT 2A history intact while exposing all other
+// eligible Phase 8 blocks. The protected catalog never guesses prior sections.
+async function readAllProtectedHistoricalWorkspaces(admin) {
+  const [legacy, catalog, additionalBatches] = await Promise.all([
+    readProtectedHistoricalWorkspace(admin),
+    readProjectGradeCatalog(admin),
+    readPagedProjectRows(() => admin.from("project_grade_import_batches")
+      .select("id,block_id,target_term_id,term_id,previous_block_code,subject_code,source_system,source_reference,issuer,file_name,source_checksum,row_count,status,verification_method,verified_at,published_at,publication_reference,created_at")
+      .eq("project_cohort_id", PROJECT_COHORT_ID)
+      .eq("source_system", "PROJECT_ONLY")
+      .neq("block_id", CURRENT_BLOCK_ID).order("created_at", { ascending: false }),
+    "Other protected project grade batches"),
+  ]);
+  const blockIds = new Set(catalog.map((item) => item.id));
+  if (additionalBatches.some((item) => !blockIds.has(item.block_id) &&
+      item.status !== "PUBLISHED_PROJECT")) {
+    throw new Error("A project grade batch references an unapproved academic block");
+  }
+  const rows = [];
+  const correctionRequests = [];
+  const acceptances = [];
+  for (let i = 0; i < additionalBatches.length; i += 60) {
+    const ids = additionalBatches.slice(i, i + 60).map((item) => item.id);
+    rows.push(...await readPagedProjectRows(() => admin.from("project_grade_import_rows")
+      .select("id,batch_id,source_row_number,source_student_number,raw_grade_text,completion_status,validation_status,error_details,canonical_result_id,student_id,original_row")
+      .in("batch_id", ids).order("source_row_number"), "Other protected grade source rows"));
+    correctionRequests.push(...await readPagedProjectRows(() => admin.from("project_grade_correction_requests")
+      .select("id,batch_id,source_row_id,canonical_result_id,previous_grade,previous_status,proposed_grade,proposed_status,reason,requested_at,status,reviewed_at,review_reference")
+      .in("batch_id", ids).order("requested_at", { ascending: false }),
+    "Other protected grade correction requests"));
+    acceptances.push(...await readPagedProjectRows(() => admin.from("project_grade_result_acceptances")
+      .select("result_id,batch_id,accepted_at,source_kind")
+      .in("batch_id", ids).order("accepted_at"), "Other protected grade acceptances"));
+  }
+  const additional = additionalBatches.map((batch) => {
+    const batchRows = rows.filter((row) => row.batch_id === batch.id);
+    return {
+      ...batch, rows: batchRows,
+      correctionRequests: correctionRequests.filter((item) => item.batch_id === batch.id),
+      conflict_rows: batchRows.filter((row) => row.validation_status === "CONFLICT").length,
+    };
+  });
+  const newReleases = [...new Set(additional.filter((batch) => batch.status === "PUBLISHED_PROJECT")
+    .map((batch) => `${batch.block_id}|${batch.term_id}|${batch.publication_reference}`))].map((keyValue) => {
+    const [blockId, termId, reference] = keyValue.split("|");
+    const published = additional.filter((batch) => batch.block_id === blockId &&
+      batch.term_id === termId && batch.publication_reference === reference && batch.status === "PUBLISHED_PROJECT");
+    const target = catalog.find((item) => item.id === blockId && item.termId === termId);
+    const expectedCodes = new Set((target?.subjects || []).map((subject) => subject.code));
+    const accepted = acceptances.filter((item) => published.some((batch) => batch.id === item.batch_id));
+    const acceptedIds = new Set(accepted.map((item) => item.result_id));
+    const sourceRows = published.flatMap((batch) => batch.rows || []);
+    if (!reference || !target || published.length !== expectedCodes.size ||
+        new Set(published.map((batch) => batch.subject_code)).size !== expectedCodes.size ||
+        published.some((batch) => !expectedCodes.has(batch.subject_code) || !batch.verified_at ||
+          !batch.published_at || !batch.row_count || batch.rows.length !== batch.row_count) ||
+        accepted.length !== sourceRows.length || acceptedIds.size !== sourceRows.length ||
+        sourceRows.some((row) => row.validation_status !== "ACCEPTED_PROJECT" ||
+          !row.canonical_result_id || !acceptedIds.has(row.canonical_result_id))) {
+      throw new Error("Protected project publication history is incomplete or its acceptance ledger is inconsistent");
+    }
+    return {
+      id: published[0].id, block_id: blockId, term_id: termId,
+      publication_reference: reference,
+      expected_subject_count: published.length,
+      expected_result_count: accepted.length,
+      status: "PUBLISHED_PROJECT", published_at: published[0].published_at,
+      batch_ids: published.map((batch) => batch.id),
+    };
+  });
+  const releases = [...legacy.releases, ...newReleases];
+  const releaseFor = (block) => releases.find((release) =>
+    release.block_id === block.id && release.term_id === block.termId) || null;
+  const archivedLegacy = blockIds.has(CURRENT_BLOCK_ID) ? [] : [{
+    ...legacy.blocks[0],
+    collegeCode: "ARCHIVE",
+    collegeName: "Archived Project Grade Releases",
+    programName: "BSIT Historical Release",
+    yearLevel: 2,
+    archived: true,
+    mappingRequired: false,
+  }];
+  return {
+    ...legacy,
+    blocks: catalog.map((block) => block.id === CURRENT_BLOCK_ID
+      ? { ...block, release: releaseFor(block), subjects: legacy.blocks[0].subjects,
+        roster: legacy.blocks[0].roster, code: HISTORICAL_GROUP, mappingRequired: false }
+      : { ...block, release: releaseFor(block) }).concat(archivedLegacy),
+    batches: [...legacy.batches, ...additional],
+    releases,
+  };
+}
+
 async function projectWorkspace() {
   const actor = await requireRole("registrar");
   const client = await createClient();
-  const resolved = await resolveProjectGradeWorkspaceContract(
-    await client.rpc("registrar_project_grade_workspace_v1"),
-    () => readProtectedHistoricalWorkspace(createAdminClient()),
-  );
-  return { client, admin: createAdminClient(), actor, data: resolved };
+  const admin = createAdminClient();
+  const data = await readAllProtectedHistoricalWorkspaces(admin);
+  return { client, admin, actor, data };
 }
 
 export async function loadProjectGradeWorkspace() {
@@ -210,7 +312,7 @@ export async function downloadProjectGradeTemplate(blockId, subjectCode) {
     const { data } = await projectWorkspace();
     const block = data.blocks.find((item) => item.id === blockId);
     const subject = block?.subjects?.find((item) => item.code === subjectCode);
-    if (!block || !subject || !Array.isArray(subject.expected) || subject.expected.length !== 12) {
+    if (!block || !subject || !Array.isArray(subject.expected) || !subject.expected.length) {
       return { ok: false, message: "A verified historical block and subject roster are required." };
     }
     const columns = [...REQUIRED_COLUMNS, "previous_block_section", "previous_subject_professor"];
@@ -227,7 +329,7 @@ export async function downloadProjectGradeTemplate(blockId, subjectCode) {
     return {
       ok: true,
       data: {
-        fileName: `${subject.code}_BSIT-1A_Project_Grade_Template.csv`,
+        fileName: `${subject.code}_${block.code}_Project_Grade_Template.csv`,
         content: `${matrix.map((cells) => cells.map(quote).join(",")).join("\r\n")}\r\n`,
       },
       message: "The project grade CSV template was generated from the current verified roster.",
@@ -243,6 +345,10 @@ async function prepareProjectUpload(formData) {
   const subject = block?.subjects?.find((item) => key(item.code) === key(formData.get("subject_code")));
   if (!block || !subject || !Array.isArray(subject.expected) || !subject.expected.length) {
     throw new Error("Choose a verified project block and subject with an assigned roster.");
+  }
+  if (block.mappingRequired || !block.code || !subject.previousProfessor ||
+      subject.previousProfessor.provenance !== "PROJECT_FICTIONAL_ASSIGNMENT") {
+    throw new Error("The historical section and professor mapping must be configured from approved source evidence before importing this subject.");
   }
   if (block.release) throw new Error("This project block already has a published grade release.");
   const file = formData.get("file");
@@ -274,7 +380,8 @@ export async function stageProjectGradeFile(formData) {
     const sourceSystem = normalize(formData.get("source_system"));
     const sourceReference = normalize(formData.get("source_reference"));
     const issuer = normalize(formData.get("issuer"));
-    if (sourceSystem !== "PROJECT_ONLY" || !sourceReference || !issuer || [sourceReference, issuer].some((value) => value.length > 240)) {
+    if (sourceSystem !== "PROJECT_ONLY" || sourceReference.length < 8 || issuer.length < 3 ||
+        [sourceReference, issuer].some((value) => value.length > 240)) {
       return { ok: false, message: "PROJECT_ONLY source, document reference, and identifying issuer are required." };
     }
     const payload = {
@@ -290,11 +397,17 @@ export async function stageProjectGradeFile(formData) {
       p_checksum: parsed.checksum,
       p_rows: parsed.records,
     };
-    const { data, error } = await client.rpc("registrar_project_grade_stage_v1", payload);
+    const legacyBlock = block.id === CURRENT_BLOCK_ID;
+    const { data, error } = await client.rpc(
+      legacyBlock ? "registrar_project_grade_stage_v1" :
+        "registrar_project_grade_stage_dynamic_v1", payload);
     let batchId = data;
-    if (error?.code === "PGRST202" || error?.code === "42883") {
+    if (!legacyBlock && error) {
+      return failure(error, "The protected project grade staging transaction was rejected. Verify the historical roster and source mapping.");
+    }
+    if (legacyBlock && (error?.code === "PGRST202" || error?.code === "42883")) {
       // Without a transaction RPC, a batch is created in nonpublishable
-      // VALIDATING state, then made UPLOADED only after all 12 source rows persist.
+      // VALIDATING state, then made UPLOADED only after all source rows persist.
       const { admin, actor, data: latest } = await projectWorkspace();
       const current = latest.blocks.find((item) => item.id === block.id && item.termId === block.termId);
       if (!current || current.release || latest.batches.some((item) =>
@@ -303,11 +416,11 @@ export async function stageProjectGradeFile(formData) {
       }
       const inserted = await admin.from("project_grade_import_batches").insert({
         project_cohort_id: PROJECT_COHORT_ID,
-        block_id: CURRENT_BLOCK_ID,
-        target_term_id: CURRENT_TERM_ID,
-        term_id: HISTORY_TERM_ID,
-        curriculum_code: PROJECT_CURRICULUM,
-        previous_block_code: HISTORICAL_GROUP,
+        block_id: block.id,
+        target_term_id: block.currentTermId,
+        term_id: block.termId,
+        curriculum_code: block.curriculumCode,
+        previous_block_code: block.code,
         subject_code: subject.code,
         source_system: "PROJECT_ONLY",
         source_reference: sourceReference,
@@ -365,14 +478,20 @@ export async function validateProjectGradeBatch(batchId) {
   try {
     const { client, admin, data: workspace } = await projectWorkspace();
     if (!batchId) return { ok: false, message: "Choose a staged project grade batch." };
-    const { data, error } = await client.rpc("registrar_project_grade_validate_v1", { p_batch_id: batchId });
-    if (error?.code === "PGRST202" || error?.code === "42883") {
-      const block = workspace.blocks[0];
+    const chosenBatch = workspace.batches.find((item) => item.id === batchId);
+    if (!chosenBatch) return { ok: false, message: "The selected project grade batch is unavailable." };
+    const legacyBatch = chosenBatch.block_id === CURRENT_BLOCK_ID;
+    const { data, error } = await client.rpc(
+      legacyBatch ? "registrar_project_grade_validate_v1" :
+        "registrar_project_grade_validate_dynamic_v1", { p_batch_id: batchId });
+    if (legacyBatch && (error?.code === "PGRST202" || error?.code === "42883")) {
       const batch = workspace.batches.find((item) => item.id === batchId &&
-        item.block_id === CURRENT_BLOCK_ID && item.term_id === HISTORY_TERM_ID);
+        item.source_system === "PROJECT_ONLY");
+      const block = workspace.blocks.find((item) =>
+        item.id === batch?.block_id && item.termId === batch?.term_id);
       const subject = block?.subjects?.find((item) => item.code === batch?.subject_code);
       if (!batch || !subject || !["UPLOADED", "REQUIRES_CORRECTION"].includes(batch.status) ||
-          batch.rows.length !== subject.expected.length) {
+          block.mappingRequired || batch.rows.length !== subject.expected.length) {
         return { ok: false, message: "This project source batch is not eligible for validation." };
       }
       const expectedByNumber = new Map(subject.expected.map((item) => [item.studentNumber, item]));
@@ -437,13 +556,17 @@ export async function requestProjectGradeCorrections(batchId, reason) {
       return { ok: false, message: "Explain the requested academic correction in 15 to 2,000 characters." };
     }
     const batch = workspace.batches.find((item) => item.id === batchId &&
-      item.block_id === CURRENT_BLOCK_ID && item.term_id === HISTORY_TERM_ID &&
+      ((item.block_id === CURRENT_BLOCK_ID && item.term_id === HISTORY_TERM_ID) ||
+        workspace.blocks?.some((block) => block.id === item.block_id && block.termId === item.term_id)) &&
       item.source_system === "PROJECT_ONLY" && item.status === "CONFLICT_REVIEW");
     const unresolved = batch?.rows?.filter((row) => row.validation_status === "CONFLICT") || [];
     if (!batch || !unresolved.length || unresolved.some((row) => !row.canonical_result_id || !row.student_id)) {
       return { ok: false, message: "Only reconciled historical PROJECT_ONLY conflicts may be submitted for correction review." };
     }
-    const { data, error } = await client.rpc("registrar_project_grade_request_corrections_v1", {
+    const { data, error } = await client.rpc(
+      batch.block_id === CURRENT_BLOCK_ID
+        ? "registrar_project_grade_request_corrections_v1"
+        : "registrar_project_grade_request_corrections_dynamic_v1", {
       p_batch_id: batchId, p_reason: justification,
     });
     if (error) return failure(error, "The protected academic correction request was rejected.");
@@ -469,7 +592,8 @@ export async function cancelProjectGradeBatch(batchId, reason) {
     if (justification.length < 15 || justification.length > 2000)
       return { ok: false, message: "Explain why this conflicting source is being replaced in 15 to 2,000 characters." };
     const batch = workspace.batches.find((item) => item.id === batchId &&
-      item.block_id === CURRENT_BLOCK_ID && item.term_id === HISTORY_TERM_ID &&
+      ((item.block_id === CURRENT_BLOCK_ID && item.term_id === HISTORY_TERM_ID) ||
+        workspace.blocks?.some((block) => block.id === item.block_id && block.termId === item.term_id)) &&
       item.source_system === "PROJECT_ONLY" && item.status === "CONFLICT_REVIEW");
     const conflicts = batch?.rows?.filter((row) => row.validation_status === "CONFLICT") || [];
     const rejected = batch?.correctionRequests?.filter((request) =>
@@ -480,9 +604,13 @@ export async function cancelProjectGradeBatch(batchId, reason) {
           request.status === "UNDER_REVIEW")) {
       return { ok: false, message: "Academic Coordinator must reject every disputed source row before the Registrar can replace this batch." };
     }
-    const { data, error } = await client.rpc("registrar_project_grade_cancel_batch_v1", {
-      p_batch_id: batchId, p_reason: justification,
-    });
+    const { data, error } = batch.block_id === CURRENT_BLOCK_ID
+      ? await client.rpc("registrar_project_grade_cancel_batch_v1", {
+        p_batch_id: batchId, p_reason: justification,
+      })
+      : await client.rpc("registrar_project_grade_cancel_batch_dynamic_v1", {
+        p_batch_id: batchId, p_reason: justification,
+      });
     if (error || data?.status !== "CANCELLED" ||
         data?.official_records_unchanged !== true || !normalize(data?.audit_reference)) {
       return { ok: false, message: "The project source replacement could not be verified. The previous batch remains protected." };
@@ -500,15 +628,24 @@ export async function attestProjectGradeBatch({ batchId, sourceReference, checks
     if (!batchId || !normalize(sourceReference) || !/^[a-f0-9]{64}$/i.test(checksum || "") || !normalize(method)) {
       return { ok: false, message: "Verified source reference, checksum, and method are required." };
     }
-    const { data, error } = await client.rpc("registrar_project_grade_verify_v1", {
+    const selected = workspace.batches.find((item) => item.id === batchId);
+    if (!selected) return { ok: false, message: "The selected project grade batch is unavailable." };
+    const legacyBatch = selected.block_id === CURRENT_BLOCK_ID;
+    const { data, error } = await client.rpc(
+      legacyBatch ? "registrar_project_grade_verify_v1" :
+        "registrar_project_grade_verify_dynamic_v1", {
       p_batch_id: batchId, p_source_reference: sourceReference, p_checksum: checksum, p_method: method,
     });
-    if (error?.code === "PGRST202" || error?.code === "42883") {
+    if (legacyBatch && (error?.code === "PGRST202" || error?.code === "42883")) {
       const batch = workspace.batches.find((item) => item.id === batchId &&
-        item.block_id === CURRENT_BLOCK_ID && item.term_id === HISTORY_TERM_ID);
+        workspace.blocks.some((block) => block.id === item.block_id && block.termId === item.term_id));
+      const block = workspace.blocks.find((item) =>
+        item.id === batch?.block_id && item.termId === batch?.term_id);
+      const subject = block?.subjects.find((item) => item.code === batch?.subject_code);
       if (!batch || batch.status !== "READY_FOR_REVIEW" || batch.verified_at ||
           batch.source_reference !== sourceReference || batch.source_checksum !== checksum ||
-          batch.rows.length !== 12 || batch.rows.some((row) => row.validation_status !== "ALREADY_PRESENT")) {
+          block?.mappingRequired || batch.rows.length !== subject?.expected?.length ||
+          batch.rows.some((row) => row.validation_status !== "ALREADY_PRESENT")) {
         return { ok: false, message: "This project source cannot be independently verified until its historical row conflicts are resolved." };
       }
       const verified = await admin.from("project_grade_import_batches").update({
@@ -540,18 +677,22 @@ export async function publishProjectGradeBlock(blockId, termId, batchIds) {
     const uniqueSubjects = new Set(chosen.map((batch) => key(batch.subject_code)));
     if (chosen.length !== batchIds.length || chosen.some((batch) =>
       batch.status !== "READY_FOR_REVIEW" || !batch.verified_at || batch.conflict_rows > 0 ||
-      batch.row_count !== 12 || batch.rows?.length !== 12 ||
+      batch.row_count !== subjects.find((subject) => subject.code === batch.subject_code)?.expected?.length ||
+      batch.rows?.length !== batch.row_count ||
       batch.rows.some((row) => row.validation_status !== "ALREADY_PRESENT" || !row.canonical_result_id)) ||
         uniqueSubjects.size !== subjects.length || chosen.length !== subjects.length ||
         subjects.some((subject) => !uniqueSubjects.has(key(subject.code)))) {
       return { ok: false, message: "Every required project subject must have exactly one verified source batch before block publication." };
     }
-    const { data, error } = await client.rpc("registrar_project_grade_publish_block_v1", {
+    const expectedCount = subjects.reduce((sum, subject) => sum + subject.expected.length, 0);
+    const { data, error } = await client.rpc(
+      block.id === CURRENT_BLOCK_ID ? "registrar_project_grade_publish_block_v1" :
+        "registrar_project_grade_publish_dynamic_v1", {
       p_block_id: blockId, p_term_id: termId, p_batch_ids: batchIds,
     });
     if (error) return failure(error, "The protected project block publication was rejected. Check conflicting results and source evidence.");
-    if (data?.record_source !== "PROJECT_ONLY" || data?.expected_result_count !== 96 ||
-        data?.accepted_rows !== 96 || !normalize(data?.publication_reference)) {
+    if (data?.record_source !== "PROJECT_ONLY" || data?.expected_result_count !== expectedCount ||
+        data?.accepted_rows !== expectedCount || !normalize(data?.publication_reference)) {
       return { ok: false, message: "The database publication response could not be verified. Refresh protected project grade history before proceeding." };
     }
     revalidatePath("/registrar/students");

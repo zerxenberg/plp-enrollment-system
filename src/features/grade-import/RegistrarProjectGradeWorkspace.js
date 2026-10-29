@@ -4,11 +4,16 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { Button, DataTable, Modal, StatusBadge } from "@/components/ui/PortalUI";
 import { Details, Panel } from "@/components/registrar/RegistrarShared";
 import RegistrarGradeUploadPicker from "@/components/registrar/RegistrarGradeUploadPicker";
+import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import styles from "./RegistrarProjectGradeWorkspace.module.css";
 import {
   filterProjectGradeBatches, filterProjectGradeReleases, paginateProjectGradeHistory,
   projectGradeBatchDisplayStatus,
 } from "./project-grade-history.mjs";
+import {
+  loadProjectHistoricalInstructorOptions,
+  registerProjectHistoricalInstructorMapping,
+} from "./project-historical-mapping-actions";
 import {
   attestProjectGradeBatch,
   cancelProjectGradeBatch,
@@ -119,6 +124,15 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
   const [cancellationReason, setCancellationReason] = useState("");
   const [verificationConfirmed, setVerificationConfirmed] = useState(false);
   const [publishConfirmed, setPublishConfirmed] = useState(false);
+  const [mappingOpen, setMappingOpen] = useState(false);
+  const [mappingProfessors, setMappingProfessors] = useState([]);
+  const [mappingProfessorSearch, setMappingProfessorSearch] = useState("");
+  const [mappingProfessorId, setMappingProfessorId] = useState("");
+  const [mappingPreviousBlock, setMappingPreviousBlock] = useState("");
+  const [mappingEvidence, setMappingEvidence] = useState("");
+  const [mappingAttested, setMappingAttested] = useState(false);
+  const [mappingLoading, setMappingLoading] = useState(false);
+  const [mappingOptionsError, setMappingOptionsError] = useState("");
   const [showRows, setShowRows] = useState(false);
   const [batchSearch, setBatchSearch] = useState("");
   const [batchPage, setBatchPage] = useState(1);
@@ -153,11 +167,45 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
     return () => { current = false; };
   }, []);
 
+  useEffect(() => {
+    if (!mappingOpen) return;
+    let active = true;
+    loadProjectHistoricalInstructorOptions().then((response) => {
+      if (!active) return;
+      if (response.ok) {
+        setMappingProfessors(response.data || []);
+        setMappingOptionsError("");
+      } else {
+        setMappingOptionsError(response.message || "Historical professor options are unavailable.");
+      }
+    }).catch(() => {
+      if (active) setMappingOptionsError("Historical professor options could not be loaded.");
+    }).finally(() => {
+      if (active) setMappingLoading(false);
+    });
+    return () => { active = false; };
+  }, [mappingOpen]);
+
   const blocks = useMemo(() => workspace?.blocks || [], [workspace]);
   const batches = useMemo(() => workspace?.batches || [], [workspace]);
   const releases = useMemo(() => workspace?.releases || [], [workspace]);
   const publicationAvailable = workspace?.publicationAvailable === true;
-  const block = blocks.find((item) => item.id === blockId) || blocks[0];
+  const block = blocks.find((item) => item.id === blockId) ||
+    blocks.find((item) => item.release && !item.archived) ||
+    blocks.find((item) => !item.archived) || blocks[0];
+  const collegeBlocks = blocks.filter((item) => item.collegeCode === block?.collegeCode);
+  const programBlocks = collegeBlocks.filter((item) => item.programCode === block?.programCode);
+  const levelBlocks = programBlocks.filter((item) => item.yearLevel === block?.yearLevel);
+  const collegeOptions = [...new Map(blocks.map((item) =>
+    [item.collegeCode, item.collegeName || item.collegeCode])).entries()]
+    .filter(([code]) => code).sort(([a], [b]) => a.localeCompare(b));
+  const programOptions = [...new Map(collegeBlocks.map((item) =>
+    [item.programCode, item.programName || item.programCode])).entries()]
+    .sort(([a], [b]) => a.localeCompare(b));
+  const yearOptions = [...new Set(programBlocks.map((item) => item.yearLevel))]
+    .filter(Number.isInteger).sort((a, b) => a - b);
+  const filteredMappingProfessors = mappingProfessors.filter((item) =>
+    `${item.name} ${item.id}`.toLowerCase().includes(mappingProfessorSearch.trim().toLowerCase())).slice(0, 60);
   const subjects = block?.subjects || EMPTY_ROWS;
   const subject = subjects.find((item) => item.code === subjectCode) || subjects[0];
   const blockBatches = useMemo(() => batches.filter((item) =>
@@ -178,11 +226,58 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
     [filteredReleases, releasePage]);
   const release = block?.release || releases.find((item) => item.block_id === block?.id && item.term_id === block?.termId);
 
+  function selectBlock(next) {
+    setBlockId(next?.id || "");
+    setSubjectCode("");
+    setSelectedBatchId("");
+    setBatchSearch("");
+    setBatchPage(1);
+    setReleaseSearch("");
+    setReleasePage(1);
+    setPreview(null);
+    setFile(null);
+    setSourceReference("");
+    setIssuer("");
+    setVerificationMethod("");
+    setVerificationConfirmed(false);
+    setPublishConfirmed(false);
+    setMappingOpen(false);
+    setMappingPreviousBlock("");
+    setMappingProfessorId("");
+    setMappingProfessorSearch("");
+    setMappingEvidence("");
+    setMappingAttested(false);
+  }
+
+  async function configureHistoricalSubject(event) {
+    event.preventDefault();
+    if (!block || !subject || !block.mappingRequired || subject.previousProfessor ||
+        busy || mappingLoading || !mappingAttested || !mappingProfessorId ||
+        !mappingPreviousBlock.trim() || !mappingEvidence.trim()) return;
+    const response = await execute(() => registerProjectHistoricalInstructorMapping({
+      blockId: block.id,
+      subjectCode: subject.code,
+      previousBlockCode: mappingPreviousBlock.trim(),
+      instructorId: mappingProfessorId,
+      sourceReference: mappingEvidence.trim(),
+      attested: true,
+    }));
+    if (response.ok) {
+      setMappingProfessorId("");
+      setMappingProfessorSearch("");
+      setMappingEvidence("");
+      setMappingAttested(false);
+      setPreview(null);
+    }
+  }
+
   const progress = useMemo(() => {
     const duplicatedSubjects = subjects.filter((subject) =>
-      blockBatches.filter((batch) => batch.subject_code === subject.code && batch.status !== "CANCELLED").length > 1).length;
+      blockBatches.filter((batch) => batch.subject_code === subject.code &&
+        !["CANCELLED", "FAILED"].includes(batch.status)).length > 1).length;
     const latest = subjects.map((item) => {
-      const matches = blockBatches.filter((batch) => batch.subject_code === item.code && batch.status !== "CANCELLED");
+      const matches = blockBatches.filter((batch) => batch.subject_code === item.code &&
+        !["CANCELLED", "FAILED"].includes(batch.status));
       return matches.find((batch) => isVerifiedProjectBatch(batch, item.expected?.length || 0)) || matches[0] || null;
     });
     const verified = latest.reduce((count, batch, index) => count +
@@ -331,30 +426,58 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
 
   return <div className={styles.workspace}>
     <Panel title={historyOnly ? "Project Grade Publication History" : "PROJECT_ONLY Historical Grade Imports"}
-      subtitle="Process the historical BSIT 1A source roster for the current BSIT 2A cohort. All records remain project scoped.">
-      <div className={`notice warning ${styles.compactNotice}`} style={{ marginBottom: 14 }}>
-        <strong>Fictional project academic records</strong>
-        <p>Historical source files are reconciled against existing PROJECT_ONLY academic history. Matching results are retained. Conflicts require authorized review. Official academic records are never updated here.</p>
-      </div>
-
+      subtitle="Review prior semester grade sources for configured project college departments, programs, year levels and student blocks.">
       {message ? <div className={`notice${error ? " warning" : ""}`} role={error ? "alert" : "status"} style={{ marginBottom: 14 }}>{message}</div> : null}
 
       <div className={`${styles.contextBar} form-grid`}>
         <label className="field">
-          <span>Current Student Block</span>
+          <span>College Department</span>
+          <select value={block?.collegeCode || ""} disabled={busy || !blocks.length}
+            onChange={(event) => selectBlock(blocks.find((item) => item.collegeCode === event.target.value))}>
+            {collegeOptions.map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>College Program</span>
+          <select value={block?.programCode || ""} disabled={busy || !collegeBlocks.length}
+            onChange={(event) => selectBlock(collegeBlocks.find((item) => item.programCode === event.target.value))}>
+            {programOptions.map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Current Year Level</span>
+          <select value={block?.yearLevel || ""} disabled={busy || !programBlocks.length}
+            onChange={(event) => selectBlock(programBlocks.find((item) => item.yearLevel === Number(event.target.value)))}>
+            {yearOptions.map((level) => <option key={level} value={level}>{level}{level === 1 ? "st" : level === 2 ? "nd" : level === 3 ? "rd" : "th"} Year</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Block Section</span>
           <select value={block?.id || ""} disabled={busy} onChange={(event) => {
-            setBlockId(event.target.value); setSubjectCode(""); setSelectedBatchId("");
-            setBatchSearch(""); setBatchPage(1); setReleaseSearch(""); setReleasePage(1);
-            setPreview(null); setFile(null);
+            selectBlock(levelBlocks.find((item) => item.id === event.target.value));
           }}>
-            {blocks.map((item) => <option key={item.id} value={item.id}>{item.currentBlockCode || item.code} · {item.programCode}</option>)}
+            {levelBlocks.map((item) => <option key={item.id} value={item.id}>{item.currentBlockCode || item.code}</option>)}
           </select>
         </label>
         <div className="field">
-          <span>Verified Source Context</span>
-          <div className="notice">Previous group: <strong>{block?.code || "Unavailable"}</strong>. Historical term: <strong>{block?.termLabel || block?.termId || "Unavailable"}</strong>.</div>
+          <span>Previous Academic Semester</span>
+          <div className="notice"><strong>{block?.termLabel || "No historical term available"}</strong></div>
+        </div>
+        <div className="field">
+          <span>Historical Section Mapping</span>
+          <div className="notice"><strong>{
+            block?.code
+              ? block.subjects?.some((item) => item.previousProfessor?.mappingOrigin === "GENERATED_DEMONSTRATION")
+                ? `Simulated prior block: ${block.code}` : block.code
+              : "Requires authorized historical section mapping"
+          }</strong></div>
         </div>
       </div>
+        {block?.mappingRequired ? <p className="notice warning" role="status" style={{ marginTop: 12, marginBottom: 12 }}>
+        This current block has fictional historical results, but the previous section or its professor assignments
+        have not been recorded for every historical subject in the project records. Open the authorized source mapping
+        panel in Upload Grades to register assignments backed by provided source evidence.
+      </p> : null}
 
       <div className={styles.stepNav} role="tablist" aria-label="Project historical grade workflow">
         {WORKFLOW_STEPS.map((step, index) => {
@@ -392,23 +515,78 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
         {!historyOnly && !release && subject ? <div className={styles.subSection}>
           <h4 className={styles.sectionTitle}>Stage a Historical Subject Workbook</h4>
           <p className={styles.helperText}>
-            Choose one CSV or XLSX file for <strong>{subject.code}</strong> covering all {subject.expected?.length || 0} historical students. Records stay PROJECT_ONLY.
+            Choose one CSV or XLSX file for <strong>{displaySubjectCode(subject.code)}</strong> covering all {subject.expected?.length || 0} historical students. Records stay PROJECT_ONLY.
           </p>
           <details className={styles.compactNotice}>
             <summary>View required spreadsheet columns</summary>
             <p>Nine required columns: student_number, student_full_name, subject_code, academic_year, semester, section_code, grade_value, completion_status, source_record_reference. Optional columns: previous_block_section and previous_subject_professor. XLSX files require a Grades sheet; a second Instructions sheet is allowed. A project fictional professor is accepted only when its name matches the protected assignment below. Such names do not establish institutional faculty verification.</p>
           </details>
           <div className={`form-grid ${styles.fieldGrid}`}>
-            <label className="field">Selected Subject
-              <select value={subject.code} disabled={busy} onChange={(event) => { setSubjectCode(event.target.value); setCorrectionReason(""); setPreview(null); setFile(null); }}>
-                {subjects.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+            <label className="field">Previous Semester Subjects
+              <select value={subject.code} disabled={busy} onChange={(event) => { setSubjectCode(event.target.value); setCorrectionReason(""); setPreview(null); setFile(null); setMappingProfessorId(""); setMappingProfessorSearch(""); setMappingEvidence(""); setMappingAttested(false); }}>
+                {subjects.map((item) => <option key={item.code} value={item.code}>{displaySubjectCode(item.code)} · {item.name}</option>)}
               </select>
             </label>
             <div className="field">
               <span>Previous Semester Professor (Fictional Demonstration)</span>
               <div className="notice"><strong>{subject.previousProfessor?.name || "Not assigned"}</strong></div>
+              {subject.previousProfessor && subject.previousProfessor.mappingOrigin !== "GENERATED_DEMONSTRATION"
+                ? <span className={styles.helperText}>Existing PROJECT_ONLY professor mapping. Not an official faculty record.</span>
+                : null}
             </div>
-            <div className="field full"><RegistrarGradeUploadPicker projectOnly file={file} disabled={busy}
+            {block.mappingRequired ? <div className="field full">
+              <Button variant="secondary" disabled={busy} onClick={() => {
+                if (!mappingOpen) setMappingLoading(true);
+                setMappingOpen((value) => !value);
+              }}>
+                {mappingOpen ? "Close Historical Source Mapping" : "Configure Historical Source Mapping"}
+              </Button>
+              {mappingOpen ? <form className={styles.mappingForm} onSubmit={configureHistoricalSubject}>
+                <strong>Authorized historical source mapping</strong>
+                <p className={styles.helperText}>
+                  The previous section and professor must come from supporting academic source evidence.
+                  This mapping is for fictional PROJECT_ONLY records and does not verify actual university faculty.
+                  Register every previous semester subject separately before importing the block.
+                </p>
+                <div className="form-grid">
+                  <label className="field">Historical Section Code
+                    <input value={mappingPreviousBlock} onChange={(event) => setMappingPreviousBlock(event.target.value.toUpperCase())}
+                      required maxLength={40} placeholder="Section code shown in historical source" disabled={busy} />
+                  </label>
+                  <label className="field">Search Existing Fictional Professor
+                    <input type="search" value={mappingProfessorSearch} disabled={busy || mappingLoading}
+                      placeholder="Search professor name" onChange={(event) => { setMappingProfessorSearch(event.target.value); setMappingProfessorId(""); }} />
+                  </label>
+                  <label className="field">Professor for {displaySubjectCode(subject.code)}
+                    <select value={mappingProfessorId} onChange={(event) => setMappingProfessorId(event.target.value)}
+                      required disabled={busy || mappingLoading || Boolean(subject.previousProfessor)}>
+                      <option value="">Select evidenced professor</option>
+                      {filteredMappingProfessors.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">Source Document Reference
+                    <input value={mappingEvidence} maxLength={240} minLength={8} disabled={busy}
+                      placeholder="Required historical faculty or section source reference"
+                      onChange={(event) => setMappingEvidence(event.target.value)} required />
+                  </label>
+                </div>
+                {mappingOptionsError ? <p className="notice warning" role="alert">{mappingOptionsError}</p> : null}
+                {mappingLoading ? <p role="status">Loading existing fictional professor records...</p> : null}
+                <label className={styles.mappingAttestation}>
+                  <input type="checkbox" checked={mappingAttested} disabled={busy || Boolean(subject.previousProfessor)}
+                    onChange={(event) => setMappingAttested(event.target.checked)} />
+                  I attest that the historical section, professor and reference match supporting source evidence.
+                </label>
+                <Button type="submit" disabled={busy || mappingLoading || Boolean(subject.previousProfessor) || !mappingAttested ||
+                  !mappingProfessorId || mappingEvidence.trim().length < 8 || !mappingPreviousBlock.trim()}>
+                  Register Historical Professor Mapping
+                </Button>
+                {subject.previousProfessor ? <p role="status" className={styles.helperText}>
+                  This subject already has a protected historical professor mapping. Select another unmapped subject.
+                </p> : null}
+              </form> : null}
+            </div> : null}
+            <div className="field full"><RegistrarGradeUploadPicker projectOnly file={file} disabled={busy || block.mappingRequired || !subject.previousProfessor}
               onFileSelected={(next) => { setFile(next); setPreview(null); }} /></div>
             <label className="field">Historical Workbook Reference
               <input value={sourceReference} maxLength={240} disabled={busy} required placeholder="e.g. HIST-BSIT-1A-CP2-2025-2" onChange={(event) => { setSourceReference(event.target.value); setPreview(null); }} />
@@ -417,12 +595,11 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
               <input value={issuer} maxLength={240} disabled={busy} required placeholder="e.g. Registrar Records or NOT_VERIFIED_IN_SOURCE" onChange={(event) => { setIssuer(event.target.value); setPreview(null); }} />
             </label>
           </div>
-          <p className={styles.helperText}>The historical workbook reference and source issuer are required to preview and stage a file. Use NOT_VERIFIED_IN_SOURCE if the issuer is not evidenced.</p>
           <div className={`action-row ${styles.actionBar}`} style={{ marginTop: 12 }}>
-            <Button disabled={busy || !file || !sourceReference.trim() || !issuer.trim()}
+            <Button disabled={busy || block.mappingRequired || !subject.previousProfessor || !file || !sourceReference.trim() || !issuer.trim()}
               onClick={previewFile}>Preview Grades</Button>
             {preview && !preview.invalidRows && !preview.missingStudents.length && preview.requiredRows === preview.rowCount ?
-              <Button disabled={busy} onClick={stageFile}>Upload for Review</Button> : null}
+              <Button disabled={busy || block.mappingRequired || !subject.previousProfessor} onClick={stageFile}>Upload for Review</Button> : null}
           </div>
           {preview ? <div className={styles.subSection}>
             <Details items={[
@@ -480,7 +657,7 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
             ? "No project source batches match this search." : "No project source batches have been staged."}</p> : null}
           <div className={styles.tableWrap}><DataTable rows={batchListing.items} rowKey="id" columns={[
             { key: "file", label: "Source File", render: (item) => item.file_name },
-            { key: "subject", label: "Subject", render: (item) => item.subject_code },
+            { key: "subject", label: "Subject", render: (item) => displaySubjectCode(item.subject_code) },
             { key: "professor", label: "Demo Professor", render: (item) =>
               subjects.find((entry) => entry.code === item.subject_code)?.previousProfessor?.name || "Not assigned" },
             { key: "reference", label: "Source Reference", render: (item) => item.source_reference },
@@ -639,7 +816,7 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
           <div className={styles.subSection}>
             <h4 className={styles.sectionTitle}>Historical Subject Source Checklist</h4>
             <div className={styles.tableWrap}><DataTable rowKey="code" rows={subjects} columns={[
-              { key: "subject", label: "Historical Subject", render: (item) => <><strong>{item.code}</strong><div>{item.name}</div></> },
+              { key: "subject", label: "Historical Subject", render: (item) => <><strong>{displaySubjectCode(item.code)}</strong><div>{item.name}</div></> },
               { key: "professor", label: "Fictional Demo Professor", render: (item) => item.previousProfessor?.name || "Not assigned" },
               { key: "roster", label: "Required Students", render: (item) => item.expected?.length || 0 },
               { key: "grade", label: "Verified Rows", render: (item) => {
