@@ -482,6 +482,9 @@ export async function getRegistrarShellData(userId) {
 }
 
 export async function getRegistrarDashboardData() {
+  // Next.js may render a page before its parent layout redirects. Authorize
+  // here as well so unauthenticated requests never query student records.
+  await requireRole("registrar");
   const supabase = await createClient();
 
   const [
@@ -551,6 +554,8 @@ export async function getRegistrarDashboardData() {
 
 
 export async function getRegistrarStudentsData() {
+  // Parent layout authorization does not necessarily precede page data loads.
+  await requireRole("registrar");
   const supabase = await createClient();
 
   const [
