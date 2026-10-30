@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import CorDocumentPreview from "@/components/cor/CorDocumentPreview";
 import { displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { useAcademicDataRefresh } from "./useAcademicDataRefresh";
 import {
   buildClassScheduleMeetings, resolveClassScheduleView, scheduledDays, scheduledTimeSlots,
 } from "./student-class-schedule-view.mjs";
@@ -18,19 +19,25 @@ function displayValue(value) {
 }
 
 export default function StudentClassSchedule({
-  mode = "unavailable", officialSchedule, projectSchedule, proposedSchedule,
+  mode = "unavailable", officialSchedule, projectSchedule, proposedSchedule, blockSchedule,
   demonstrationCorUrl = null,
 }) {
+  useAcademicDataRefresh(mode === "project");
   const [view, setView] = useState(TABS[0]);
   const [dayFilter, setDayFilter] = useState("ALL");
   const [subjectFilter, setSubjectFilter] = useState("ALL");
   const [selected, setSelected] = useState(null);
   const [corOpen, setCorOpen] = useState(false);
-  const resolved = resolveClassScheduleView({
-    mode, officialSchedule, projectSchedule, proposedSchedule,
+  const [showFullBlock, setShowFullBlock] = useState(false);
+  const preferred = resolveClassScheduleView({
+    mode, officialSchedule, projectSchedule, proposedSchedule, blockSchedule,
   });
+  const reference = resolveClassScheduleView({ mode, blockSchedule });
+  const canToggleBlock = preferred.kind === "proposed" && reference.kind === "block";
+  const resolved = canToggleBlock && showFullBlock ? reference : preferred;
   const isConfirmed = resolved.kind === "registered";
   const isProposed = resolved.kind === "proposed";
+  const isBlockTimetable = resolved.kind === "block";
   const isProjectDemonstration = resolved.provenance === "demonstration";
   const corUrl = isConfirmed
     ? isProjectDemonstration
@@ -51,17 +58,24 @@ export default function StudentClassSchedule({
     (dayFilter === "ALL" || item.day === dayFilter) &&
     (subjectFilter === "ALL" || item.code === subjectFilter));
   const timeSlots = scheduledTimeSlots(filtered);
-  const canShowSchedule = (isConfirmed || isProposed) && classes.length > 0;
+  const canShowSchedule = (isConfirmed || isProposed || isBlockTimetable) && classes.length > 0;
 
   return (
     <>
       <PageHeader title="Class Schedule"
         description={isProposed
           ? "Review your planned weekly timetable while your enrollment awaits Registrar confirmation."
+          : isBlockTimetable
+            ? "View your published block timetable while academic eligibility is being evaluated. These are not registered classes."
           : isProjectDemonstration
             ? "View the timetable preserved from your Registrar confirmed classroom demonstration."
             : "View the personal timetable from your Registrar confirmed enrollment."}
         actions={canShowSchedule ? <div className="action-row">
+          {canToggleBlock ? <Button variant="secondary" onClick={() => {
+            setShowFullBlock((current) => !current);
+            setDayFilter("ALL");
+            setSubjectFilter("ALL");
+          }}>{isBlockTimetable ? "View Eligible Proposal" : "View Full Block Timetable"}</Button> : null}
           {corUrl ? <Button onClick={() => setCorOpen(true)}>View COR</Button> : null}
           <Button variant="secondary" onClick={() => window.print()}>Print Schedule</Button>
         </div> : null} />
@@ -76,7 +90,9 @@ export default function StudentClassSchedule({
       ) : (
         <>
           {isProjectDemonstration && <div className="notice" style={{ marginBottom: 12 }}>
-            {isProposed
+            {isBlockTimetable
+              ? "Published demonstration block timetable for reference only. Individual subject eligibility and enrollment proposals are evaluated separately. Viewing this schedule does not register any classes."
+              : isProposed
               ? "Classroom demonstration only. This timetable is proposed and your classes are not registered. Registrar confirmation is required."
               : "Academic classroom demonstration only. This registered timetable is not an official PLP enrollment record."}
           </div>}
@@ -85,8 +101,8 @@ export default function StudentClassSchedule({
             {resolved.schedule.homeBlock && <span>Block: <strong>{resolved.schedule.homeBlock}</strong></span>}
             {isConfirmed && <span>{isProjectDemonstration ? "Demonstration Reference" : "Confirmation Reference"}: <strong>{resolved.schedule.reference}</strong></span>}
             <span>Status: <StatusBadge
-              value={isProposed ? "PROPOSED" : isProjectDemonstration ? "CONFIRMED_SIMULATION" : "CONFIRMED"}
-              label={isProposed ? "Proposed (not registered)" : isProjectDemonstration ? "Registered (demo only)" : "Registered"} /></span>
+              value={isBlockTimetable ? "PUBLISHED" : isProposed ? "PROPOSED" : isProjectDemonstration ? "CONFIRMED_SIMULATION" : "CONFIRMED"}
+              label={isBlockTimetable ? "Block timetable (reference only)" : isProposed ? "Proposed (not registered)" : isProjectDemonstration ? "Registered (demo only)" : "Registered"} /></span>
           </div>
           <InternalTabs items={TABS.map((item) => ({ value: item, label: item }))}
             selected={view} onSelect={setView} label="Class schedule views" panelCard>
@@ -101,7 +117,7 @@ export default function StudentClassSchedule({
               <EmptyState title="No classes match the selected filters." />
             ) : view === TABS[0] ? (
               <div className="table-scroll" role="region" tabIndex={0}
-                aria-label={`Weekly ${isProposed ? "proposed" : "registered"} class timetable`}>
+                aria-label={`Weekly ${isBlockTimetable ? "block reference" : isProposed ? "proposed" : "registered"} class timetable`}>
                 <div className="schedule-grid"
                   style={{ gridTemplateColumns: `minmax(95px, 110px) repeat(${visibleDays.length}, minmax(180px, 1fr))` }}>
                   <div className="schedule-cell header">Time</div>

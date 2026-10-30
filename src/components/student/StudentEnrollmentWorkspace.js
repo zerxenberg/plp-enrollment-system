@@ -6,6 +6,7 @@ import { submitPreparedProjectEnrollment, getConfirmedProjectDemonstrationCor } 
 import CorDocumentPreview from "@/components/cor/CorDocumentPreview";
 import { displayCurriculumCode, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { groupMeetingSchedules, formatMeetingSchedule } from "@/features/students/class-meeting-format.mjs";
+import { useAcademicDataRefresh } from "./useAcademicDataRefresh";
 
 const TABS = [
   { value: "current", label: "Current Enrollment" },
@@ -51,6 +52,7 @@ export default function StudentEnrollmentWorkspace({
   reopenEnrollmentAction = null,
   demonstrationCorUrl = null,
 }) {
+  useAcademicDataRefresh(data.kind === "ready" && data.simulation?.status !== "CONFIRMED_SIMULATION");
   const [activeTab, setActiveTab] = useState("current");
   const [detail, setDetail] = useState(null);
   const [reviewOpen, setReviewOpen] = useState(false);

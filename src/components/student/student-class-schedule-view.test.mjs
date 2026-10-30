@@ -27,6 +27,21 @@ test("proposals require trusted timetable source and explicit validation", () =>
   assert.equal(view.provenance, "demonstration");
 });
 
+test("validated published block timetable remains visible while grades are pending, without registering a subject", () => {
+  const block = { ...proposed, source: "VERIFIED_PROJECT_BLOCK_TIMETABLE" };
+  assert.equal(resolveClassScheduleView({ mode: "project", blockSchedule: { ...block, timetableValidated: false } }).kind, "awaiting");
+  assert.equal(resolveClassScheduleView({ mode: "project", blockSchedule: { ...block, source: "UNKNOWN" } }).kind, "awaiting");
+  assert.equal(resolveClassScheduleView({ mode: "unavailable", blockSchedule: block }).kind, "unavailable");
+  const reference = resolveClassScheduleView({ mode: "project", blockSchedule: block });
+  assert.equal(reference.kind, "block");
+  assert.equal(reference.provenance, "demonstration");
+  const meetings = buildClassScheduleMeetings(reference.schedule, reference.kind);
+  assert.equal(meetings.length, 2);
+  assert.ok(meetings.every((meeting) => meeting.recordLabel === "Block timetable only"));
+  assert.ok(meetings.every((meeting) => meeting.recordStatus !== "CONFIRMED"));
+  assert.equal(resolveClassScheduleView({ mode: "project", proposedSchedule: proposed, blockSchedule: block }).kind, "proposed");
+});
+
 test("only a verified Registrar snapshot upgrades a plan to registration", () => {
   const incompleteProject = {
     ...proposed, reference: "DEMO-1", confirmedAt: "2026-10-26T10:00:00Z",

@@ -32,7 +32,7 @@ function dayOrder(day) {
 }
 
 export function resolveClassScheduleView({
-  mode = "unavailable", officialSchedule, projectSchedule, proposedSchedule,
+  mode = "unavailable", officialSchedule, projectSchedule, proposedSchedule, blockSchedule,
 } = {}) {
   if (mode !== "project") return { kind: "unavailable", schedule: null };
 
@@ -57,6 +57,15 @@ export function resolveClassScheduleView({
       Array.isArray(proposedSchedule.subjects) && proposedSchedule.subjects.length &&
       Array.isArray(proposedSchedule.items) && proposedSchedule.items.length) {
     return { kind: "proposed", provenance: "demonstration", schedule: proposedSchedule };
+  }
+
+  // A published block timetable is visible even before academic eligibility
+  // is established. It must never be presented as a proposed registration.
+  if (blockSchedule?.source === "VERIFIED_PROJECT_BLOCK_TIMETABLE" &&
+      blockSchedule?.timetableValidated === true &&
+      Array.isArray(blockSchedule.subjects) && blockSchedule.subjects.length &&
+      Array.isArray(blockSchedule.items) && blockSchedule.items.length) {
+    return { kind: "block", provenance: "demonstration", schedule: blockSchedule };
   }
 
   return { kind: "awaiting", schedule: null };
@@ -87,8 +96,8 @@ export function buildClassScheduleMeetings(schedule, kind) {
       room: formatRoomCode(item.room),
       instructor: textOr(item.professor || item.instructor),
       component: textOr(item.lecture_lab_type || item.component, "Class meeting"),
-      recordStatus: kind === "proposed" ? "PROPOSED" : "CONFIRMED",
-      recordLabel: kind === "proposed" ? "Proposed" : "Registered",
+      recordStatus: kind === "block" ? "PUBLISHED" : kind === "proposed" ? "PROPOSED" : "CONFIRMED",
+      recordLabel: kind === "block" ? "Block timetable only" : kind === "proposed" ? "Proposed" : "Registered",
     }];
   }).sort((a, b) => dayOrder(a.day) - dayOrder(b.day) ||
     a.startMinutes - b.startMinutes || a.code.localeCompare(b.code));

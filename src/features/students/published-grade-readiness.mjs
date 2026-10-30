@@ -104,19 +104,22 @@ export function evaluateAcademicReadiness({
       }
       accepted.set(row.subject_code, row.result_status);
     }
-    const missing = required.filter((code) => !accepted.has(code) ||
-      accepted.get(code) === "INCOMPLETE");
+    // An explicitly accepted INCOMPLETE is a recorded deficiency, not a
+    // missing Registrar publication. Its dependent subjects remain restricted
+    // because only COMPLETED results satisfy prerequisites.
+    const missing = required.filter((code) => !accepted.has(code));
     if (missing.length) {
       return { ready: false, classification: "PENDING_EVALUATION", missing, failed: [],
         reason: `Accepted project final grades are still required for ${missing.length} previous semester subject(s).` };
     }
     const failed = required.filter((code) => accepted.get(code) === "FAILED");
+    const incomplete = required.filter((code) => accepted.get(code) === "INCOMPLETE");
     if (failed.length > maximumFailedRequirements) {
-      return { ready: false, classification: "IRREGULAR", missing: [], failed,
+      return { ready: false, classification: "IRREGULAR", missing: [], failed, incomplete,
         reason: `The configured project enrollment policy permits at most ${maximumFailedRequirements} unresolved failed subject requirements.` };
     }
-    return { ready: true, classification: failed.length ? "IRREGULAR" : "REGULAR",
-      missing: [], failed, reason: null };
+    return { ready: true, classification: failed.length || incomplete.length ? "IRREGULAR" : "REGULAR",
+      missing: [], failed, incomplete, reason: null };
   }
   if (studentType !== "CONTINUING_STUDENT" || !requiredSubjectCodes.length) {
     return { ready: false, classification: "PENDING_EVALUATION", missing: [],
@@ -129,17 +132,17 @@ export function evaluateAcademicReadiness({
     if (!["COMPLETED", "FAILED", "INCOMPLETE"].includes(row.result_status)) continue;
     published.set(row.subject_code, row.result_status);
   }
-  const missing = required.filter((code) => !published.has(code) ||
-    published.get(code) === "INCOMPLETE");
+  const missing = required.filter((code) => !published.has(code));
   if (missing.length) {
     return { ready: false, classification: "PENDING_EVALUATION", missing,
       failed: [], reason: `Published final grades are still required for ${missing.length} previous semester subject(s).` };
   }
   const failed = required.filter((code) => published.get(code) === "FAILED");
+  const incomplete = required.filter((code) => published.get(code) === "INCOMPLETE");
   if (failed.length > maximumFailedRequirements) {
-    return { ready: false, classification: "IRREGULAR", missing: [], failed,
+    return { ready: false, classification: "IRREGULAR", missing: [], failed, incomplete,
       reason: `The project enrollment policy permits at most ${maximumFailedRequirements} unresolved failed subject requirements.` };
   }
-  return { ready: true, classification: failed.length ? "IRREGULAR" : "REGULAR",
-    missing: [], failed, reason: null };
+  return { ready: true, classification: failed.length || incomplete.length ? "IRREGULAR" : "REGULAR",
+    missing: [], failed, incomplete, reason: null };
 }

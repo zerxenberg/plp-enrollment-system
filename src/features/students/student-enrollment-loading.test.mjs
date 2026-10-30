@@ -187,6 +187,57 @@ test("seven verified BSIT-2A classes total 19 units and PHP 1900 before and afte
   assert.equal(opened.canSubmit, true);
 });
 
+test("BSCS-2C second-year eligibility prepares seven distinct subjects, 19 units, and PHP 1900 after publication only", () => {
+  const codes = [
+    "P8F26-GE-T03-1", "P8F26-GE-T03-2", "P8F26-GE-T03-3",
+    "P8F26-BSCS-T03-M1", "P8F26-BSCS-T03-M2",
+    "P8F26-BSCS-T03-M3", "P8F26-BSCS-T03-M4",
+  ];
+  const units = [3, 3, 2, 3, 3, 3, 2];
+  const selection = codes.map((subject_code, index) => ({
+    subject_code, subject_name: subject_code, academic_units: units[index],
+  }));
+  const common = {
+    context: { studentNumber: "25-50079", studentType: "CONTINUING_STUDENT" },
+    snapshot: {
+      ...snapshot, student_number: "25-50079", student_name: "Vincent Rose Mendoza",
+      program_code: "BSCS", curriculum_code: "P8F26-BSCS-V1", home_block: "BSCS-2C",
+      subjects: selection,
+      class_schedule: codes.flatMap((subject_code) => [
+        { subject_code, day: 1, start_time: "08:00", end_time: "09:00" },
+        { subject_code, day: 3, start_time: "08:00", end_time: "09:00" },
+      ]),
+    },
+    term: { id: "TERM-2026-1", semester: "First Semester", status: "Open",
+      enrollment_start: "2026-10-01", enrollment_end: "2026-11-30" },
+    asOfDate: "2026-10-30",
+    simulation: null,
+    sectionCodes: new Map(codes.map((code) => [code,
+      { code: "BSCS-2C", status: "OPEN", scheduleStatus: "FINALIZED" }])),
+    currentTermCodes: new Set(codes),
+    priceRows: codes.map((code) => ({ subject_code: code, rate_per_unit: 100,
+      classification: "SYNTHETIC_DEVELOPMENT_ONLY" })),
+  };
+  const sandbox = { estimateProjectSelectedSubjects, selectedProjectSubjectCodes };
+  runInNewContext(`${serverSource}\nthis.buildSummary = buildStudentEnrollmentSummary;`, sandbox);
+  const decisions = new Map(codes.map((code) => [code, { eligibility: "ELIGIBLE" }]));
+  const pending = sandbox.buildSummary({ ...common, priceRows: [], publishedEvidence: {
+    readiness: { ready: false, classification: "PENDING_EVALUATION", reason: "Eight grades awaiting publication" },
+    subjectDecisions: new Map(codes.map((code) => [code, { eligibility: "PENDING_EVALUATION" }])),
+  } });
+  assert.equal(pending.canSubmit, false);
+  assert.equal(pending.proposedUnits, 0);
+  assert.equal(pending.projectFeeEstimate.estimatedAmount, 0);
+  const accepted = sandbox.buildSummary({ ...common, publishedEvidence: {
+    readiness: { ready: true, classification: "REGULAR" }, subjectDecisions: decisions,
+  } });
+  assert.equal(accepted.proposedSubjects.length, 7);
+  assert.equal(accepted.proposedUnits, 19);
+  assert.equal(accepted.projectFeeEstimate.estimatedAmount, 1900);
+  assert.equal(accepted.projectFeeEstimate.subjects.length, 7);
+  assert.equal(accepted.canSubmit, true);
+});
+
 test("published grades and OPEN section never bypass an old confirmed simulation", async () => {
   const { load } = setup({ sectionStatus: "OPEN", simulationStatus: "CONFIRMED_SIMULATION", gradeReady: true });
   const data = await load();

@@ -23,7 +23,9 @@ test("incomplete or missing grade publications do not imply passing", () => {
   assert.equal(scenario(0,6).classification,"PENDING_EVALUATION");
   const incomplete = evaluateAcademicReadiness({studentType:"CONTINUING_STUDENT",
     requiredSubjectCodes:["A"], publishedRows:[{subject_code:"A",result_status:"INCOMPLETE"}]});
-  assert.equal(incomplete.ready,false);
+  assert.equal(incomplete.ready,true);
+  assert.equal(incomplete.classification,"IRREGULAR");
+  assert.deepEqual(incomplete.incomplete,["A"]);
 });
 test("new students need no previous PLP grade publication", () => {
   assert.equal(evaluateAcademicReadiness({studentType:"NEW_STUDENT"}).ready,true);

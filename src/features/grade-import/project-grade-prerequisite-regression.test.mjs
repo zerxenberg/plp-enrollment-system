@@ -165,6 +165,24 @@ test("after full Registrar publication, FAILED Computer Programming 2 blocks Dat
   assert.equal(result.subjectDecisions.get(UNRELATED)?.eligibility, "ELIGIBLE");
 });
 
+test("accepted INCOMPLETE history is an irregular deficiency rather than missing publication", async () => {
+  const canonical = historicalRows({ failedPrerequisite: false });
+  canonical[0].grade_value = null;
+  canonical[0].result_status = "INCOMPLETE";
+  const { result } = await readiness({ canonical, accepted: projectAcceptanceRows(canonical) });
+  assert.equal(result.acceptedProjectResults.length, HISTORICAL_CODES.length);
+  assert.equal(result.readiness.ready, true);
+  assert.equal(result.readiness.classification, "IRREGULAR");
+  assert.deepEqual(result.readiness.incomplete, [PREREQUISITE]);
+  assert.equal(result.subjectDecisions.get(DEPENDENT)?.eligibility, "RESTRICTED");
+  assert.equal(result.subjectDecisions.get(UNRELATED)?.eligibility, "ELIGIBLE");
+  const incompleteAcceptanceMissing = await readiness({
+    canonical, accepted: projectAcceptanceRows(canonical).slice(1),
+  });
+  assert.equal(incompleteAcceptanceMissing.result.readiness.ready, false);
+  assert.deepEqual(incompleteAcceptanceMissing.result.readiness.missing, [PREREQUISITE]);
+});
+
 test("a properly published passing Computer Programming 2 may satisfy the precise dependent prerequisite", async () => {
   const canonical = historicalRows({ failedPrerequisite: false });
   const { result } = await readiness({ canonical, accepted: projectAcceptanceRows(canonical) });

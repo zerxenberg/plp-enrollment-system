@@ -331,13 +331,39 @@ export async function loadStudentAcademicForPage() {
     // confirmation, but it is not an immutable registered class selection.
     // Do not silently promote these generated class meetings into a COR.
     let proposedSchedule = null;
+    let blockSchedule = null;
     if (snapshot.schedule_validated_for_project === true &&
         enrollmentReady && enrollmentView.timetableReady === true &&
         enrollmentView.student.number === student.student_number &&
         enrollmentView.student.curriculum === snapshot.curriculum_code &&
         enrollmentView.term.id === snapshot.term_id) {
-      const prepared = enrollmentView.subjects.filter((item) =>
+      const scheduled = enrollmentView.subjects.filter((item) =>
         item.section && Array.isArray(item.meetings) && item.meetings.length &&
+        item.sectionScheduleStatus === "FINALIZED" &&
+        ["PLANNED", "OPEN"].includes(item.sectionStatus));
+      // A published, validated block timetable can be viewed while grades are
+      // pending. It is not a subject proposal, registration or academic credit.
+      // Its data comes from the same protected student snapshot and block links.
+      if (scheduled.length) {
+        blockSchedule = {
+          source: "VERIFIED_PROJECT_BLOCK_TIMETABLE",
+          timetableValidated: true,
+          term: enrollmentView.term.label,
+          homeBlock: enrollmentView.homeBlock,
+          subjects: scheduled.map((item) => ({
+            subject_code: item.code, subject_name: item.name,
+            section_code: item.section, units: item.units,
+            section_status: item.sectionStatus,
+          })),
+          items: scheduled.flatMap((item) => item.meetings.map((meeting) => ({
+            subject_code: item.code, day_of_week: meeting.day,
+            start_time: meeting.start, end_time: meeting.end,
+            room: meeting.room, professor: meeting.instructor,
+            lecture_lab_type: meeting.component,
+          }))),
+        };
+      }
+      const prepared = scheduled.filter((item) =>
         ["ELIGIBLE", "RETAKE"].includes(item.eligibility));
       if (prepared.length) {
         proposedSchedule = {
@@ -385,6 +411,7 @@ export async function loadStudentAcademicForPage() {
       officialSchedule,
       projectSchedule,
       proposedSchedule,
+      blockSchedule,
     };
   } catch {
     // Missing migrations, expired sessions and SQL read errors fail closed.
