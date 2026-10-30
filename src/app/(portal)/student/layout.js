@@ -62,7 +62,7 @@ export default async function StudentPortalLayout({ children }) {
     }
   }
   return (
-    <PortalLayout role="student" projectOnly={projectOnly}
+    <PortalLayout role="student" projectOnly={projectOnly} institutionalStudent={liveInstitutional}
       authUser={accountDisplay} portalTerm={term} portalNotifications={notifications}>
       <ProjectOnlyStudentModuleBoundary authenticatedProfile={{
         mode: projectOnly ? "project" : liveInstitutional ? "live" : "unavailable",
