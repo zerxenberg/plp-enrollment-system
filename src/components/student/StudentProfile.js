@@ -156,7 +156,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
 
   const isProject = mode === "project";
   const classification = isProject ? (profile.academicClassification || "Not verified") : missing(profile.academicClassification);
-  const academicStatus = isProject ? "No official record" : missing(profile.studentStatus);
+  const academicStatus = isProject ? "No official record" : missing(profile.officialEnrollmentStatus || "Pending");
 
   return (
     <>
@@ -234,11 +234,13 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             <p className={styles.cardNote}>
               {isProject
                 ? "No verified admission approval or applicant record has been imported for this fictional student."
-                : "Verified Admission details are not available from the linked Admission source."}
+                : profile.admissionSource === "PLP Admissions"
+                  ? "Your admission was received from PLP Admissions. Official enrollment is a separate Registrar decision."
+                  : "Admission details are not available from an identified source."}
             </p>
           )}>
-            <Detail label="Admission Source" value={isProject ? "Not institutionally verified" : "Not linked"} />
-            <Detail label="Admission Decision" value="Not available" />
+            <Detail label="Admission Source" value={isProject ? "Not institutionally verified" : profile.admissionSource} />
+            <Detail label="Admission Decision" value={isProject ? "Not applicable" : profile.admissionDecision} />
           </InfoCard>
 
           <InfoCard icon="lock" title="Account & Security">
