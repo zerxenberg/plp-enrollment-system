@@ -558,6 +558,13 @@ export async function getSystemIntegrationData() {
     ["Load admission handoffs", handoffsResult.error],
   ].forEach(([label, error]) => assertQuery(error, label));
 
+  const acceptedHandoffs = (handoffsResult.data || [])
+    .filter((row) => row.synchronization_status === "Successful");
+  const successfulRequests = (requestsResult.data || [])
+    .filter((row) => row.status === "Successful");
+  // Historical inbound success proves the integration has worked; it is not
+  // a guarantee that a currently offline Admissions server is reachable.
+  const inboundVerified = acceptedHandoffs.length > 0 && successfulRequests.length > 0;
   return {
     bridge: {
       sourceSystem: "PLP Admissions",
@@ -566,8 +573,12 @@ export async function getSystemIntegrationData() {
       enrollmentDatabaseProject: "iwuphtvlcszziyvqcbsl",
       sharedSecretConfigured: Boolean(process.env.ENROLLMENT_INTAKE_SECRET),
       healthEndpointConfigured: Boolean(process.env.PLP_ADMISSIONS_HEALTH_URL),
-      // Without a trusted Admissions-side probe, database connectivity cannot be asserted.
-      connectivity: "Not verified",
+      connectivity: inboundVerified ? "Inbound handoff working" : "No completed inbound handoff yet",
+      lastInboundAtLabel: acceptedHandoffs.length
+        ? formatDateTime(acceptedHandoffs[0].received_at) : "Not recorded",
+      successfulHandoffs: acceptedHandoffs.length,
+      successfulRequests: successfulRequests.length,
+      liveSourceProbed: false,
     },
     configurations: (configurationsResult.data || []).map((item) => ({
       ...item,
