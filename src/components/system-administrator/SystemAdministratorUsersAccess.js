@@ -595,7 +595,6 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
                 const result = createMode === "existing"
                   ? await provisionExistingApplicationUser({
                       userId: createForm.existingUserId,
-                      accountStatus: createForm.accountStatus,
                       temporaryPassword: createForm.temporaryPassword,
                     })
                   : await createStaffUserAccount(createForm);
@@ -649,13 +648,17 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
             </>
           )}
 
-          <label className="field">
-            Initial Account Status
-            <select value={createForm.accountStatus} onChange={(event) => setCreateForm({ ...createForm, accountStatus: event.target.value })}>
-              <option>Active</option>
-              <option>Inactive</option>
-            </select>
-          </label>
+          {createMode === "existing" ? (
+            <div className="notice">Provisioning an existing application account also activates its login immediately. You can deactivate it later in Users &amp; Access.</div>
+          ) : (
+            <label className="field">
+              Initial Account Status
+              <select value={createForm.accountStatus} onChange={(event) => setCreateForm({ ...createForm, accountStatus: event.target.value })}>
+                <option>Active</option>
+                <option>Inactive</option>
+              </select>
+            </label>
+          )}
           <label className="field">
             Temporary Password
             <input
