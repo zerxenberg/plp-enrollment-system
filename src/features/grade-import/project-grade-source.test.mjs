@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import XLSX from "xlsx";
 import {
+  canonicalProjectNameWithoutJr,
   extractProjectGradesMatrix,
   matchesProjectCanonicalGrade,
   parseProjectGradeSource,
@@ -87,6 +88,66 @@ test("two-sheet XLSX parses exact 11 headers, 12 roster rows and unverified prof
   assert.equal(preview.invalidRows, 0);
   assert.equal(preview.conflictRows, 0);
   assert.equal(preview.alreadyPresentRows, 12);
+});
+
+test("only an explicit canonical Jr. suffix produces a historical unsuffixed alias", () => {
+  const name = "Juan Miguel Antonio Dela Cruz Jr.";
+  assert.equal(canonicalProjectNameWithoutJr({ full_name: name, suffix: "Jr." }),
+    "Juan Miguel Antonio Dela Cruz");
+  assert.equal(canonicalProjectNameWithoutJr({ full_name: name, suffix: "jr" }),
+    "Juan Miguel Antonio Dela Cruz");
+  assert.equal(canonicalProjectNameWithoutJr({ full_name: name, suffix: null }), null);
+  assert.equal(canonicalProjectNameWithoutJr({ full_name: name, suffix: "Sr." }), null);
+  assert.equal(canonicalProjectNameWithoutJr({ full_name: "Juan Miguel Antonio Dela Cruz", suffix: "Jr." }), null);
+  assert.equal(canonicalProjectNameWithoutJr({ full_name: "Juan Miguel Antonio Dela Cruz Jr. Extra", suffix: "Jr." }), null);
+});
+
+test("historical workbook recognizes the Jr. canonical name and its authorized original name", async () => {
+  const account = { full_name: "Juan Miguel Antonio Dela Cruz Jr.", suffix: "Jr." };
+  const expected = subjectContext("CP2");
+  expected.expected[0] = { ...expected.expected[0], studentName: account.full_name,
+    studentSuffix: account.suffix,
+    studentNameWithoutSuffix: canonicalProjectNameWithoutJr(account) };
+
+  for (const workbookName of [account.full_name, "Juan Miguel Antonio Dela Cruz"]) {
+    const matrix = matrixFor("CP2");
+    matrix[1][1] = workbookName;
+    const preview = validateProjectGradeRows(
+      await parseProjectGradeSource(workbookFile(matrix, "CP2")), BLOCK, expected);
+    assert.equal(preview.invalidRows, 0, workbookName);
+    assert.equal(preview.alreadyPresentRows, 12, workbookName);
+    assert.equal(preview.rows[0].validationStatus, "ALREADY_PRESENT");
+  }
+});
+
+test("Jr. exception never relaxes mismatched surnames or other student identities", async () => {
+  const account = { full_name: "Juan Miguel Antonio Dela Cruz Jr.", suffix: "Jr." };
+  const expected = subjectContext("CP2");
+  const target = { ...expected.expected[0], studentName: account.full_name,
+    studentSuffix: account.suffix,
+    studentNameWithoutSuffix: canonicalProjectNameWithoutJr(account) };
+  expected.expected[0] = target;
+
+  for (const workbookName of ["Juan Miguel Antonio Santos", "Juan Miguel Dela Cruz",
+    "Juan Miguel Antonio Dela Cruz Sr."]) {
+    const matrix = matrixFor("CP2");
+    matrix[1][1] = workbookName;
+    const preview = validateProjectGradeRows(
+      await parseProjectGradeSource(workbookFile(matrix, "CP2")), BLOCK, expected);
+    assert.equal(preview.invalidRows, 1, workbookName);
+    assert.ok(preview.rows[0].issues.some((issue) => issue.code === "STUDENT_NAME_CONFLICT"));
+  }
+
+  // Even if an alias were supplied for another student, the verified suffix
+  // must separately authorize accepting it.
+  const withoutSuffix = { ...expected, expected: [{ ...target, studentSuffix: null },
+    ...expected.expected.slice(1)] };
+  const matrix = matrixFor("CP2");
+  matrix[1][1] = "Juan Miguel Antonio Dela Cruz";
+  const preview = validateProjectGradeRows(
+    await parseProjectGradeSource(workbookFile(matrix, "CP2")), BLOCK, withoutSuffix);
+  assert.equal(preview.invalidRows, 1);
+  assert.ok(preview.rows[0].issues.some((issue) => issue.code === "STUDENT_NAME_CONFLICT"));
 });
 
 test("three failed historical grade sources are previewed as conflicts, not rewritten or invalidated", async () => {

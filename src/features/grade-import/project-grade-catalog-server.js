@@ -1,4 +1,5 @@
 import "server-only";
+import { canonicalProjectNameWithoutJr } from "./project-grade-source.mjs";
 
 // This reader may only be called from an already authenticated, Registrar-only
 // server action. It uses the server's protected Supabase client, never a browser
@@ -297,7 +298,7 @@ export async function readProjectGradeCatalog(admin) {
   const accounts = await readByIds(admin, "app_users", "id",
     profiles.filter((person) => person.student_type === "CONTINUING_STUDENT")
       .map((person) => person.user_id),
-    "id,full_name,role_code,is_synthetic_demo,project_cohort_id");
+    "id,full_name,suffix,role_code,is_synthetic_demo,project_cohort_id");
   const accountMap = uniqueMap(accounts, "id", "project student accounts");
   const blockMembers = new Map();
   for (const placement of placements) {
@@ -327,6 +328,8 @@ export async function readProjectGradeCatalog(admin) {
       studentId: profile.id,
       studentNumber: profile.student_number,
       studentName: account.full_name,
+      studentSuffix: account.suffix,
+      studentNameWithoutSuffix: canonicalProjectNameWithoutJr(account),
     });
     blockMembers.set(block.id, people);
   }

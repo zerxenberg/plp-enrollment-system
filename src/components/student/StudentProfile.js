@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import AppIcon from "@/components/ui/AppIcon";
 import { Modal, PageHeader } from "@/components/ui/PortalUI";
 import { displayCurriculumCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { formatStudentName } from "@/utils/student-name.mjs";
 import {
   changeStudentProfilePassword,
   removeStudentPhoto,
@@ -155,6 +156,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
   }
 
   const isProject = mode === "project";
+  const displayName = formatStudentName({ fullName: profile.fullName });
   const classification = isProject ? (profile.academicClassification || "Not verified") : missing(profile.academicClassification);
   const academicStatus = isProject ? "No official record" : missing(profile.studentStatus);
 
@@ -183,7 +185,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             {photoUrl ? (
               /* The image URL is signed by Supabase for this verified student only. */
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={photoUrl} alt={`Profile photo of ${profile.fullName}`} className={styles.photo} />
+              <img src={photoUrl} alt={`Profile photo of ${displayName}`} className={styles.photo} />
             ) : (
               <AppIcon name="user" className={styles.photoPlaceholder} size={68} />
             )}
@@ -193,7 +195,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
               <AppIcon name="edit" size={16} /> {photoUrl ? "Change Photo" : "Upload Photo"}
             </button>
           ) : null}
-          <h2 className={styles.studentName}>{profile.fullName}</h2>
+          <h2 className={styles.studentName}>{displayName}</h2>
           <p className={styles.studentNumber}>{profile.studentNumber}</p>
           <span className={styles.studentBadge}>{isProject ? "Demonstration Student" : "Student"}</span>
 
@@ -201,6 +203,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             <div><dt>Program</dt><dd>{missing(profile.program)}</dd></div>
             <div><dt>Year Level</dt><dd>{missing(profile.yearLevel)}</dd></div>
             <div><dt>Student Type</dt><dd>{missing(profile.studentType)}</dd></div>
+            <div><dt>Sex</dt><dd>{profile.sex === "Male" || profile.sex === "Female" ? profile.sex : "Not recorded"}</dd></div>
             <div><dt>Curriculum</dt><dd>{missing(displayCurriculumCode(profile.curriculum))}</dd></div>
             <div><dt>Academic Classification</dt><dd>{classification}</dd></div>
             <div><dt>Enrollment Eligibility</dt><dd>{missing(profile.enrollmentEligibility || (isProject ? "Not yet evaluated" : null))}</dd></div>

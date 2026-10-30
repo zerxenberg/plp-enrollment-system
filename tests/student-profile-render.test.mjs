@@ -5,6 +5,7 @@ import { test } from "node:test";
 import vm from "node:vm";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { formatStudentName } from "../src/utils/student-name.mjs";
 
 const require = createRequire(import.meta.url);
 const { loadBindings, transform } = require("next/dist/build/swc");
@@ -44,6 +45,7 @@ function renderProfile(mode, profile) {
     if (name === "@/features/academic/project-academic-display-aliases.mjs") return {
       displayCurriculumCode: (value) => value,
     };
+    if (name === "@/utils/student-name.mjs") return { formatStudentName };
     if (name === "@/features/students/student-profile-actions") return {
       saveStudentContact: async () => ({ ok: false }),
       uploadStudentPhoto: async () => ({ ok: false }),
@@ -109,6 +111,35 @@ test("authenticated ordinary Student reads own PostgreSQL profile without demo f
   assert.doesNotMatch(html, /Juan Dela Cruz|APP-2024-01987|BSIT Curriculum 2024/);
 });
 
+test("Student profile displays canonical Jr. exactly once without shortening the full middle name", () => {
+  const fullName = "Miguel Antonio Rafael Garcia Jr.";
+  for (const mode of ["project", "live"]) {
+    const html = renderProfile(mode, {
+      studentNumber: "26-50001",
+      fullName,
+    });
+    assert.match(html, /<h2[^>]*>Miguel Antonio Rafael Garcia Jr\.<\/h2>/);
+    assert.equal((html.match(/Miguel Antonio Rafael Garcia Jr\./g) || []).length, 1,
+      `the canonical name must appear once in the ${mode} profile`);
+    assert.doesNotMatch(html, /Garcia Jr\. Jr\.|Antonio R\./);
+  }
+});
+
+test("Student Profile shows verified Sex and an explicit unknown fallback for both portal modes", () => {
+  for (const mode of ["project", "live"]) {
+    for (const sex of ["Male", "Female", null, undefined, "Unknown"]) {
+      const html = renderProfile(mode, {
+        studentNumber: "26-50001", fullName: "Miguel Antonio Rafael Garcia Jr.", sex,
+      });
+      const value = sex === "Male" || sex === "Female" ? sex : "Not recorded";
+      assert.match(html, new RegExp(`<dt>Sex</dt><dd>${value}</dd>`));
+      assert.equal((html.match(/<dt>Sex<\/dt>/g) || []).length, 1);
+      assert.doesNotMatch(html, /<input[^>]*name="sex"/,
+        "Sex is a read-only identity field, not an editable client control");
+    }
+  }
+});
+
 test("unverified and formerly demo mode fail closed without rendering personal records", () => {
   for (const mode of ["unavailable", "demo", undefined]) {
     const html = renderProfile(mode, {
@@ -116,7 +147,7 @@ test("unverified and formerly demo mode fail closed without rendering personal r
       fullName: "Unverified Account",
     });
     assert.match(html, /Student Profile is temporarily unavailable/);
-    assert.doesNotMatch(html, /Unverified Account|ATTACKER|Juan Dela Cruz/);
+    assert.doesNotMatch(html, /Unverified Account|ATTACKER|Juan Dela Cruz|<dt>Sex<\/dt>/);
   }
   assert.doesNotMatch(source, /DemoDataProvider|useDemoData|student\.academicResults|student\.enrollment/);
 });

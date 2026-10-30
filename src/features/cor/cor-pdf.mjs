@@ -129,7 +129,7 @@ function drawFirstPage(doc, record) {
     ["Student Number", record.studentNumber, "Section", record.block],
     ["Full Name", record.studentName, "Enrollment Status", record.status],
     ["Program / Course", record.program, "Registration Date", dateLabel(record.confirmedAt)],
-    ["Year Level", record.yearLevel, "", ""],
+    ["Year Level", record.yearLevel, "Sex", record.sex || "Not recorded"],
   ].forEach((line, i) => {
     smallField(doc, x1, y + 32 + i * 26, line[0], line[1], width);
     if (line[2]) smallField(doc, x2, y + 32 + i * 26, line[2], line[3], width);

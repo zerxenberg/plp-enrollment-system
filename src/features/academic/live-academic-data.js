@@ -74,6 +74,7 @@ function projectStudentsFromAuthorizedRosters(snapshots, blocks) {
     if (!block) throw new Error("Unauthorized project block membership.");
     return snapshot.students.map((person) => ({
       id: person.student_id, student_number: person.student_number,
+      sex: ["Male", "Female"].includes(person.sex) ? person.sex : null,
       program_code: block.program_code, current_curriculum_code: block.curriculum_code,
       year_level: displayYear(person.year_level ?? block.year_level),
       // The protected roster RPC validates staff access and project placement.
@@ -436,6 +437,7 @@ export async function loadLiveAcademicCoordinator() {
       blockSections: blocks, students: studentRecords.map((person) => ({
         id: person.id, studentNumber: person.student_number,
         fullName: projectNames.get(person.id),
+        sex: person.sex,
         programCode: scope.memberById.get(person.id)?.programCode,
         yearLevel: displayYear(scope.memberById.get(person.id)?.yearLevel) || person.year_level,
         // Legacy student_status is NULL for the protected PROJECT_ONLY cohort.

@@ -246,7 +246,8 @@ export default function RegistrarStudents({ studentsData }) {
             <Details
               items={[
                 ["Student ID", selectedStudent.student_number],
-                ["Full Name", selectedStudent.full_name],
+                ["Full Name", studentDetail.profile?.full_name || selectedStudent.full_name],
+                ["Sex", studentDetail.profile?.sex ?? "Not available"],
                 ["Program", selectedStudent.program_code],
                 ["Curriculum", displayCurriculumName(selectedStudent.curriculum_code)],
                 ["Academic Term", termMap.get(selectedStudent.current_term_id) || selectedStudent.current_term_id],

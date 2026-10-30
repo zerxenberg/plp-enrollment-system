@@ -5,7 +5,8 @@ import { requireRole } from "@/lib/auth/require-role";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { REQUIRED_PROJECT_GRADE_COLUMNS, matchesProjectCanonicalGrade,
-  parseProjectGradeSource, validateProjectGradeRows } from "./project-grade-source.mjs";
+  parseProjectGradeSource, validateProjectGradeRows,
+  canonicalProjectNameWithoutJr } from "./project-grade-source.mjs";
 import { PROJECT_GRADE_WORKSPACE_PERMISSION_CODE, PROJECT_GRADE_WORKSPACE_PERMISSION_MESSAGE,
   unwrapProjectGradeWorkspaceQuery } from "./project-grade-workspace-contract.mjs";
 import { readProjectGradeCatalog } from "./project-grade-catalog-server";
@@ -88,7 +89,7 @@ async function readProtectedHistoricalWorkspace(admin) {
     throw new Error("Each historical continuing student must have exactly eight prior subject results");
   }
   const [appUsers, subjectRows, batchRows, acceptances, correctionRequests, historicalInstructors] = await Promise.all([
-    admin.from("app_users").select("id,full_name").in("id", continuing.map((item) => item.user_id)),
+    admin.from("app_users").select("id,full_name,suffix").in("id", continuing.map((item) => item.user_id)),
     admin.from("subjects").select("code,name").in("code", subjectCodes),
     batches.length ? admin.from("project_grade_import_rows")
       .select("id,batch_id,source_row_number,source_student_number,raw_grade_text,completion_status,validation_status,error_details,canonical_result_id,student_id,original_row")
@@ -108,7 +109,7 @@ async function readProtectedHistoricalWorkspace(admin) {
       .eq("curriculum_code", PROJECT_CURRICULUM)
       .eq("previous_block_code", HISTORICAL_GROUP),
   ]);
-  const names = new Map(assertResult(appUsers, "Historical student names").map((item) => [item.id, item.full_name]));
+  const names = new Map(assertResult(appUsers, "Historical student names").map((item) => [item.id, item]));
   const subjects = new Map(assertResult(subjectRows, "Historical subject metadata").map((item) => [item.code, item.name]));
   const rows = assertResult(batchRows, "Protected historical import row details") || [];
   const accepted = assertResult(acceptances, "Project historical grade acceptance ledger") || [];
@@ -133,7 +134,9 @@ async function readProtectedHistoricalWorkspace(admin) {
   const students = continuing.map((item) => ({
     studentId: item.id,
     studentNumber: item.student_number,
-    studentName: names.get(item.user_id),
+    studentName: names.get(item.user_id)?.full_name,
+    studentSuffix: names.get(item.user_id)?.suffix,
+    studentNameWithoutSuffix: canonicalProjectNameWithoutJr(names.get(item.user_id)),
     sectionCode: HISTORICAL_GROUP,
   })).sort((a, b) => a.studentNumber.localeCompare(b.studentNumber));
   const projectedSubjects = subjectCodes.map((code) => ({

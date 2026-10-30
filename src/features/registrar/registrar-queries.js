@@ -657,6 +657,7 @@ export async function getRegistrarStudentsData() {
         user_id: profile.user_id,
         student_number: member.student_number,
         full_name: member.full_name || "Not available",
+        sex: ["Male", "Female"].includes(member.sex) ? member.sex : null,
         program_code: block.program_code,
         program_name: program?.name || block.program_code,
         college: college?.name || "Not available",
@@ -1382,12 +1383,39 @@ export async function getRegistrarStudentRecordDetail(studentId, projectOnly = f
       p_student_id: studentId,
     });
     assertQuery(error, "Load protected PROJECT_ONLY student record");
+    if (data?.project_only !== true || data.verified_institutionally !== false ||
+        data.data_origin !== "GENERATED_PROJECT" || data.term_id !== PROJECT_TERM_ID) {
+      throw new Error("Protected PROJECT_ONLY student identity could not be verified.");
+    }
+    const admin = createAdminClient();
+    const { data: student, error: studentError } = await admin.from("student_profiles")
+      .select("id,user_id,student_number,record_kind,project_cohort_id,is_synthetic_demo")
+      .eq("id", studentId).maybeSingle();
+    assertQuery(studentError, "Load verified project student account reference");
+    if (!student?.user_id || student.id !== studentId ||
+        student.student_number !== data.student_number ||
+        student.record_kind !== "PROJECT_ONLY" ||
+        student.project_cohort_id !== PROJECT_COHORT_ID ||
+        student.is_synthetic_demo !== true) {
+      throw new Error("Protected PROJECT_ONLY student account reference is inconsistent.");
+    }
+    const { data: account, error: accountError } = await admin.from("app_users")
+      .select("id,full_name,sex,role_code,project_cohort_id,is_synthetic_demo")
+      .eq("id", student.user_id).maybeSingle();
+    assertQuery(accountError, "Load verified project student identity");
+    if (!account?.full_name || account.id !== student.user_id ||
+        account.role_code !== "student" ||
+        account.project_cohort_id !== PROJECT_COHORT_ID ||
+        account.is_synthetic_demo !== true) {
+      throw new Error("Protected PROJECT_ONLY student account identity is inconsistent.");
+    }
     return {
       source: "PROJECT_ONLY",
       snapshot: data,
       profile: {
         student_number: data?.student_number || "Not available",
-        full_name: data?.student_name || "Not available",
+        full_name: account.full_name,
+        sex: account.sex ?? null,
         program_code: data?.program_code || "Not available",
         current_curriculum_code: data?.curriculum_code || "Not available",
         current_term_id: data?.term_id || "Not available",
@@ -1436,15 +1464,20 @@ export async function getRegistrarStudentRecordDetail(studentId, projectOnly = f
 
   const { data: officialOwner, error: ownerError } = await createAdminClient()
     .from("app_users")
-    .select("id,full_name")
+    .select("id,full_name,sex,role_code")
     .eq("id", profileResult.data.user_id)
     .maybeSingle();
   assertQuery(ownerError, "Load authorized institutional student identity");
+  if (officialOwner && (officialOwner.id !== profileResult.data.user_id ||
+      officialOwner.role_code !== "student")) {
+    throw new Error("Institutional student account identity is inconsistent.");
+  }
   return {
     source: "INSTITUTIONAL",
     profile: {
       ...profileResult.data,
       full_name: officialOwner?.full_name || "Not available",
+      sex: officialOwner?.sex ?? null,
     },
     admission: handoffResult.data || null,
     officialEnrollments: (enrollmentsResult.data || []).map((row) => ({

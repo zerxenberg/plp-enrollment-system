@@ -544,6 +544,7 @@ export default function SystemAdministratorUsersAccess({ usersAccessData }) {
               <div style={{ marginTop: 14 }}>
                 <Details items={[
                   ["Student Number", selectedUser.student.student_number],
+                  ["Sex", selectedUser.sex ?? "Not available"],
                   ["College", selectedUser.student.collegeName],
                   ["Program", `${selectedUser.student.program_code} · ${selectedUser.student.programName}`],
                   ["Curriculum", selectedUser.student.current_curriculum_code || "Not assigned"],

@@ -10,6 +10,7 @@ const ACCOUNT = {
   source_account_key: SOURCE,
   role_code: "student",
   full_name: "Fictional Learner",
+  sex: null,
   email: AUTH_USER.email,
   account_status: "Active",
   login_enabled: true,
@@ -77,7 +78,7 @@ function mockAdmin(records, errors = {}) {
       const filters = [];
       calls.push({ table, filters });
       const query = {
-        select() { return query; },
+        select(columns) { calls[calls.length - 1].columns = columns; return query; },
         eq(column, value) { filters.push([column, value]); return query; },
         async maybeSingle() {
           if (errors[table]) return { data: null, error: errors[table] };
@@ -114,6 +115,7 @@ test("project profile comes only from exact Auth/app/link/student/cohort records
   assert.deepEqual(result.profile, {
     studentNumber: "25-50001",
     fullName: "Fictional Learner",
+    sex: null,
     email: "fictional@example.invalid",
     program: "BSIT",
     yearLevel: "1",
@@ -129,6 +131,8 @@ test("project profile comes only from exact Auth/app/link/student/cohort records
     "student_data_cohort_members",
   ]);
   assert.deepEqual(calls[0].filters, [["auth_user_id", AUTH_USER.id]]);
+  assert.ok(calls[0].columns.split(",").includes("sex"),
+    "the trusted server account query must explicitly select app_users.sex");
   assert.deepEqual(calls[1].filters, [
     ["app_user_id", ACCOUNT.id], ["auth_user_id", AUTH_USER.id],
   ]);
@@ -154,6 +158,7 @@ test("ordinary authenticated Student loads only their own PostgreSQL profile", a
     profile: {
       studentNumber: "25-50001",
       fullName: "Fictional Learner",
+      sex: null,
       email: "fictional@example.invalid",
       program: "BSIT",
       yearLevel: "3rd Year",
@@ -167,6 +172,32 @@ test("ordinary authenticated Student loads only their own PostgreSQL profile", a
   assert.equal(checked, 0);
   assert.deepEqual(calls.map(({ table }) => table), ["app_users", "student_profiles"]);
   assert.deepEqual(calls[1].filters, [["user_id", ACCOUNT.id]]);
+});
+
+test("trusted account sex is preserved for project students without inferring from names or duplicating Jr.", async () => {
+  const canonicalName = "Miguel Antonio Rafael Garcia Jr.";
+  for (const sex of ["Male", "Female", null, "", "Unknown", "male", undefined]) {
+    const { result } = await lookup({ app_users: {
+      full_name: canonicalName, suffix: "Jr.", sex,
+    } });
+    assert.equal(result.mode, "project");
+    assert.equal(result.profile.fullName, canonicalName,
+      "the canonical full name and existing Jr. suffix must remain unchanged");
+    assert.equal(result.profile.sex, sex === "Male" || sex === "Female" ? sex : null,
+      "only verified account Male/Female values may be projected");
+  }
+});
+
+test("ordinary authenticated Student sex is unknown unless present in their trusted account", async () => {
+  const ordinary = { source_account_key: "INSTITUTIONAL:STUDENT-1", is_synthetic_demo: false };
+  const profile = { is_synthetic_demo: false };
+  assert.equal((await lookup({ app_users: ordinary, student_profiles: profile })).result.profile.sex, null);
+  const { result } = await lookup({
+    app_users: { ...ordinary, sex: "Female" }, student_profiles: profile,
+  });
+  assert.equal(result.mode, "live");
+  assert.equal(result.profile.sex, "Female",
+    "the authenticated student's own app_users.sex may be displayed as authoritative");
 });
 
 test("ordinary students with missing or cross-student PostgreSQL profile deny the page", async () => {

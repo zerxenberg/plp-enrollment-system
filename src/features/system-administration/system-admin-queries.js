@@ -286,7 +286,7 @@ export async function getUsersAccessData() {
     currentAccountScope(
       supabase
         .from("app_users")
-        .select("id,auth_user_id,source_account_key,role_code,full_name,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
+        .select("id,auth_user_id,source_account_key,role_code,full_name,sex,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
     ).order("full_name"),
     supabase
       .from("roles")
@@ -430,6 +430,7 @@ export async function getUsersAccessData() {
       authUserId: row.auth_user_id,
       sourceAccountKey: row.source_account_key,
       fullName: row.full_name,
+      sex: row.sex ?? null,
       email: row.email,
       username,
       roleCode: row.role_code,

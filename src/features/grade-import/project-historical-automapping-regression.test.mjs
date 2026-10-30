@@ -3,14 +3,16 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { canonicalProjectNameWithoutJr } from "./project-grade-source.mjs";
 
 // Exercise the real protected Registrar catalog with an isolated read-only
 // Supabase double. These scenarios model the expected project-only rows after
 // the controlled historical mapping operation, not a copy of live data.
 const source = readFileSync(new URL("./project-grade-catalog-server.js", import.meta.url), "utf8");
 const executable = source.replace(/^import "server-only";\s*/, "")
+  .replace(/^import \{ canonicalProjectNameWithoutJr \} from "\.\/project-grade-source\.mjs";\s*/m, "")
   .replace("export async function readProjectGradeCatalog", "async function readProjectGradeCatalog");
-const sandbox = {};
+const sandbox = { canonicalProjectNameWithoutJr };
 runInNewContext(`${executable}\nthis.readCatalog = readProjectGradeCatalog;`, sandbox);
 
 const aliases = readFileSync(new URL("../academic/project-academic-display-aliases.mjs", import.meta.url), "utf8");

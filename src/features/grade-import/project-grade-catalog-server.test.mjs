@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { canonicalProjectNameWithoutJr } from "./project-grade-source.mjs";
 
 // Load the actual protected reader without bringing Next's server-only marker
 // into a standalone Node test process. No Supabase credentials are used.
 const file = readFileSync(new URL("./project-grade-catalog-server.js", import.meta.url), "utf8");
 const executable = file.replace(/^import "server-only";\s*/, "")
+  .replace(/^import \{ canonicalProjectNameWithoutJr \} from "\.\/project-grade-source\.mjs";\s*/m, "")
   .replace("export async function readProjectGradeCatalog", "async function readProjectGradeCatalog");
-const isolated = {};
+const isolated = { canonicalProjectNameWithoutJr };
 runInNewContext(`${executable}\nthis.readCatalog = readProjectGradeCatalog;`, isolated);
 
 const COHORT = "PLP_PROJECT_600_2026_1";
@@ -178,6 +180,113 @@ test("dynamic project catalog isolates continuing cohorts by block, curriculum y
   assert.equal(cs.subjects[0].code, "BSCS-S1");
   assert.equal(cs.subjects[0].previousProfessor, null);
   assert.equal(cs.subjects[0].expected[0].sectionCode, "");
+});
+
+test("canonical app_users.suffix authorizes an unsuffixed alias on the expected Grade Import roster", async () => {
+  const fixture = makeFixture();
+  fixture.app_users[0].full_name = "Juan Miguel Antonio Dela Cruz Jr.";
+  fixture.app_users[0].suffix = "Jr.";
+  fixture.app_users[1].full_name = "Ana Beatriz Reyes Jr.";
+  fixture.app_users[1].suffix = null;
+  const catalog = await isolated.readCatalog(database(fixture));
+  const roster = catalog.find((block) => block.id === "block-it").roster;
+  const junior = roster.find((student) => student.studentNumber === "25-IT01");
+  const other = roster.find((student) => student.studentNumber === "25-IT02");
+  assert.equal(junior.studentName, "Juan Miguel Antonio Dela Cruz Jr.");
+  assert.equal(junior.studentSuffix, "Jr.");
+  assert.equal(junior.studentNameWithoutSuffix, "Juan Miguel Antonio Dela Cruz");
+  assert.equal(other.studentName, "Ana Beatriz Reyes Jr.");
+  assert.equal(other.studentNameWithoutSuffix, null);
+  const subject = catalog.find((block) => block.id === "block-it").subjects[0];
+  assert.equal(subject.expected.find((student) => student.studentNumber === "25-IT01")
+    .studentNameWithoutSuffix, junior.studentNameWithoutSuffix);
+});
+
+test("legacy BSIT historical reader derives aliases only from app_users.suffix", async () => {
+  const actions = readFileSync(new URL("./registrar-project-grade-actions.js", import.meta.url), "utf8");
+  const start = actions.indexOf("async function readProtectedHistoricalWorkspace(admin) {");
+  const end = actions.indexOf("async function readPagedProjectRows(", start);
+  assert.ok(start >= 0 && end > start, "the protected historical reader must remain testable");
+  const source = actions.slice(start, end);
+  const historical = {
+    CURRENT_BLOCK_ID: "block-it", CURRENT_TERM_ID: CURRENT, HISTORY_TERM_ID: PRIOR,
+    PROJECT_COHORT_ID: COHORT, PROJECT_CURRICULUM: "CURR-BSIT", HISTORICAL_GROUP: "BSIT-1A",
+    canonicalProjectNameWithoutJr,
+    assertResult: (result) => {
+      if (result.error) throw result.error;
+      return result.data;
+    },
+  };
+  runInNewContext(`${source}\nthis.readLegacy = readProtectedHistoricalWorkspace;`, historical);
+
+  const continuing = Array.from({ length: 12 }, (_, index) => `STUDENT-${index + 1}`);
+  const studentIds = [...continuing, "TRANSFER-1", "TRANSFER-2", "TRANSFER-3"];
+  const subjectCodes = Array.from({ length: 8 }, (_, index) => `SUBJECT-${index + 1}`);
+  const tables = {
+    block_sections: [{ id: "block-it", code: "BSIT-2A", term_id: CURRENT,
+      program_code: "BSIT", curriculum_code: "CURR-BSIT" }],
+    academic_terms: [{ id: PRIOR, label: "Previous", academic_year: "2025-2026",
+      semester: "Second Semester" }],
+    project_student_academic_placements: studentIds.map((id) => ({
+      student_id: id, home_block_id: "block-it", project_cohort_id: COHORT,
+      term_id: CURRENT, curriculum_code: "CURR-BSIT",
+    })),
+    project_grade_import_batches: [],
+    student_profiles: studentIds.map((id) => ({
+      id, user_id: `USER-${id}`, student_number: `25-${id}`,
+      student_type: continuing.includes(id) ? "CONTINUING_STUDENT" : "TRANSFEREE",
+      record_kind: "PROJECT_ONLY", project_cohort_id: COHORT, is_synthetic_demo: true,
+    })),
+    project_simulated_academic_results: continuing.flatMap((studentId) =>
+      subjectCodes.map((subjectCode) => ({
+        id: `${studentId}-${subjectCode}`, student_id: studentId,
+        term_id: PRIOR, curriculum_code: "CURR-BSIT", subject_code: subjectCode,
+        grade_value: 2, result_status: "COMPLETED",
+      }))),
+    app_users: continuing.map((id, index) => ({ id: `USER-${id}`,
+      full_name: index === 0 ? "Juan Miguel Antonio Dela Cruz Jr." :
+        index === 1 ? "Ana Beatriz Reyes Jr." : `Project Student ${index + 1}`,
+      suffix: index === 0 ? "Jr." : null,
+    })),
+    subjects: subjectCodes.map((code) => ({ code, name: code })),
+    project_grade_result_acceptances: [],
+    project_historical_subject_instructors: subjectCodes.map((subjectCode) => ({
+      subject_code: subjectCode, instructor_id: null,
+      project_cohort_id: COHORT, target_block_id: "block-it",
+      prior_term_id: PRIOR, curriculum_code: "CURR-BSIT",
+      previous_block_code: "BSIT-1A",
+      assignment_provenance: "UNVERIFIED_SOURCE", verified_institutionally: false,
+    })),
+  };
+  const client = {
+    from(table) {
+      const conditions = [];
+      const query = {
+        select() { return this; },
+        eq(field, value) { conditions.push((record) => record[field] === value); return this; },
+        in(field, values) { conditions.push((record) => values.includes(record[field])); return this; },
+        order() { return this; },
+        rows() { return (tables[table] || []).filter((record) => conditions.every((condition) => condition(record))); },
+        single() { return Promise.resolve({ data: this.rows()[0] || null, error: null }); },
+        then(resolve, reject) { return Promise.resolve({ data: this.rows(), error: null }).then(resolve, reject); },
+      };
+      return query;
+    },
+  };
+
+  const workspace = await historical.readLegacy(client);
+  assert.equal(workspace.blocks.length, 1);
+  assert.equal(workspace.blocks[0].roster.length, 12);
+  const junior = workspace.blocks[0].roster.find((person) => person.studentNumber === "25-STUDENT-1");
+  const other = workspace.blocks[0].roster.find((person) => person.studentNumber === "25-STUDENT-2");
+  assert.equal(junior.studentName, "Juan Miguel Antonio Dela Cruz Jr.");
+  assert.equal(junior.studentSuffix, "Jr.");
+  assert.equal(junior.studentNameWithoutSuffix, "Juan Miguel Antonio Dela Cruz");
+  assert.equal(other.studentName, "Ana Beatriz Reyes Jr.");
+  assert.equal(other.studentNameWithoutSuffix, null);
+  const expected = workspace.blocks[0].subjects[0].expected;
+  assert.equal(expected.find((person) => person.studentNumber === "25-STUDENT-1")
+    .studentNameWithoutSuffix, junior.studentNameWithoutSuffix);
 });
 
 test("existing UNVERIFIED_SOURCE professor row keeps historical mapping configurable without losing known section", async () => {

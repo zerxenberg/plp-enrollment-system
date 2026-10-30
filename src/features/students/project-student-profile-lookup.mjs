@@ -1,6 +1,8 @@
 // Called only by the server-only Student Profile loader with a trusted service
 // client and the Auth identity returned by auth.getUser(). Never expose the
 // privileged client or database records to browser components.
+import { formatStudentName } from "../../utils/student-name.mjs";
+
 const COHORT_KEY = "PLP_PROJECT_600_2026_1";
 const PROJECT_PREFIX = "PROJECT_ONLY:";
 const PROJECT_SOURCE_PREFIX = "PROJECT_ONLY:TERM-2026-1:";
@@ -15,11 +17,16 @@ function isNonemptyText(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function verifiedSex(value) {
+  return value === "Male" || value === "Female" ? value : null;
+}
+
 function projectDisplay(record, appUser) {
   const proposed = record.synthetic_source_attributes;
   return {
     studentNumber: record.student_number,
-    fullName: appUser.full_name,
+    fullName: formatStudentName({ fullName: appUser.full_name }),
+    sex: verifiedSex(appUser.sex),
     email: appUser.email,
     program: record.program_code || null,
     yearLevel: isNonemptyText(proposed.year_level_proposed) ? proposed.year_level_proposed : null,
@@ -35,7 +42,8 @@ function projectDisplay(record, appUser) {
 function liveDisplay(record, appUser) {
   return {
     studentNumber: record.student_number,
-    fullName: appUser.full_name,
+    fullName: formatStudentName({ fullName: appUser.full_name }),
+    sex: verifiedSex(appUser.sex),
     email: appUser.email,
     program: record.program_code || null,
     yearLevel: record.year_level || null,
@@ -59,7 +67,7 @@ export async function resolveStudentProfile({ adminClient, authUser, verifyProje
 
   try {
     const accountResult = await adminClient.from("app_users")
-      .select("id,auth_user_id,source_account_key,role_code,full_name,email,account_status,login_enabled,is_synthetic_demo")
+      .select("id,auth_user_id,source_account_key,role_code,full_name,sex,email,account_status,login_enabled,is_synthetic_demo")
       .eq("auth_user_id", authUser.id).maybeSingle();
     const appUser = accountResult.data;
     if (accountResult.error || !appUser || appUser.auth_user_id !== authUser.id ||

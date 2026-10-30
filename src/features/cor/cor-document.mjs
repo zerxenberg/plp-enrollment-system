@@ -4,6 +4,56 @@ import { displaySubjectCode } from "../academic/project-academic-display-aliases
 
 const missing = (value) => value === null || value === undefined || String(value).trim() === "";
 const present = (value) => missing(value) ? "Not recorded" : String(value).trim();
+const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
+const PROJECT_TERM = "TERM-2026-1";
+const PROJECT_SOURCE_PREFIX = "PROJECT_ONLY:TERM-2026-1:";
+
+// The protected COR RPC authorizes the document. The server then resolves its
+// student through the confirmed registration, profile and account records.
+// Keeping these cross-record checks here makes them independently testable.
+export function verifiedCorStudentSex(cor, { registration, profile, account } = {}) {
+  const project = cor?.simulation_only === true;
+  const source = project ? cor?.student : cor;
+  const studentNumber = source?.student_number;
+  const studentName = source?.student_name;
+  const validIdentity = typeof studentNumber === "string" && studentNumber.trim() &&
+    typeof studentName === "string" && studentName.trim() &&
+    registration?.student_id && profile?.id === registration.student_id &&
+    profile?.student_number === studentNumber &&
+    profile?.user_id && account?.id === profile.user_id &&
+    account.role_code === "student" && account.full_name === studentName;
+
+  if (!validIdentity) {
+    throw new Error("The COR student account could not be verified.");
+  }
+  if (project) {
+    const sourceKey = PROJECT_SOURCE_PREFIX + studentNumber;
+    if (registration.id !== cor.simulation_id ||
+        registration.status !== "CONFIRMED_SIMULATION" ||
+        registration.term_id !== PROJECT_TERM ||
+        registration.source_provenance !== "GENERATED_PROJECT" ||
+        registration.verified_institutionally !== false ||
+        profile.record_kind !== "PROJECT_ONLY" ||
+        profile.project_cohort_id !== PROJECT_COHORT ||
+        profile.is_synthetic_demo !== true ||
+        profile.synthetic_source_key !== sourceKey ||
+        account.is_synthetic_demo !== true ||
+        account.source_account_key !== sourceKey ||
+        account.project_cohort_id !== PROJECT_COHORT) {
+      throw new Error("The project COR student provenance could not be verified.");
+    }
+  } else if (registration.id !== cor.enrollment_id ||
+      registration.status !== "CONFIRMED" ||
+      registration.term_id !== cor.term_id ||
+      profile.record_kind === "PROJECT_ONLY" ||
+      profile.is_synthetic_demo === true || account.is_synthetic_demo === true) {
+    throw new Error("The official COR student identity could not be verified.");
+  }
+
+  if (account.sex == null) return null;
+  if (account.sex === "Male" || account.sex === "Female") return account.sex;
+  throw new Error("The COR student sex value is invalid.");
+}
 
 function verifiedSubjects(subjects, meetings, registeredUnits) {
   if (!Array.isArray(subjects) || !subjects.length ||
@@ -108,6 +158,8 @@ export function buildVerifiedCorDocument(cor, options = {}) {
     project,
     studentNumber: present(source.student_number),
     studentName: present(source.student_name),
+    sex: options.studentSex === "Male" || options.studentSex === "Female"
+      ? options.studentSex : "Not recorded",
     program: present(options.programName || (project ? source.program_code : cor.program_name || cor.program_code)),
     academicYear: present(year),
     semester: present(options.semester || cor.semester),

@@ -86,7 +86,7 @@ function OpenCorDocumentPreview({ onClose, documentUrl, project }) {
       footer={<>
         <Button variant="ghost" onClick={onClose}>Close</Button>
         {document.state === "ready" && document.url ? <>
-          <a className="portal-button portal-button-secondary" href={`${documentUrl}?view=1`} target="_blank"
+          <a className="portal-button portal-button-secondary" href={document.url} target="_blank"
             rel="noopener noreferrer">Open PDF</a>
           <Button variant="secondary" onClick={printDocument}>Print</Button>
           <a className="portal-button portal-button-primary" href={document.url}
@@ -96,7 +96,7 @@ function OpenCorDocumentPreview({ onClose, documentUrl, project }) {
     >
       <div className={styles.viewer} role="region" aria-label="A4 certificate of registration preview">
         {document.state === "ready" && document.url ? (
-          <iframe ref={viewer} src={`${documentUrl}?view=1`}
+          <iframe ref={viewer} src={document.url}
             title="Certificate of Registration A4 PDF preview" className={styles.frame} />
         ) : documentUrl && document.state === "loading" ? (
           <div className={styles.message} role="status">Loading verified registration PDF…</div>

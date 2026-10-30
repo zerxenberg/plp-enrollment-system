@@ -548,6 +548,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             columns={[
               { key: "studentNumber", label: "Student Number", render: (item) => studentOf(item)?.studentNumber },
               { key: "fullName", label: "Student", render: (item) => nameOf(studentOf(item)) },
+              { key: "sex", label: "Sex", render: (item) => studentOf(item)?.sex || "Not available" },
               { key: "classification", label: "Classification", render: (item) => studentOf(item)?.classification || "Not evaluated" },
               { key: "progression", label: "Progression", render: (item) => studentOf(item)?.progressionStatus || studentOf(item)?.progression || "Refer to Academic Review" },
               { key: "status", label: "Assignment", render: (item) => <StatusBadge value={item.status} label={item.status || "Proposed"} /> },
@@ -570,6 +571,7 @@ export default function AcademicCoordinatorSectionsSchedules() {
             columns={[
               { key: "number", label: "Student Number", render: (item) => studentOf(item)?.studentNumber },
               { key: "student", label: "Student", render: (item) => nameOf(studentOf(item)) },
+              { key: "sex", label: "Sex", render: (item) => studentOf(item)?.sex || "Not available" },
               { key: "classification", label: "Classification", render: (item) => studentOf(item)?.classification || "Unknown" },
               { key: "actions", label: "Actions", render: (item) => <TableActions><TableActionButton tone="edit" disabled={item.status === "CONFIRMED" || confirmedRecord(section)} onClick={() => openTransfer(item.studentId)}>Transfer</TableActionButton></TableActions> },
             ]} />

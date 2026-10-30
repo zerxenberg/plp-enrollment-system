@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { inflateSync } from "node:zlib";
-import { buildVerifiedCorDocument } from "./cor-document.mjs";
+import { buildVerifiedCorDocument, verifiedCorStudentSex } from "./cor-document.mjs";
 import { corPdfFilename, corFilenameFromDisposition } from "./cor-filename.mjs";
 import { renderVerifiedCorPdf } from "./cor-pdf.mjs";
 import { verifiedCorSubjectDisplayCodes } from "./cor-subjects.mjs";
@@ -49,8 +49,9 @@ test("a PDF URL without a verified filename never falls back to a random or gene
   assert.equal(corFilenameFromDisposition("attachment; filename=\"12345678-abc.pdf\""), null);
   assert.equal(corFilenameFromDisposition(null), null);
   assert.match(preview, /download=\{document\.filename\}/);
-  assert.match(preview, /href=\{\`\$\{documentUrl\}\?view=1\`\}/);
-  assert.match(preview, /<iframe ref=\{viewer\} src=\{\`\$\{documentUrl\}\?view=1\`\}/);
+  assert.match(preview, /href=\{document\.url\} target="_blank"/);
+  assert.match(preview, /<iframe ref=\{viewer\} src=\{document\.url\}/);
+  assert.doesNotMatch(preview, /<iframe ref=\{viewer\} src=\{\`\$\{documentUrl\}/);
   assert.match(response, /corPdfFilename\(record\)/);
   assert.match(response, /Content-Disposition.*filename/);
   assert.ok([studentRoute, registrarRoute].every((source) => source.includes("verifiedCorResponse")));
@@ -95,6 +96,155 @@ test("Student and Registrar preview, print and download share the verified subje
   assert.match(documentSource, /displaySubjectCode\(subject\.code\)/);
 });
 
+test("verified project and official COR documents preserve the full canonical middle name and Jr. exactly once", () => {
+  const canonicalName = "Miguel Antonio Rafael Garcia Jr.";
+  const subjectCode = "P8F26-BSIT-T03-M1";
+  const subject = {
+    subject_code: subjectCode, subject_name: "Data Structures and Algorithms for IT",
+    section_id: "verified-section", academic_units: 3,
+  };
+  const meeting = {
+    subject_code: subjectCode, day_of_week: 1, start_time: "08:00", end_time: "10:00",
+    room: "BSIT-201",
+  };
+  const student = {
+    student_number: "25-50001", student_name: canonicalName,
+    program_code: "BSIT", home_block: "BSIT-2A", year_level: 2,
+  };
+  const projectCor = {
+    simulation_only: true, official: false, certificate_of_official_registration: false,
+    registration_status: "CONFIRMED FOR PROJECT SIMULATION", registration_snapshot_complete: true,
+    simulation_id: "project-jr", confirmed_at: "2026-10-29T08:30:00+08:00",
+    registered_units: 3, academic_year: "2026 to 2027", semester: "First Semester",
+    student, registered_subjects: [subject], registered_schedule: [meeting],
+  };
+  const officialCor = {
+    official: true, status: "OFFICIALLY ENROLLED", ready_to_print: true,
+    schedule_complete: true, registration_reference_complete: true,
+    confirmed_at: "2026-10-29T09:00:00+08:00", ...student,
+    subjects: [subject], schedule: [meeting],
+  };
+
+  for (const cor of [projectCor, officialCor]) {
+    const original = structuredClone(cor);
+    const document = buildVerifiedCorDocument(cor);
+    assert.equal(document.studentName, canonicalName,
+      "COR must use the complete canonical student_name without rebuilding or shortening it");
+    assert.ok(document.studentName.includes("Antonio Rafael"), "both middle names must survive");
+    assert.equal(document.studentName.match(/Jr\./g)?.length, 1,
+      "the suffix must appear exactly once in the COR model");
+    assert.deepEqual(cor, original, "mapping must leave the verified source snapshot unchanged");
+  }
+});
+
+test("confirmed project COR resolves Male, Female and unknown sex through matching synthetic identity records", () => {
+  const name = "Miguel Antonio Rafael Garcia Jr.";
+  const studentNumber = "25-50001";
+  const sourceKey = `PROJECT_ONLY:TERM-2026-1:${studentNumber}`;
+  const cor = {
+    simulation_only: true, simulation_id: "confirmed-simulation",
+    student: { student_number: studentNumber, student_name: name },
+  };
+  const registration = {
+    id: "confirmed-simulation", student_id: "profile-one", term_id: "TERM-2026-1",
+    status: "CONFIRMED_SIMULATION", source_provenance: "GENERATED_PROJECT",
+    verified_institutionally: false,
+  };
+  const profile = {
+    id: "profile-one", user_id: "account-one", student_number: studentNumber,
+    record_kind: "PROJECT_ONLY", project_cohort_id: "PLP_PROJECT_600_2026_1",
+    is_synthetic_demo: true, synthetic_source_key: sourceKey,
+  };
+  const account = {
+    id: "account-one", role_code: "student", full_name: name,
+    is_synthetic_demo: true, source_account_key: sourceKey,
+    project_cohort_id: "PLP_PROJECT_600_2026_1",
+  };
+  const records = { registration, profile, account };
+  for (const sex of ["Male", "Female", null]) {
+    const actual = verifiedCorStudentSex(cor, {
+      ...records, account: { ...account, sex },
+    });
+    assert.equal(actual, sex);
+  }
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, profile: { ...profile, student_number: "another-student" },
+  }), /could not be verified/);
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, account: { ...account, full_name: "Different Student" },
+  }), /could not be verified/);
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, account: { ...account, project_cohort_id: "wrong-cohort" },
+  }), /provenance/);
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, registration: { ...registration, source_provenance: "UNVERIFIED" },
+  }), /provenance/);
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, account: { ...account, sex: "Other" },
+  }), /sex value is invalid/);
+});
+
+test("official COR sex lookup accepts a matching confirmed institutional student only", () => {
+  const cor = {
+    official: true, enrollment_id: "enrollment-one", term_id: "TERM-2026-1",
+    student_number: "24-10022", student_name: "Ana Reyes Jr.",
+  };
+  const registration = {
+    id: "enrollment-one", student_id: "profile-two", term_id: "TERM-2026-1",
+    status: "CONFIRMED",
+  };
+  const profile = {
+    id: "profile-two", user_id: "account-two", student_number: "24-10022",
+    record_kind: "INSTITUTIONAL", is_synthetic_demo: false,
+  };
+  const account = {
+    id: "account-two", role_code: "student", full_name: "Ana Reyes Jr.",
+    is_synthetic_demo: false, sex: "Female",
+  };
+  const records = { registration, profile, account };
+  assert.equal(verifiedCorStudentSex(cor, records), "Female");
+  assert.equal(verifiedCorStudentSex(cor, { ...records,
+    account: { ...account, sex: null },
+  }), null);
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, registration: { ...registration, status: "DRAFT" },
+  }), /could not be verified/);
+  assert.throws(() => verifiedCorStudentSex(cor, {
+    ...records, profile: { ...profile, record_kind: "PROJECT_ONLY" },
+  }), /could not be verified/);
+});
+
+test("COR PDF prints the verified Sex field without changing the canonical name or suffix", async () => {
+  const name = "Miguel Antonio Rafael Garcia Jr.";
+  const code = "P8F26-BSIT-T03-M1";
+  const cor = {
+    simulation_only: true, official: false, certificate_of_official_registration: false,
+    registration_status: "CONFIRMED FOR PROJECT SIMULATION", registration_snapshot_complete: true,
+    simulation_id: "sex-pdf", confirmed_at: "2026-10-29T08:30:00+08:00",
+    registered_units: 3, academic_year: "2026 to 2027", semester: "First Semester",
+    student: { student_number: "25-50001", student_name: name, program_code: "BSIT",
+      home_block: "BSIT-2A", year_level: 2 },
+    registered_subjects: [{ subject_code: code, subject_name: "Data Structures",
+      academic_units: 3, section_id: "section-one" }],
+    registered_schedule: [{ subject_code: code, day_of_week: 1,
+      start_time: "08:00", end_time: "10:00" }],
+  };
+  for (const sex of ["Male", "Female", null]) {
+    const model = buildVerifiedCorDocument(cor, { studentSex: sex });
+    assert.equal(model.studentName, name);
+    assert.equal(model.studentName.match(/Jr\./g)?.length, 1);
+    assert.equal(model.sex, sex || "Not recorded");
+    const pdfText = decodedPdfText(await renderVerifiedCorPdf(model));
+    assert.ok(pdfText.includes("Sex"), "the PDF includes the Student Information Sex label");
+    assert.ok(pdfText.includes(model.sex),
+      "the PDF prints the resolved sex or its unknown-value placeholder");
+    assert.equal(pdfText.split("Jr.").length - 1, 1,
+      "the PDF prints the complete canonical suffix exactly once");
+  }
+  assert.match(accessSource, /loadCorStudentSex\(admin, cor\)/);
+  assert.match(accessSource, /\.eq\("id", registration\.student_id\)/);
+});
+
 function decodedPdfContent(pdf) {
   const text = pdf.toString("latin1");
   return [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/g)]
@@ -105,6 +255,15 @@ function decodedPdfContent(pdf) {
         return "";
       }
     }).join("\n");
+}
+
+function decodedPdfText(pdf) {
+  // PDFKit may split a word into separately kerned hex runs inside one TJ.
+  // Decode those runs together so rendered words remain readable in tests.
+  return [...decodedPdfContent(pdf).matchAll(/\[([^\]]+)\]\s*TJ/g)]
+    .map((match) => [...match[1].matchAll(/<([0-9a-f]+)>/gi)]
+      .map((item) => Buffer.from(item[1], "hex").toString("latin1")).join(""))
+    .join("\n");
 }
 
 function assertPdfSubjectCode(pdf, displayCode, internalCode) {

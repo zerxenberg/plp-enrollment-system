@@ -38,7 +38,7 @@ const profiles = ["generated", "manual"].map((id, index) => ({
   is_synthetic_demo: true,
 }));
 
-function mockClient({ rejectManualRoster = false, repeatStudent = false } = {}) {
+function mockClient({ rejectManualRoster = false, repeatStudent = false, unknownSex = false } = {}) {
   const tables = {
     student_profiles: profiles,
     block_sections: [generatedBlock, manualBlock],
@@ -93,7 +93,9 @@ function mockClient({ rejectManualRoster = false, repeatStudent = false } = {}) 
           fictional_only: true, block_id: p_block_id,
           students: [{
             student_id: profile.id, student_number: profile.student_number,
-            full_name: "Fictional Student", year_level: 1,
+            full_name: p_block_id === "generated" ? "Fictional Student Jr." : "Fictional Student",
+            sex: unknownSex ? null : p_block_id === "generated" ? "Male" : "Female",
+            year_level: 1,
             academic_classification: "REGULAR",
             enrollment_status: "NOT_CONFIRMED",
           }],
@@ -111,6 +113,14 @@ function getLoader(client) {
     require(name) {
       if (name === "server-only") return {};
       if (name === "@/lib/supabase/server") return { createClient: async () => client };
+      if (name === "@/lib/supabase/admin") return { createAdminClient: () => {
+        throw new Error("This roster test must not use privileged account reads");
+      } };
+      if (name === "@/lib/auth/require-role") return { requireRole: async (role) => {
+        assert.equal(role, "registrar");
+      } };
+      if (name === "@/features/students/student-published-readiness-server") return {};
+      if (name === "./registrar-project-enrollment-view.mjs") return {};
       throw new Error(`Unexpected module: ${name}`);
     },
   });
@@ -123,6 +133,15 @@ test("Registrar Students includes a student transferred into a manual Phase 8 dr
   assert.equal(result.groups.length, 2);
   assert.equal(result.groups.find((block) => block.blockSection === "BSIT-1M")?.assignedStudents, 1);
   assert.equal(result.students.find((student) => student.home_block === "BSIT-1M")?.student_number, "26-50002");
+  assert.equal(result.students.find((student) => student.home_block === "BSIT-1M")?.sex, "Female");
+  assert.equal(result.students.find((student) => student.home_block === "BSIT-1A")?.sex, "Male");
+  assert.equal(result.students.find((student) => student.home_block === "BSIT-1A")?.full_name, "Fictional Student Jr.");
+});
+
+test("Registrar Phase 8 roster preserves unknown sex as NULL", async () => {
+  const result = await getLoader(mockClient({ unknownSex: true }))();
+  assert.equal(result.students.length, 2);
+  assert.ok(result.students.every((student) => student.sex === null));
 });
 
 test("Registrar Students rejects a denied manual roster or duplicate student membership", async () => {

@@ -18,6 +18,14 @@ const key = (value) => normalize(value).toUpperCase();
 const loose = (value) => normalize(value).toLowerCase().replace(/\s+/g, " ");
 const problem = (code, message) => ({ code, message });
 
+/** Only a trusted app_users.suffix=Jr. can authorize the original unsuffixed workbook name. */
+export function canonicalProjectNameWithoutJr(account) {
+  if (typeof account?.full_name !== "string" ||
+      !/^jr\.?$/i.test(normalize(account.suffix))) return null;
+  const original = account.full_name.replace(/(?:,\s*|\s+)Jr\.?$/i, "");
+  return original !== account.full_name && original.trim() ? original : null;
+}
+
 /** Accept only a 2-D row matrix or the named-sheet wrapper returned by read-excel-file 9.x. */
 export function extractProjectGradesMatrix(extracted) {
   if (!Array.isArray(extracted) || !extracted.length) {
@@ -141,7 +149,12 @@ export function validateProjectGradeRows(parsed, block, subject) {
     }
     const student = roster.get(key(row.student_number));
     if (!student) issues.push(problem("OUTSIDE_PROJECT_ROSTER", "Student is not in this verified PROJECT_ONLY block and subject roster."));
-    if (student && loose(row.student_full_name) !== loose(student.studentName)) {
+    const exactName = student && loose(row.student_full_name) === loose(student.studentName);
+    const authorizedOriginalName = student &&
+      /^jr\.?$/i.test(normalize(student.studentSuffix)) &&
+      typeof student.studentNameWithoutSuffix === "string" &&
+      loose(row.student_full_name) === loose(student.studentNameWithoutSuffix);
+    if (student && !exactName && !authorizedOriginalName) {
       issues.push(problem("STUDENT_NAME_CONFLICT", "Student name differs from the authoritative project roster."));
     }
     if (key(row.subject_code) !== key(subject.code)) {
