@@ -137,7 +137,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
               <Metric
                 label="Admissions Bridge"
                 value={bridge?.connectivity || "Not verified"}
-                hint="External Admissions connectivity is not inferred from Supabase availability"
+                hint="Verified by recorded successful handoffs. Live Admissions reachability is not continuously probed."
               />
               <Metric
                 label="Recorded Requests"
@@ -184,16 +184,19 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 <Info label="Last Configuration Update" value={primaryConfiguration.updatedAtLabel} />
               </div>
             ) : (
-              <div className="notice warning">No integration configuration exists in the database.</div>
+              <div className="notice">Admissions intake is configured through the server REST endpoint and shared secret, rather than a generic integration configuration row.</div>
             )}
           </>
         ) : null}
 
         {tab === "status" ? (
           <>
-            <div className="notice" style={{ marginBottom: 14 }}>This page monitors the PLP Admissions → PLP Enrollment handoff. Database availability alone is not proof that the Admissions API is connected.</div>
+            <div className="notice" style={{ marginBottom: 14 }}>Successful inbound handoffs are recorded in Enrollment. This confirms the API has processed Admissions applicants, but it does not prove that the external Admissions service is currently reachable.</div>
             <div className="info-grid">
-              <Info label="External Admissions Connection" value={bridge?.connectivity || "Not verified"} />
+              <Info label="Inbound Admissions API" value={bridge?.connectivity || "Not verified"} />
+              <Info label="Last Successful Handoff" value={bridge?.lastInboundAtLabel || "Not recorded"} />
+              <Info label="Successful Inbound Handoffs" value={bridge?.successfulHandoffs ?? 0} />
+              <Info label="Live Admissions Service Probe" value={bridge?.liveSourceProbed ? "Verified" : "Not run; use Retry Sync to test"} />
               <Info label="Admissions Supabase Project" value={bridge?.admissionsDatabaseProject || "Not configured"} />
               <Info label="Enrollment Supabase Project" value={bridge?.enrollmentDatabaseProject || "Not configured"} />
               <Info label="Intake Shared Secret" value={bridge?.sharedSecretConfigured ? "Configured on Enrollment server" : "Missing on Enrollment server"} />
@@ -230,7 +233,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 </div>
               </>
             ) : (
-              <div className="notice warning">Create an integration configuration before testing the endpoint.</div>
+              <div className="notice">No generic configuration row is required for the authenticated Admissions intake API. Use Retry Sync from Admissions to request a fresh handoff attempt.</div>
             )}
           </>
         ) : null}
@@ -263,7 +266,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 rowKey="id"
                 onRowClick={(row) => openDetails("request", row)}
                 getRowAriaLabel={(row) => `View request ${row.request_reference || row.id}`}
-                emptyMessage="No Admissions API requests are recorded yet. The Admissions server must send a handoff or a real connectivity test must run before history appears."
+                emptyMessage="No Admissions requests match the filters. Received handoffs remain available in the Overview, and new intake events will appear here."
                 columns={[
                   { key: "request_reference", label: "Request" },
                   { key: "request_type", label: "Type" },
@@ -281,7 +284,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 rowKey="id"
                 onRowClick={(row) => openDetails("sync", row)}
                 getRowAriaLabel={(row) => `View synchronization ${row.sync_reference || row.id}`}
-                emptyMessage={handoffs.length ? `No synchronization events have been recorded yet. There are ${handoffs.length} historical Admissions handoffs, but no matching synchronization history. New accepted handoffs will record attempts after the intake migration is deployed.` : "No synchronization events yet. Confirm the Admissions server is sending accepted applicants to the Enrollment intake endpoint."}
+                emptyMessage={handoffs.length ? `No synchronization events match the filters. There are ${handoffs.length} recorded Admissions handoffs.` : "No synchronization events yet. Confirm the Admissions server is sending accepted applicants to the Enrollment intake endpoint."}
                 columns={[
                   { key: "sync_reference", label: "Synchronization" },
                   { key: "applicant_reference", label: "Applicant" },
