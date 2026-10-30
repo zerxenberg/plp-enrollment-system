@@ -15,7 +15,8 @@ function authorizedProfile(record, user) {
     authUserId: user.id,
     role: record.role_code,
     name: record.full_name,
-    identifier: record.email,
+    identifier: String(record.source_account_key || "").startsWith("PLP_ADMISSIONS:")
+      ? (user.email || record.email) : record.email,
     sourceAccountKey: record.source_account_key,
     redirect: PORTAL_META[record.role_code].homeHref,
   };

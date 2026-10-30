@@ -7,13 +7,28 @@ export function verifiedCorSubjectDisplayCodes(registeredSubjects, catalogSubjec
       !Array.isArray(catalogSubjects)) {
     throw new Error("The COR subject catalog could not be verified.");
   }
-  const codes = new Set(registeredSubjects.map((subject) => subject.subject_code));
+  const codes = new Set();
+  for (const subject of registeredSubjects) {
+    const code = subject?.subject_code;
+    if (typeof code !== "string" || !code.trim() || code !== code.trim() ||
+        codes.has(code)) {
+      throw new Error("The COR registered subject identities are invalid or duplicated.");
+    }
+    codes.add(code);
+  }
   const catalog = new Map();
   for (const subject of catalogSubjects) {
-    if (!codes.has(subject.code) || !subject.name || catalog.has(subject.code)) {
+    if (!codes.has(subject?.code) || typeof subject?.name !== "string" ||
+        !subject.name.trim() || catalog.has(subject.code)) {
       throw new Error("The COR subject catalog contains inconsistent records.");
     }
-    catalog.set(subject.code, displaySubjectCode(subject.code));
+    const displayCode = displaySubjectCode(subject.code);
+    // A Phase 8 internal identifier must never become a printed subject code
+    // simply because the catalog contains a future or malformed identifier.
+    if (subject.code.startsWith("P8F26-") && displayCode === subject.code) {
+      throw new Error("The COR subject catalog has no readable code for a registered subject.");
+    }
+    catalog.set(subject.code, displayCode);
   }
   if (catalog.size !== codes.size || [...catalog.values()].some((code) => !code) ||
       new Set(catalog.values()).size !== catalog.size) {

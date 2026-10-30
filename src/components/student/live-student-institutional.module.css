@@ -1,0 +1,213 @@
+.content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metricBlock {
+  margin-top: 7px;
+  color: #112c21;
+  font-size: clamp(1rem, 1.5vw, 1.35rem);
+  overflow-wrap: anywhere;
+}
+
+.metricStatus {
+  display: flex;
+  align-items: center;
+  min-height: 39px;
+  margin-top: 7px;
+}
+
+.dashboardGrid,
+.enrollmentGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+.nextAction {
+  min-width: 0;
+}
+
+.actionFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.detailSpacing {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.detailSpacing h3 {
+  font-size: .85rem;
+  color: #254737;
+}
+
+.feedback {
+  margin-top: 12px;
+  color: #266849;
+  font-size: .74rem;
+  line-height: 1.5;
+}
+
+.softText {
+  margin-top: 12px;
+  color: var(--portal-muted);
+  font-size: .74rem;
+  line-height: 1.5;
+}
+
+.academicMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.scheduleSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 20px;
+  padding: 11px 13px;
+  border: 1px solid #dbe6e0;
+  border-radius: 12px;
+  background: rgba(247, 251, 249, .9);
+}
+
+.scheduleSummary span {
+  color: #5e7066;
+  font-size: .72rem;
+}
+
+.scheduleSummary strong {
+  color: #233b2f;
+}
+
+.meetingButton {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 90px;
+  margin-bottom: 6px;
+  padding: 10px;
+  border: 1px solid #a8d8ba;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--portal-card-motion), box-shadow var(--portal-card-motion);
+}
+
+.meetingButton span {
+  display: block;
+  font-size: .69rem;
+  font-weight: 500;
+}
+
+.meetingButton:hover,
+.meetingButton:focus-visible {
+  border-color: #298b57;
+  box-shadow: 0 5px 15px rgba(21, 102, 64, .15);
+}
+
+.demoNotice {
+  display: grid;
+  gap: 7px;
+  padding: 15px 17px;
+  border: 1px solid rgba(39, 115, 78, .55);
+  border-left: 5px solid var(--portal-green-600);
+  border-radius: var(--portal-radius);
+  background: linear-gradient(135deg, rgba(232, 249, 239, .94), rgba(245, 252, 248, .96));
+  color: #204d35;
+  box-shadow: var(--portal-shadow);
+}
+
+.demoNotice strong {
+  font-size: .9rem;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
+.demoNotice p {
+  max-width: 950px;
+  color: #355f47;
+  font-size: .76rem;
+  line-height: 1.55;
+}
+
+.demonstrationCard {
+  padding: 17px;
+  min-width: 0;
+  border-color: rgba(29, 139, 80, .4);
+}
+
+.demoSectionHeading {
+  margin: 24px 0 12px;
+}
+
+.demoSectionHeading h3 {
+  color: #18382b;
+  font-size: .94rem;
+}
+
+.demoSectionHeading p {
+  margin-top: 4px;
+  color: var(--portal-muted);
+  font-size: .72rem;
+  line-height: 1.5;
+}
+
+:global(.portal-app[data-theme="dark"]) .demoNotice {
+  border-color: #459f68;
+  background: linear-gradient(135deg, rgba(20, 74, 47, .95), rgba(24, 57, 42, .97));
+  color: #e9fff1;
+}
+
+:global(.portal-app[data-theme="dark"]) .demoNotice p {
+  color: #c6e7d3;
+}
+
+@media (max-width: 1120px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboardGrid,
+  .enrollmentGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .metrics,
+  .academicMetrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meetingButton {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .scheduleSummary,
+  .meetingButton,
+  .demoNotice {
+    border: 1px solid CanvasText;
+  }
+}

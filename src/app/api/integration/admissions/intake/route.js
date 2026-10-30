@@ -1,0 +1,169 @@
+import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  autoProvisionAdmissionsStudent,
+  configuredAdmissionsInvitation,
+} from "@/features/admissions/admissions-auto-provision.mjs";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function authorized(request) {
+  const configured = process.env.ENROLLMENT_INTAKE_SECRET;
+  const supplied = request.headers.get("authorization") || "";
+  if (!configured || !supplied.startsWith("Bearer ")) return false;
+  const token = supplied.slice(7).trim();
+  if (!token || token.length !== configured.length) return false;
+  // Constant time comparison without adding a dependency.
+  let diff = 0;
+  for (let i = 0; i < token.length; i += 1) {
+    diff |= token.charCodeAt(i) ^ configured.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+function response(status, body) {
+  return NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+export async function GET(request) {
+  if (!authorized(request)) {
+    return response(401, { error: "Unauthorized. Use a trusted server request with the integration Bearer secret." });
+  }
+  return response(200, {
+    status: "ready",
+    method: "POST",
+    purpose: "Admissions accepted applicant intake",
+  });
+}
+
+export async function POST(request) {
+  if (!authorized(request)) return response(401, { error: "Unauthorized." });
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return response(400, { error: "A valid JSON payload is required." });
+  }
+
+  const payload = {
+    applicantRef: String(body?.applicant_ref ?? "").trim(),
+    fullName: String(body?.full_name ?? "").trim(),
+    email: String(body?.email ?? "").trim().toLowerCase(),
+    programCode: String(body?.program_code ?? "").trim(),
+    programName: String(body?.program_name ?? body?.course_name ?? "").trim(),
+    admissionDate: String(body?.admission_date ?? "").trim(),
+    admissionType: String(body?.admission_type ?? "").trim().toLowerCase(),
+    sourceName: String(body?.source_name ?? "").trim(),
+    details: body?.applicant_details && typeof body.applicant_details === "object"
+      && !Array.isArray(body.applicant_details) ? body.applicant_details : {},
+    gwa: body?.inputted_gwa === null || body?.inputted_gwa === undefined || body?.inputted_gwa === ""
+      ? null : Number(body.inputted_gwa),
+    gwaVerified: body?.gwa_verified === true,
+    verifiedDocuments: Array.isArray(body?.verified_documents)
+      ? body.verified_documents.filter((v) => typeof v === "string").slice(0, 30)
+      : [],
+  };
+
+  if (
+    !/^ADM-20\d{2}-\d{6,9}$/.test(payload.applicantRef) ||
+    payload.fullName.length < 2 ||
+    payload.fullName.length > 200 ||
+    payload.email.length > 254 ||
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email) ||
+    payload.programCode.length < 2 ||
+    payload.programCode.length > 60 ||
+    payload.programName.length > 240 ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(payload.admissionDate) ||
+    !["new", "transferee"].includes(payload.admissionType) ||
+    (payload.gwa !== null && (!Number.isFinite(payload.gwa) || payload.gwa < 75 || payload.gwa > 100)) ||
+    (payload.gwaVerified && payload.gwa === null) ||
+    JSON.stringify(payload.details).length > 5000 ||
+    payload.sourceName !== "PLP Admissions"
+  ) {
+    return response(422, { error: "Applicant handoff details are incomplete or unsupported." });
+  }
+
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("integration_accept_admissions_intake_v1", {
+      p_applicant_ref: payload.applicantRef,
+      p_full_name: payload.fullName,
+      p_email: payload.email,
+      p_program_code: payload.programCode,
+      p_program_name: payload.programName,
+      p_admission_date: payload.admissionDate,
+      p_admission_type: payload.admissionType,
+      p_source_name: payload.sourceName,
+    });
+
+    if (error) {
+      const conflict = error.code === "23505";
+      const invalid = ["22023", "23503", "23514"].includes(error.code);
+      return response(conflict ? 409 : invalid ? 422 : 500, {
+        error: conflict
+          ? "This applicant conflicts with an existing Enrollment identity and requires manual review."
+          : invalid
+            ? "Enrollment could not accept the applicant details. Verify the program and admission information."
+            : "Enrollment could not process this handoff.",
+      });
+    }
+
+    // The first RPC owns the student identity; this second idempotent RPC
+    // enriches the existing account without changing Auth or enrollment state.
+    const { error: enrichmentError } = await admin.rpc("integration_enrich_admissions_profile_v1", {
+      p_applicant_ref: payload.applicantRef,
+      p_details: payload.details,
+      p_personal_email: payload.email,
+      p_gwa: payload.gwa,
+      p_gwa_verified: payload.gwaVerified,
+      p_verified_documents: payload.verifiedDocuments,
+    });
+    if (enrichmentError) {
+      console.error("Admissions intake enrichment failed", {
+        applicantRef: payload.applicantRef,
+        code: enrichmentError.code,
+        detail: enrichmentError.message,
+      });
+      return response(503, {
+        error: "The student record was received but its profile details could not be synchronized. Apply the Enrollment enrichment migration and retry this applicant.",
+      });
+    }
+
+    const status = data?.status;
+    if (!["created", "updated", "unchanged"].includes(status) || !data?.student_number) {
+      return response(500, { error: "Enrollment returned an invalid handoff result." });
+    }
+    // Admission and profile synchronization remain successful even if email
+    // delivery/identity provisioning requires manual attention. Never invite
+    // before both trusted database RPCs succeed.
+    let accountSetup = { status: "manual_review" };
+    try {
+      accountSetup = await autoProvisionAdmissionsStudent({
+        admin,
+        applicantRef: payload.applicantRef,
+        email: payload.email,
+        configuration: configuredAdmissionsInvitation({
+          enabled: process.env.ADMISSIONS_AUTO_PROVISION_ENABLED === "true",
+          redirectUrl: process.env.ADMISSIONS_INVITE_REDIRECT_URL,
+        }),
+      });
+    } catch (provisionError) {
+      console.error("Admissions identity invitation requires review", {
+        applicantRef: payload.applicantRef, code: provisionError?.code,
+      });
+    }
+    return response(status === "created" ? 201 : 200, {
+      status,
+      applicant_ref: payload.applicantRef,
+      student_number: data.student_number,
+      school_email: data.school_email ?? null,
+      profile_synchronized: true,
+      gwa_verified: payload.gwaVerified,
+      account_setup: accountSetup.status,
+    });
+  } catch {
+    return response(500, { error: "Enrollment intake is temporarily unavailable." });
+  }
+}

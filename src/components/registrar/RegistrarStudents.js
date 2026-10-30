@@ -19,6 +19,7 @@ import RegistrarActionResultModal from "./RegistrarActionResultModal";
 import { loadRegistrarStudentRecordDetail } from "@/features/registrar/registrar-actions";
 import { registrarDebug, titleStatus } from "@/features/registrar/registrar-client-utils";
 import { displayCurriculumCode, displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { formatStudentType } from "@/utils/student-welcome-format.mjs";
 
 const ALL = "ALL";
 
@@ -36,6 +37,13 @@ function yearLabel(value) {
   if (!Number.isInteger(number) || number < 1) return "Not available";
   const suffix = number === 1 ? "st" : number === 2 ? "nd" : number === 3 ? "rd" : "th";
   return `${number}${suffix} Year`;
+}
+
+function statusCell(value) {
+  return value === null || value === undefined || value === ""
+    ? "Not available"
+    : <StatusBadge value={value === "NOT_CONFIRMED" ? "unknown" : value}
+      label={value === "CONFIRMED_SIMULATION" ? "Confirmed Demonstration Enrollment" : titleStatus(value)} />;
 }
 
 export default function RegistrarStudents({ studentsData }) {
@@ -107,11 +115,12 @@ export default function RegistrarStudents({ studentsData }) {
     <>
       <PageHeader
         title="Students"
-        description="Current 2026 demonstration block sections, student rosters, and grade imports."
+        description="Demonstration block sections, student rosters, and grade imports across academic terms."
       />
 
       <InternalTabs
         items={[
+          { value: "admissions", label: "Admitted Students" },
           { value: "blocks", label: "Block Section Student List" },
           { value: "grades", label: "Import Grades" },
           { value: "history", label: "Grade Import History" },
@@ -123,7 +132,7 @@ export default function RegistrarStudents({ studentsData }) {
         {tab === "blocks" ? (
           <Panel
             title="Block Section Student List"
-            subtitle={`${studentsData.groups.length} block sections · ${studentsData.students.length} students in the 2026 demonstration cohort. Select a block to view its roster.`}
+            subtitle={`${studentsData.groups.length} block sections · ${studentsData.students.length} original Phase 8 and Admissions demonstration placements. Select a block to view its roster.`}
           >
             <div className="toolbar">
               <SearchControl value={search} onChange={setSearch} label="Search blocks" placeholder="Search block, program, or curriculum" />
@@ -170,6 +179,31 @@ export default function RegistrarStudents({ studentsData }) {
           </Panel>
         ) : null}
 
+        {tab === "admissions" ? (
+          <Panel
+            title="Admitted Institutional Students"
+            subtitle="Verified accepted Admissions records with their assigned block and separate demonstration, official enrollment, and account statuses. Admission acceptance does not confirm enrollment."
+          >
+            <DataTable
+              rowKey="id"
+              rows={studentsData.admittedStudents || []}
+              emptyMessage="No institutional admitted student records were found."
+              columns={[
+                { key: "student_number", label: "Student Number" },
+                { key: "full_name", label: "Student Name" },
+                { key: "student_type", label: "Student Type", render: (row) => formatStudentType(row.student_type) },
+                { key: "program_code", label: "Program" },
+                { key: "year_level", label: "Year Level", render: (row) => yearLabel(row.year_level) },
+                { key: "assigned_block", label: "Assigned Block", render: (row) => row.assigned_block || "Not assigned" },
+                { key: "admission_status", label: "Admission Status", render: (row) => statusCell(row.admission_status) },
+                { key: "demonstration_review_status", label: "Demonstration Review Status", render: (row) => statusCell(row.demonstration_review_status) },
+                { key: "official_enrollment_status", label: "Official Enrollment Status", render: (row) => statusCell(row.official_enrollment_status) },
+                { key: "account_status", label: "Account Status", render: (row) => statusCell(row.account_status) },
+              ]}
+            />
+          </Panel>
+        ) : null}
+
         {tab === "grades" ? <RegistrarGradeImports data={studentsData} /> : null}
         {tab === "history" ? <RegistrarGradeImports data={studentsData} historyOnly /> : null}
       </InternalTabs>
@@ -205,9 +239,9 @@ export default function RegistrarStudents({ studentsData }) {
                 columns={[
                   { key: "student_number", label: "Student ID" },
                   { key: "full_name", label: "Full Name" },
-                  { key: "student_type", label: "Student Type", render: (row) => titleStatus(row.student_type) },
+                  { key: "student_type", label: "Student Type", render: (row) => formatStudentType(row.student_type) },
                   { key: "academic_classification", label: "Classification", render: (row) => titleStatus(row.academic_classification) },
-                  { key: "enrollment_status", label: "Enrollment Status", render: (row) => titleStatus(row.enrollment_status) },
+                  { key: "enrollment_status", label: "Enrollment Status", render: (row) => statusCell(row.enrollment_status) },
                   { key: "home_block", label: "Block Section" },
                 ]}
               />
@@ -252,16 +286,19 @@ export default function RegistrarStudents({ studentsData }) {
                 ["Curriculum", displayCurriculumName(selectedStudent.curriculum_code)],
                 ["Academic Term", termMap.get(selectedStudent.current_term_id) || selectedStudent.current_term_id],
                 ["Year Level", yearLabel(selectedStudent.year_level)],
-                ["Student Type", titleStatus(selectedStudent.student_type)],
+                ["Student Type", formatStudentType(selectedStudent.student_type)],
                 ["Academic Classification", titleStatus(selectedStudent.academic_classification)],
-                ["Enrollment Status", titleStatus(selectedStudent.enrollment_status)],
+                ["Demonstration Review Status", statusCell(selectedStudent.enrollment_status)],
+                ["Official Enrollment Status", statusCell(selectedStudent.official_enrollment_status || "NOT_CONFIRMED")],
                 ["Block Assignment", selectedStudent.home_block],
               ]}
             />
 
             {!selectedStudent.project_only ? (
               <div className="notice" style={{ marginTop: 14 }}>
-                The student name is not available for this institutional record.
+                {selectedStudent.admissions_demonstration
+                  ? "This is a real Admissions student using separate Phase 8 demonstration resources. A confirmed demonstration registration is not an official university enrollment."
+                  : "This is an institutional student record. Official enrollment requires a separate Registrar confirmation."}
               </div>
             ) : null}
 

@@ -1,12 +1,23 @@
 // npm install --save-dev playwright-core
 // Run against an already running local Next.js dev server.
 const assert = require("node:assert/strict");
+const test = require("node:test");
 const path = require("node:path");
 const fs = require("node:fs");
 const { chromium } = require("playwright-core");
 
 const origin = process.env.PLP_TEST_ORIGIN || "http://127.0.0.1:3000";
 const executablePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+// Grade import is a protected, data-writing workflow. The test must use
+// dedicated credentials and an explicitly approved isolated environment.
+const browserCredentials = [
+  "PLP_TEST_REGISTRAR_ID", "PLP_TEST_REGISTRAR_PASSWORD",
+  "PLP_TEST_STUDENT_1_ID", "PLP_TEST_STUDENT_1_PASSWORD",
+  "PLP_TEST_STUDENT_2_ID", "PLP_TEST_STUDENT_2_PASSWORD",
+  "PLP_TEST_STUDENT_3_ID", "PLP_TEST_STUDENT_3_PASSWORD",
+];
+const runAuthenticated = process.env.PLP_RUN_AUTHENTICATED_BROWSER_TESTS === "1" &&
+  browserCredentials.every((key) => Boolean(process.env[key]));
 
 async function dropFiles(page, files) {
   const source = files.map(({ name, buffer, type }) => ({
@@ -56,7 +67,7 @@ async function run() {
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("requestfailed", (request) => console.warn("Network request failed:", request.url(), request.failure()?.errorText));
   try {
-    await login(page, "registrar.demo", "Registrar@123", "/registrar/dashboard");
+    await login(page, process.env.PLP_TEST_REGISTRAR_ID, process.env.PLP_TEST_REGISTRAR_PASSWORD, "/registrar/dashboard");
     await page.goto(origin + "/registrar/students");
     await page.getByRole("tab", { name: "Official Grades Import" }).click();
     await page.getByRole("tab", { name: "Upload Grades" }).click();
@@ -180,7 +191,7 @@ async function run() {
     console.log("PASS browser: valid XLSX published after attestation, history survives refresh");
 
     await page.getByRole("button", { name: "Logout" }).click();
-    await login(page, "2024-00123", "Student@123", "/student/dashboard");
+    await login(page, process.env.PLP_TEST_STUDENT_1_ID, process.env.PLP_TEST_STUDENT_1_PASSWORD, "/student/dashboard");
     await page.goto(origin + "/student/academic-records");
     await page.getByRole("tab", { name: "Subject History" }).click();
     const juan = page.getByRole("row").filter({ hasText: "IT204" });
@@ -197,7 +208,7 @@ async function run() {
     console.log("PASS browser: Juan sees published grade, own notices, eligibility module");
 
     await page.getByRole("button", { name: "Logout" }).click();
-    await login(page, "2026-01896", "Student@123", "/student/dashboard");
+    await login(page, process.env.PLP_TEST_STUDENT_2_ID, process.env.PLP_TEST_STUDENT_2_PASSWORD, "/student/dashboard");
     await page.goto(origin + "/student/academic-records");
     await page.getByRole("tab", { name: "Subject History" }).click();
     const katrina = page.getByRole("row").filter({ hasText: "IT204" });
@@ -206,7 +217,7 @@ async function run() {
     assert.ok(!(await page.locator("body").innerText()).includes("1.75"));
     console.log("PASS browser: student identity isolation and FAILED result");
     await page.getByRole("button", { name: "Logout" }).click();
-    await login(page, "2026-00108", "Student@123", "/student/dashboard");
+    await login(page, process.env.PLP_TEST_STUDENT_3_ID, process.env.PLP_TEST_STUDENT_3_PASSWORD, "/student/dashboard");
     await page.goto(origin + "/student/academic-records");
     await page.getByRole("tab", { name: "Subject History" }).click();
     const dencie = page.getByRole("row").filter({ hasText: "IT204" });
@@ -227,4 +238,10 @@ async function run() {
     await browser.close();
   }
 }
-run();
+if (runAuthenticated) {
+  run();
+} else {
+  test("Authenticated Grade Import browser smoke", {
+    skip: "Requires explicit browser test opt-in and dedicated Registrar and Student test accounts",
+  }, () => {});
+}

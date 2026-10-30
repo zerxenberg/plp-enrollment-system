@@ -21,7 +21,7 @@ export default function ProjectOnlyStudentModuleBoundary({
   const kind = authenticatedProfile?.kind;
   const isProject = mode === "project" || kind === "complete";
 
-  if (!isProject || mode === "demo" || kind === "legacy") {
+  if ((!isProject && mode !== "live") || mode === "demo" || kind === "legacy") {
     return (
       <>
         <PageHeader title="Student Portal" description="Account verification is required." />

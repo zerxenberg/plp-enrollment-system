@@ -77,6 +77,17 @@ test("live catalog codes use the exact same Phase 8 display aliases as all three
   assert.throws(() => verifiedCorSubjectDisplayCodes(registered, [
     ...subjects.slice(1), { code: "UNREGISTERED", name: "Unknown" },
   ]), /inconsistent/);
+  assert.throws(() => verifiedCorSubjectDisplayCodes([...registered, registered[0]], subjects),
+    /duplicated/);
+  assert.throws(() => verifiedCorSubjectDisplayCodes([{ subject_code: " P8F26-GE-T03-1" }], subjects),
+    /invalid/);
+  assert.throws(() => verifiedCorSubjectDisplayCodes(
+    [{ subject_code: "P8F26-UNMAPPED-1" }],
+    [{ code: "P8F26-UNMAPPED-1", name: "Unmapped catalog subject" }],
+  ), /no readable code/);
+  assert.throws(() => verifiedCorSubjectDisplayCodes(
+    [registered[0]], [{ ...subjects[0], name: " " }],
+  ), /inconsistent/);
   assert.match(renderer, /record\.displayCode \|\| record\.code/);
 });
 
@@ -359,6 +370,16 @@ test("rendered COR PDF prints the verified display code without mutating snapsho
   const mapped = buildVerifiedCorDocument(cor, {
     subjectDisplayCodes: new Map([[rawCode, "IT 201"]]),
   });
+  for (const unverified of [
+    new Map(),
+    new Map([["OTHER", "IT 201"]]),
+    new Map([[rawCode, rawCode]]),
+    new Map([[rawCode, " "]]),
+    { [rawCode]: "IT 201" },
+  ]) {
+    assert.throws(() => buildVerifiedCorDocument(cor, { subjectDisplayCodes: unverified }),
+      /display codes could not be verified/);
+  }
   assert.equal(mapped.subjects[0].code, rawCode);
   assert.equal(mapped.subjects[0].displayCode, "IT 201");
   assert.equal(mapped.subjects[0].meetings[0].subject_code, rawCode);

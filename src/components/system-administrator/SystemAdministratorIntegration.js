@@ -16,6 +16,8 @@ import {
 import { Details, Feedback, Info, Metric, Tabs } from "@/components/registrar/RegistrarShared";
 import {
   queueSynchronizationRetry,
+  retryAdmissionsSourceSync,
+  sendPendingAdmissionsInvitations,
   testIntegrationConnection,
   updateIntegrationConfiguration,
 } from "@/features/system-administration/system-admin-actions";
@@ -26,14 +28,12 @@ const TABS = [
   { value: "requests", label: "API Requests" },
   { value: "synchronization", label: "Synchronization" },
   { value: "failed", label: "Failed Requests" },
-  { value: "imports", label: "Imported Records" },
-  { value: "settings", label: "Settings" },
 ];
 
 export default function SystemAdministratorIntegration({ integrationData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const { configurations, requests, synchronizations, handoffs } = integrationData;
+  const { configurations, requests, synchronizations, handoffs, bridge } = integrationData;
 
   const [tab, setTab] = useState("overview");
   const [search, setSearch] = useState("");
@@ -81,9 +81,8 @@ export default function SystemAdministratorIntegration({ integrationData }) {
     if (tab === "requests") return requests;
     if (tab === "synchronization") return synchronizations;
     if (tab === "failed") return failedRequests;
-    if (tab === "imports") return handoffs;
     return [];
-  }, [tab, requests, synchronizations, failedRequests, handoffs]);
+  }, [tab, requests, synchronizations, failedRequests]);
 
   const statusOptions = [
     { value: "ALL", label: "All Statuses" },
@@ -104,11 +103,20 @@ export default function SystemAdministratorIntegration({ integrationData }) {
     <>
       <PageHeader
         title="System Integration"
-        description="Live Supabase integration configuration, API request history, synchronization attempts, failures, and imported Admission handoffs."
+        description="PLP Admissions to PLP Enrollment handoff health, API activity, student synchronization, and technical failures."
         actions={
-          <Button variant="secondary" onClick={() => router.refresh()}>
-            Refresh
-          </Button>
+          <>
+            <Button disabled={isPending} onClick={() => run(() => retryAdmissionsSourceSync())}>
+              Retry Sync from Admissions
+            </Button>
+            <Button variant="secondary" disabled={isPending || !bridge?.automaticInvitationConfigured}
+              onClick={() => run(() => sendPendingAdmissionsInvitations())}>
+              Send Pending Student Invitations
+            </Button>
+            <Button variant="secondary" onClick={() => router.refresh()}>
+              Refresh
+            </Button>
+          </>
         }
       />
 
@@ -132,9 +140,9 @@ export default function SystemAdministratorIntegration({ integrationData }) {
           <>
             <div className="stats-grid" style={{ marginBottom: 14 }}>
               <Metric
-                label="Integration Status"
-                value={primaryConfiguration?.is_enabled ? "Enabled" : "Disabled"}
-                hint={primaryConfiguration?.name || "No configuration"}
+                label="Admissions Bridge"
+                value={bridge?.connectivity || "Not verified"}
+                hint="Verified by recorded successful handoffs. Live Admissions reachability is not continuously probed."
               />
               <Metric
                 label="Recorded Requests"
@@ -157,7 +165,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 hint="Queued or pending attempts"
               />
               <Metric
-                label="Imported Applicant Records"
+                label="Received Admission Handoffs"
                 value={handoffs.length}
                 hint="Admission handoff records"
               />
@@ -181,13 +189,27 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 <Info label="Last Configuration Update" value={primaryConfiguration.updatedAtLabel} />
               </div>
             ) : (
-              <div className="notice warning">No integration configuration exists in the database.</div>
+              <div className="notice">Admissions intake is configured through the server REST endpoint and shared secret, rather than a generic integration configuration row.</div>
             )}
           </>
         ) : null}
 
         {tab === "status" ? (
           <>
+            <div className="notice" style={{ marginBottom: 14 }}>Successful inbound handoffs are recorded in Enrollment. This confirms the API has processed Admissions applicants, but it does not prove that the external Admissions service is currently reachable.</div>
+            <div className="info-grid">
+              <Info label="Inbound Admissions API" value={bridge?.connectivity || "Not verified"} />
+              <Info label="Last Successful Handoff" value={bridge?.lastInboundAtLabel || "Not recorded"} />
+              <Info label="Successful Inbound Handoffs" value={bridge?.successfulHandoffs ?? 0} />
+              <Info label="Live Admissions Service Probe" value={bridge?.liveSourceProbed ? "Verified" : "Not run; use Retry Sync to test"} />
+              <Info label="Admissions Supabase Project" value={bridge?.admissionsDatabaseProject || "Not configured"} />
+              <Info label="Enrollment Supabase Project" value={bridge?.enrollmentDatabaseProject || "Not configured"} />
+              <Info label="Intake Shared Secret" value={bridge?.sharedSecretConfigured ? "Configured on Enrollment server" : "Missing on Enrollment server"} />
+              <Info label="Automatic Student Invitations" value={bridge?.automaticInvitationConfigured ? "Enabled on server; email delivery not yet verified" : "Disabled until server invitation configuration is verified"} />
+              <Info label="Received Applicants" value={handoffs.length} />
+              <Info label="Recorded API Requests" value={requests.length} />
+              <Info label="Recorded Synchronizations" value={synchronizations.length} />
+            </div>
             {primaryConfiguration ? (
               <>
                 <div className="info-grid">
@@ -217,12 +239,12 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 </div>
               </>
             ) : (
-              <div className="notice warning">Create an integration configuration before testing the endpoint.</div>
+              <div className="notice">No generic configuration row is required for the authenticated Admissions intake API. Use Retry Sync from Admissions to request a fresh handoff attempt.</div>
             )}
           </>
         ) : null}
 
-        {["requests", "synchronization", "failed", "imports"].includes(tab) ? (
+        {["requests", "synchronization", "failed"].includes(tab) ? (
           <>
             <div className="toolbar">
               <SearchControl
@@ -250,7 +272,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 rowKey="id"
                 onRowClick={(row) => openDetails("request", row)}
                 getRowAriaLabel={(row) => `View request ${row.request_reference || row.id}`}
-                emptyMessage="No integration requests match the selected filters."
+                emptyMessage="No Admissions requests match the filters. Received handoffs remain available in the Overview, and new intake events will appear here."
                 columns={[
                   { key: "request_reference", label: "Request" },
                   { key: "request_type", label: "Type" },
@@ -268,7 +290,7 @@ export default function SystemAdministratorIntegration({ integrationData }) {
                 rowKey="id"
                 onRowClick={(row) => openDetails("sync", row)}
                 getRowAriaLabel={(row) => `View synchronization ${row.sync_reference || row.id}`}
-                emptyMessage="No synchronization records match the selected filters."
+                emptyMessage={handoffs.length ? `No synchronization events match the filters. There are ${handoffs.length} recorded Admissions handoffs.` : "No synchronization events yet. Confirm the Admissions server is sending accepted applicants to the Enrollment intake endpoint."}
                 columns={[
                   { key: "sync_reference", label: "Synchronization" },
                   { key: "applicant_reference", label: "Applicant" },

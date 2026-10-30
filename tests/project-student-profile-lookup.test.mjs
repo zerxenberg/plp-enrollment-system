@@ -166,6 +166,8 @@ test("ordinary authenticated Student loads only their own PostgreSQL profile", a
       curriculum: "BSIT-2024",
       academicClassification: "REGULAR",
       studentStatus: "ACTIVE",
+      admissionSource: "Institutional",
+      admissionDecision: "Not recorded",
       accountStatus: "Active",
     },
   });

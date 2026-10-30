@@ -3,6 +3,8 @@ import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { requireRole } from "@/lib/auth/require-role";
+import { configuredAdmissionsInvitation } from "@/features/admissions/admissions-auto-provision.mjs";
 
 const CURRENT_PROJECT_COHORT_ID = "PLP_PROJECT_600_2026_1";
 const CURRENT_TERM_ID = "TERM-2026-1";
@@ -15,6 +17,17 @@ function assertQuery(error, label) {
   if (error) {
     throw new Error(`${label}: ${error.message}`);
   }
+}
+
+async function fetchAllRows(queryFactory, label, pageSize = 500) {
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const result = await queryFactory().range(offset, offset + pageSize - 1);
+    assertQuery(result.error, label);
+    rows.push(...(result.data || []));
+    if (!result.data || result.data.length < pageSize) break;
+  }
+  return { data: rows, error: null, count: rows.length };
 }
 
 function formatDateTime(value) {
@@ -271,6 +284,7 @@ export async function getSystemAdministratorDashboardData(userId) {
 }
 
 export async function getUsersAccessData() {
+  await requireRole("system-administrator");
   const supabase = await createClient();
   const adminClient = createAdminClient();
 
@@ -283,11 +297,14 @@ export async function getUsersAccessData() {
     programsResult,
     activityResult,
   ] = await Promise.all([
-    currentAccountScope(
-      supabase
-        .from("app_users")
-        .select("id,auth_user_id,source_account_key,role_code,full_name,sex,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
-    ).order("full_name"),
+    fetchAllRows(
+      () => currentAccountScope(
+        adminClient
+          .from("app_users")
+          .select("id,auth_user_id,source_account_key,role_code,full_name,sex,email,account_status,login_enabled,last_login_at,source_created_on,created_at,updated_at,is_synthetic_demo,account_kind,project_cohort_id,institutional_verified_at,project_activation_approved_at")
+      ).order("full_name"),
+      "Load all current operational application users",
+    ),
     supabase
       .from("roles")
       .select("code,name,default_redirect_path,description,is_active")
@@ -315,36 +332,37 @@ export async function getUsersAccessData() {
       .limit(150),
   ]);
 
-  const currentUserIds = (usersResult.data || []).map((row) => row.id);
-
   const [
     identifiersResult,
     studentProfilesResult,
     projectPlacementsResult,
     staffProfilesResult,
   ] = await Promise.all([
-    currentUserIds.length
-      ? supabase
-          .from("user_login_identifiers")
-          .select("id,user_id,identifier_type,identifier_value,is_primary")
-          .in("user_id", currentUserIds)
-          .order("identifier_type")
-      : Promise.resolve({ data: [], error: null }),
-    adminClient
-      .from("student_profiles")
-      .select("id,user_id,student_number,program_code,year_level,year_level_number,student_type,student_status,academic_classification,progression_status,current_term_id,current_curriculum_code,record_kind,project_cohort_id,is_synthetic_demo")
-      .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
+    fetchAllRows(
+      () => adminClient
+        .from("user_login_identifiers")
+        .select("id,user_id,identifier_type,identifier_value,is_primary")
+        .order("identifier_type"),
+      "Load all login identifiers",
+    ),
+    fetchAllRows(
+      () => adminClient
+        .from("student_profiles")
+        .select("id,user_id,student_number,program_code,year_level,year_level_number,student_type,student_status,academic_classification,progression_status,current_term_id,current_curriculum_code,record_kind,project_cohort_id,is_synthetic_demo")
+        .or(`is_synthetic_demo.eq.false,project_cohort_id.eq.${CURRENT_PROJECT_COHORT_ID}`),
+      "Load all current operational student profiles",
+    ),
     adminClient
       .from("project_student_academic_placements")
       .select("student_id,project_cohort_id,term_id,program_code,curriculum_code,year_level,academic_classification,progression_status,home_block_id")
       .eq("project_cohort_id", CURRENT_PROJECT_COHORT_ID)
       .eq("term_id", CURRENT_TERM_ID),
-    currentUserIds.length
-      ? supabase
-          .from("staff_profiles")
-          .select("user_id,employee_id,organizational_unit_code,position_title,office_name")
-          .in("user_id", currentUserIds)
-      : Promise.resolve({ data: [], error: null }),
+    fetchAllRows(
+      () => adminClient
+        .from("staff_profiles")
+        .select("user_id,employee_id,organizational_unit_code,position_title,office_name"),
+      "Load all staff profiles",
+    ),
   ]);
 
   [
@@ -464,16 +482,26 @@ export async function getUsersAccessData() {
     };
   });
 
+  // One-pass indexes avoid rescanning all users for each role and permission.
+  const userCounts = new Map();
+  for (const user of users) {
+    userCounts.set(user.roleCode, (userCounts.get(user.roleCode) || 0) + 1);
+  }
+  const permissionRoles = new Map();
+  for (const assignment of rolePermissionsResult.data || []) {
+    const assigned = permissionRoles.get(assignment.permission_code) || [];
+    assigned.push(assignment.role_code);
+    permissionRoles.set(assignment.permission_code, assigned);
+  }
+
   const roles = (rolesResult.data || []).map((role) => ({
     ...role,
-    userCount: users.filter((user) => user.roleCode === role.code).length,
+    userCount: userCounts.get(role.code) || 0,
   }));
 
   const permissions = (permissionsResult.data || []).map((permission) => ({
     ...permission,
-    assignedRoles: (rolePermissionsResult.data || [])
-      .filter((item) => item.permission_code === permission.code)
-      .map((item) => item.role_code),
+    assignedRoles: permissionRoles.get(permission.code) || [],
   }));
 
   const accessActivity = (activityResult.data || []).map((item) => ({
@@ -498,7 +526,11 @@ export async function getUsersAccessData() {
 }
 
 export async function getSystemIntegrationData() {
+  // Authorization must precede privileged operational reads even if the
+  // parent page and layout also check the administrator role.
+  await requireRole("system-administrator");
   const supabase = await createClient();
+  const admin = createAdminClient();
 
   const [
     configurationsResult,
@@ -510,17 +542,17 @@ export async function getSystemIntegrationData() {
       .from("integration_configurations")
       .select("id,code,name,endpoint_url,authentication_method,timeout_seconds,is_enabled,updated_by,updated_at,created_at")
       .order("name"),
-    supabase
+    admin
       .from("integration_requests")
       .select("id,configuration_id,request_reference,request_type,source_system,endpoint_path,external_reference,requested_at,response_code,status,processing_time_ms,request_summary,response_summary,created_at")
       .order("requested_at", { ascending: false })
       .limit(250),
-    supabase
+    admin
       .from("synchronization_events")
       .select("id,sync_reference,integration_request_id,applicant_reference,direction,status,result,attempt_number,attempted_at,created_at")
       .order("attempted_at", { ascending: false })
       .limit(250),
-    supabase
+    admin
       .from("admission_handoffs")
       .select("id,applicant_reference,student_id,approved_program_code,admission_status,admission_date,admission_type,integration_request_id,synchronization_status,received_at,source_name,created_at,updated_at")
       .order("received_at", { ascending: false })
@@ -534,7 +566,32 @@ export async function getSystemIntegrationData() {
     ["Load admission handoffs", handoffsResult.error],
   ].forEach(([label, error]) => assertQuery(error, label));
 
+  const acceptedHandoffs = (handoffsResult.data || [])
+    .filter((row) => row.source_name === "PLP Admissions" && row.synchronization_status === "Successful");
+  const successfulRequests = (requestsResult.data || [])
+    .filter((row) => row.source_system === "PLP Admissions" && row.status === "Successful");
+  // Historical inbound success proves the integration has worked; it is not
+  // a guarantee that a currently offline Admissions server is reachable.
+  const inboundVerified = acceptedHandoffs.length > 0 && successfulRequests.length > 0;
   return {
+    bridge: {
+      sourceSystem: "PLP Admissions",
+      destinationSystem: "PLP Enrollment",
+      admissionsDatabaseProject: "eljnvmncuhhfzqqjzlnn",
+      enrollmentDatabaseProject: "iwuphtvlcszziyvqcbsl",
+      sharedSecretConfigured: Boolean(process.env.ENROLLMENT_INTAKE_SECRET),
+      automaticInvitationConfigured: configuredAdmissionsInvitation({
+        enabled: process.env.ADMISSIONS_AUTO_PROVISION_ENABLED === "true",
+        redirectUrl: process.env.ADMISSIONS_INVITE_REDIRECT_URL,
+      }).enabled,
+      healthEndpointConfigured: Boolean(process.env.PLP_ADMISSIONS_HEALTH_URL),
+      connectivity: inboundVerified ? "Successful inbound handoffs recorded" : "No completed Admissions handoff recorded",
+      lastInboundAtLabel: acceptedHandoffs.length
+        ? formatDateTime(acceptedHandoffs[0].received_at) : "Not recorded",
+      successfulHandoffs: acceptedHandoffs.length,
+      successfulRequests: successfulRequests.length,
+      liveSourceProbed: false,
+    },
     configurations: (configurationsResult.data || []).map((item) => ({
       ...item,
       updatedAtLabel: formatDateTime(item.updated_at),

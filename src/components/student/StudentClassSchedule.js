@@ -19,6 +19,7 @@ function displayValue(value) {
 
 export default function StudentClassSchedule({
   mode = "unavailable", officialSchedule, projectSchedule, proposedSchedule,
+  demonstrationCorUrl = null,
 }) {
   const [view, setView] = useState(TABS[0]);
   const [dayFilter, setDayFilter] = useState("ALL");
@@ -33,7 +34,7 @@ export default function StudentClassSchedule({
   const isProjectDemonstration = resolved.provenance === "demonstration";
   const corUrl = isConfirmed
     ? isProjectDemonstration
-      ? "/api/student/project-cor"
+      ? demonstrationCorUrl || "/api/student/project-cor"
       : resolved.schedule?.enrollmentId
         ? `/api/student/official-cor/${encodeURIComponent(resolved.schedule.enrollmentId)}`
         : null

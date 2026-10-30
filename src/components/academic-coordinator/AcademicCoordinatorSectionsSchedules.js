@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -13,6 +13,20 @@ import { displayCurriculumName, displaySubjectCode } from "@/features/academic/p
 import { getTrackCode } from "@/features/block-planning/block-planning-seed";
 import { getMeetingConflict, summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
 import { activateReadyProjectClassSections } from "@/features/academic/project-section-activation-actions";
+import {
+  assignAdmissionsPhase8Demo,
+  listAdmissionsPhase8Candidates,
+} from "@/features/admissions/admissions-phase8-demo-actions";
+import {
+  admissionsPhase8CandidatesForBlock,
+  admissionsPhase8ReservationsByBlock,
+  admissionsPhase8RosterForBlock,
+  admissionsPhase8TransferTargets,
+  combinedPhase8Occupied,
+  combinedPhase8Available,
+  isAdmissionsPhase8Transferable,
+  isAdmissionsPhase8Block,
+} from "@/features/academic/coordinator-admissions-phase8-roster.mjs";
 import { Details, Feedback, Metric } from "@/components/registrar/RegistrarShared";
 
 const TABS = [{ value: "sections", label: "Sections" }, { value: "schedules", label: "Class Schedule" }];
@@ -101,6 +115,44 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const [feedback, setFeedback] = useState(null);
   const [formError, setFormError] = useState("");
   const [activationRunning, setActivationRunning] = useState(false);
+  const [admissionsStudents, setAdmissionsStudents] = useState([]);
+  const [admissionsCapacityStudents, setAdmissionsCapacityStudents] = useState(null);
+  const [admissionsCapacityError, setAdmissionsCapacityError] = useState("");
+  const [admissionsLoading, setAdmissionsLoading] = useState(false);
+  const [admissionsLoadedBlockId, setAdmissionsLoadedBlockId] = useState("");
+  const [admissionsError, setAdmissionsError] = useState("");
+  const [admissionsMode, setAdmissionsMode] = useState("ASSIGN");
+  const [admissionsStudentId, setAdmissionsStudentId] = useState("");
+  const [admissionsDestinationId, setAdmissionsDestinationId] = useState("");
+  const [admissionsReason, setAdmissionsReason] = useState("");
+  const [admissionsSaving, setAdmissionsSaving] = useState(false);
+  const requestedAdmissionsBlock = useRef("");
+  const requestedCapacityVersion = useRef(0);
+  const hasLivePhase8Blocks = isLive && !isSyntheticDemo &&
+    sections.some((item) => isAdmissionsPhase8Block(item, curricula));
+
+  useEffect(() => {
+    if (!hasLivePhase8Blocks) return undefined;
+    let current = true;
+    const requestVersion = ++requestedCapacityVersion.current;
+    // A single read-only candidate fetch covers every block. Never initialize
+    // reservations as zero before the authorized snapshot has been retrieved.
+    listAdmissionsPhase8Candidates().then((response) => {
+      if (!current || requestedCapacityVersion.current !== requestVersion) return;
+      if (!response?.ok || !Array.isArray(response.students)) {
+        setAdmissionsCapacityStudents(null);
+        setAdmissionsCapacityError(response?.message || "Admissions demonstration reservations are unavailable.");
+        return;
+      }
+      setAdmissionsCapacityStudents(response.students);
+      setAdmissionsCapacityError("");
+    }).catch(() => {
+      if (!current || requestedCapacityVersion.current !== requestVersion) return;
+      setAdmissionsCapacityStudents(null);
+      setAdmissionsCapacityError("Admissions demonstration reservations could not be verified.");
+    });
+    return () => { current = false; };
+  }, [hasLivePhase8Blocks]);
 
   useEffect(() => {
     if (isLive && (query.get("dataset") === "synthetic") !== isSyntheticDemo) {
@@ -128,19 +180,56 @@ export default function AcademicCoordinatorSectionsSchedules() {
   }, [isSyntheticDemo]);
 
   const section = sections.find((item) => item.id === sectionId);
+  const admissionsProjectBlock = (item) => isLive && !isSyntheticDemo &&
+    isAdmissionsPhase8Block(item, curricula);
+  const admissionsVisible = admissionsProjectBlock(section);
+  const admissionsCanAssign = admissionsVisible && section.status === "PUBLISHED";
+  const admissionsCandidates = admissionsVisible && admissionsLoadedBlockId === sectionId
+    ? admissionsPhase8CandidatesForBlock(admissionsStudents, section) : [];
+  const admissionsRoster = admissionsVisible && admissionsLoadedBlockId === sectionId
+    ? admissionsPhase8RosterForBlock(admissionsStudents, section) : [];
+  const admissionsDetailRoster = admissionsVisible && Array.isArray(admissionsCapacityStudents)
+    ? admissionsPhase8RosterForBlock(admissionsCapacityStudents, section) : [];
+  const admissionsAvailable = admissionsCandidates.filter((person) =>
+    person.active === true && !person.assignedBlockCode && !person.assignedBlockId);
+  const alreadyAssignedAdmissions = rosterSearch.trim()
+    ? admissionsCandidates.filter((person) =>
+      (person.assignedBlockId || person.assignedBlockCode) &&
+      (person.name + " " + person.studentNumber).toLowerCase()
+        .includes(rosterSearch.trim().toLowerCase()))
+    : [];
+  const admissionsDestinationBlocks = admissionsPhase8TransferTargets(sections, section, curricula);
+  const selectedAdmissionsStudent = admissionsCandidates.find((person) => person.id === admissionsStudentId);
+  const admissionReservationCounts = Array.isArray(admissionsCapacityStudents)
+    ? admissionsPhase8ReservationsByBlock(admissionsCapacityStudents, sections, curricula) : null;
+  const pendingCapacityLabel = admissionsCapacityError ? "Unavailable" : "Checking...";
   const meeting = meetings.find((item) => item.id === meetingId);
   const termLabel = (item) => terms.find((termItem) => termItem.id === item?.termId)?.label || item?.termId || "Unknown term";
   const programRecord = (item) => programs.find((entry) => entry.code === item?.programCode);
   const collegeId = (item) => item?.collegeId || programRecord(item)?.departmentId || programRecord(item)?.collegeId || programRecord(item)?.department;
   const studentOf = (assignment) => students.find((entry) => entry.id === assignment.studentId);
   const rosterOf = (id) => assignments.filter((item) => item.sectionId === id && ["PROPOSED", "CONFIRMED"].includes(String(item.status).toUpperCase()));
-  const count = (id) => blockCounts.get(id)?.occupied || 0;
+  const reservedAdmissions = (item) => {
+    if (!admissionsProjectBlock(item)) return 0;
+    return admissionReservationCounts?.get(item.id) ?? null;
+  };
+  const count = (id) => {
+    const original = blockCounts.get(id)?.occupied || 0;
+    const block = sections.find((item) => item.id === id);
+    return combinedPhase8Occupied(original, reservedAdmissions(block));
+  };
+  const availablePlaces = (item) => combinedPhase8Available(item?.capacity, count(item?.id));
+  const capacityText = (value) => value === null ? pendingCapacityLabel : value;
   const countStatus = (id, status) => blockCounts.get(id)?.[status === "CONFIRMED" ? "confirmed" : "proposed"] || 0;
   const confirmedRecord = (item) => Boolean(item?.registrarConfirmed || item?.isConfirmed ||
     (isLive && !isSyntheticDemo && countStatus(item?.id, "CONFIRMED") > 0));
   const protectedRecord = (item) => locked(item) || confirmedRecord(item);
-  const occupancyStatus = (item) => count(item.id) >= Number(item.capacity) ? "FULL"
-    : count(item.id) >= Number(item.capacity) * 0.9 ? "NEAR_FULL" : "OPEN";
+  const occupancyStatus = (item) => {
+    const occupied = count(item.id);
+    if (occupied === null) return "UNKNOWN";
+    return occupied >= Number(item.capacity) ? "FULL"
+      : occupied >= Number(item.capacity) * 0.9 ? "NEAR_FULL" : "OPEN";
+  };
   const curriculumOf = (item) => curricula.find((entry) => entry.id === item?.curriculumId)
     || curricula.find((entry) => (entry.program || entry.programCode) === item?.programCode && (entry.major || "") === (item?.major || ""));
   const curriculumSubjects = (item) => {
@@ -157,6 +246,11 @@ export default function AcademicCoordinatorSectionsSchedules() {
       && (status === "ALL" || String(item.status).toUpperCase() === status)
       && text.includes(search.toLowerCase().trim());
   });
+  const filteredCapacityPending = filtered.some((item) => count(item.id) === null);
+  const filteredDemoReservations = filteredCapacityPending ? null :
+    filtered.reduce((sum, item) => sum + reservedAdmissions(item), 0);
+  const filteredAvailablePlaces = filteredCapacityPending ? null :
+    filtered.reduce((sum, item) => sum + availablePlaces(item), 0);
   const chosen = sections.find((item) => item.id === scheduleId && filtered.some((entry) => entry.id === item.id)) || filtered[0];
   const chosenClasses = classes.filter((item) => item.sectionId === chosen?.id);
   const meetingClass = classes.find((item) => item.id === meetingForm.subjectClassId);
@@ -199,7 +293,8 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const destinations = section ? sections.filter((item) => item.id !== section.id && item.termId === section.termId
     && item.programCode === section.programCode && (item.major || "") === (section.major || "")
     && year(item.yearLevel) === year(section.yearLevel) && item.curriculumId === section.curriculumId
-    && !confirmedRecord(item) && count(item.id) < Number(item.capacity)) : [];
+    && !confirmedRecord(item) && count(item.id) !== null &&
+    count(item.id) < Number(item.capacity)) : [];
 
   function close() { setDialog(""); setFormError(""); }
   async function activateDemoTimetables() {
@@ -279,6 +374,90 @@ export default function AcademicCoordinatorSectionsSchedules() {
     setRosterSearch("");
     setFormError("");
     setDialog(mode);
+    if (mode === "roster" && admissionsProjectBlock(item)) {
+      loadAdmissionsRoster(item);
+    }
+  }
+  async function loadAdmissionsRoster(block) {
+    if (!admissionsProjectBlock(block)) return;
+    requestedAdmissionsBlock.current = block.id;
+    const requestVersion = ++requestedCapacityVersion.current;
+    setAdmissionsCapacityStudents(null);
+    setAdmissionsCapacityError("");
+    setAdmissionsStudents([]);
+    setAdmissionsLoadedBlockId("");
+    setAdmissionsError("");
+    setAdmissionsLoading(true);
+    try {
+      const response = await listAdmissionsPhase8Candidates({ blockId: block.id });
+      if (requestedAdmissionsBlock.current !== block.id) return;
+      if (response?.ok !== true || !Array.isArray(response.students)) {
+        const message = response?.message || "Admissions candidates are not available for this block.";
+        setAdmissionsError(message);
+        if (requestedCapacityVersion.current === requestVersion) setAdmissionsCapacityError(message);
+        return;
+      }
+      setAdmissionsStudents(response.students);
+      setAdmissionsLoadedBlockId(block.id);
+      if (requestedCapacityVersion.current === requestVersion) {
+        setAdmissionsCapacityStudents(response.students);
+        setAdmissionsCapacityError("");
+      }
+    } catch {
+      if (requestedAdmissionsBlock.current === block.id) {
+        setAdmissionsError("Admissions students could not be loaded. Refresh the authorized roster.");
+        if (requestedCapacityVersion.current === requestVersion) {
+          setAdmissionsCapacityError("Admissions demonstration reservations could not be verified.");
+        }
+      }
+    } finally {
+      if (requestedAdmissionsBlock.current === block.id) setAdmissionsLoading(false);
+    }
+  }
+  function openAdmissionsEditor(mode, studentId = "") {
+    if (!admissionsVisible) return;
+    setAdmissionsMode(mode);
+    setAdmissionsStudentId(studentId);
+    setAdmissionsDestinationId("");
+    setAdmissionsReason("");
+    setFormError("");
+    setDialog("admissions-editor");
+  }
+  async function submitAdmissionsAssignment(event) {
+    event.preventDefault();
+    if (!admissionsVisible || admissionsSaving) return;
+    const student = admissionsCandidates.find((person) => person.id === admissionsStudentId);
+    const destination = admissionsMode === "TRANSFER"
+      ? admissionsDestinationBlocks.find((item) => item.id === admissionsDestinationId)
+      : section;
+    if (!student?.active || !destination || !admissionsReason.trim() ||
+        (admissionsMode === "ASSIGN" && !admissionsCanAssign) ||
+        (admissionsMode === "TRANSFER" &&
+          (!isAdmissionsPhase8Transferable(student) ||
+          !(student.assignedBlockId === section.id ||
+            (!student.assignedBlockId && student.assignedBlockCode === section.code)))) ||
+        (admissionsMode === "ASSIGN" && (student.assignedBlockId || student.assignedBlockCode))) {
+      setFormError("Select an authorized Admissions student, matching project block, and assignment reason.");
+      return;
+    }
+    setAdmissionsSaving(true);
+    try {
+      const response = await assignAdmissionsPhase8Demo({
+        studentId: student.id, blockId: destination.id, reason: admissionsReason.trim(),
+      });
+      if (!response?.ok) {
+        setFormError(response?.message || "The demonstration assignment was rejected.");
+        return;
+      }
+      setFeedback({ message: response.message || "Admissions demonstration placement saved.", warning: false });
+      setFormError("");
+      setDialog("roster");
+      await loadAdmissionsRoster(section);
+    } catch {
+      setFormError("The Admissions demonstration change could not be verified. Refresh the roster.");
+    } finally {
+      setAdmissionsSaving(false);
+    }
   }
   function clearFilters() {
     setSearch("");
@@ -361,9 +540,14 @@ export default function AcademicCoordinatorSectionsSchedules() {
             <Metric label="Planned Capacity" value={filtered.reduce((sum, item) => sum + Number(item.capacity), 0)} />
             <Metric label="Proposed Assignments" value={filtered.reduce((sum, item) => sum + countStatus(item.id, "PROPOSED"), 0)} />
             <Metric label="Confirmed Assignments" value={filtered.reduce((sum, item) => sum + countStatus(item.id, "CONFIRMED"), 0)} />
-            <Metric label="Available Places" value={filtered.reduce((sum, item) => sum + Math.max(0, Number(item.capacity) - count(item.id)), 0)} />
-            <Metric label="Full Sections" value={filtered.filter((item) => occupancyStatus(item) === "FULL").length} />
-            <Metric label="Needs Attention" value={filtered.filter((item) => occupancyStatus(item) === "NEAR_FULL").length} hint="At least 90% occupied" />
+            {hasLivePhase8Blocks ? <Metric label="Admissions Demo Reservations"
+              value={capacityText(filteredDemoReservations)} /> : null}
+            <Metric label="Available Places" value={capacityText(filteredAvailablePlaces)} />
+            <Metric label="Full Sections" value={capacityText(filteredCapacityPending
+              ? null : filtered.filter((item) => occupancyStatus(item) === "FULL").length)} />
+            <Metric label="Needs Attention" value={capacityText(filteredCapacityPending
+              ? null : filtered.filter((item) => occupancyStatus(item) === "NEAR_FULL").length)}
+              hint="At least 90% occupied" />
           </div>
           <div className="section-header block-heading"><h2>Block Section Management</h2>
             <div className="action-row">{!isLive && <Button variant="secondary" onClick={() => setDialog("reset")}>Reset Demo Planning</Button>}
@@ -392,19 +576,39 @@ export default function AcademicCoordinatorSectionsSchedules() {
               } },
               { key: "capacity", label: "Capacity Summary", render: (item) => <dl className="block-section-capacity">
                 <div className="block-section-capacity-item"><dt>Capacity</dt><dd>{item.capacity}</dd></div>
-                <div className="block-section-capacity-item"><dt>Proposed</dt><dd>{countStatus(item.id, "PROPOSED")}</dd></div>
-                <div className="block-section-capacity-item"><dt>Confirmed</dt><dd>{countStatus(item.id, "CONFIRMED")}</dd></div>
-                <div className="block-section-capacity-item"><dt>Available</dt><dd>{Math.max(0, Number(item.capacity) - count(item.id))}</dd></div>
+                <div className="block-section-capacity-item"><dt>Original proposed</dt><dd>{countStatus(item.id, "PROPOSED")}</dd></div>
+                <div className="block-section-capacity-item"><dt>Original confirmed</dt><dd>{countStatus(item.id, "CONFIRMED")}</dd></div>
+                {admissionsProjectBlock(item) ? <>
+                  <div className="block-section-capacity-item"><dt>Admissions demo</dt><dd>{capacityText(reservedAdmissions(item))}</dd></div>
+                  <div className="block-section-capacity-item"><dt>Total occupied</dt><dd>{capacityText(count(item.id))}</dd></div>
+                </> : null}
+                <div className="block-section-capacity-item"><dt>Available</dt><dd>{capacityText(availablePlaces(item))}</dd></div>
               </dl> },
-              { key: "occupancy", label: "Capacity Status", render: (item) => <StatusBadge value={occupancyStatus(item) === "FULL" ? "FULL" : occupancyStatus(item) === "NEAR_FULL" ? "NEAR_CAPACITY" : "OPEN"}
-                label={occupancyStatus(item) === "FULL" ? "Full" : occupancyStatus(item) === "NEAR_FULL" ? "Near Capacity" : "Available"} /> },
+              { key: "occupancy", label: "Capacity Status", render: (item) => <StatusBadge
+                value={occupancyStatus(item) === "FULL" ? "FULL"
+                  : occupancyStatus(item) === "NEAR_FULL" ? "NEAR_CAPACITY"
+                    : occupancyStatus(item) === "UNKNOWN" ? "UNKNOWN" : "OPEN"}
+                label={occupancyStatus(item) === "FULL" ? "Full"
+                  : occupancyStatus(item) === "NEAR_FULL" ? "Near Capacity"
+                    : occupancyStatus(item) === "UNKNOWN" ? pendingCapacityLabel : "Available"} /> },
               { key: "status", label: "Section Status", render: (item) => <StatusBadge value={item.status} label={item.status === "DRAFT" ? "Draft" : item.status === "PUBLISHED" ? "Published" : item.status} /> },
               { key: "actions", label: "Actions", render: (item) => <TableActions>
                 <TableActionButton tone="view" onClick={() => showSection(item)}>Details</TableActionButton>
                 <TableActionButton tone="edit" disabled={isSyntheticDemo || protectedRecord(item)} onClick={() => openSection(item)}>Edit</TableActionButton>
-                <TableActionButton tone="review" disabled={isSyntheticDemo || confirmedRecord(item) || item.status === "ARCHIVED"} onClick={() => showSection(item, "roster")}>Roster</TableActionButton>
-                <TableActionButton tone="review" disabled={isSyntheticDemo || confirmedRecord(item) || item.status === "ARCHIVED" || countStatus(item.id, "PROPOSED") === 0}
-                  onClick={() => { setSectionId(item.id); openTransfer(""); }}>Transfer</TableActionButton>
+                <TableActionButton tone="review" disabled={isSyntheticDemo ||
+                  (!admissionsProjectBlock(item) && (confirmedRecord(item) || item.status === "ARCHIVED"))}
+                  onClick={() => showSection(item, "roster")}>Roster</TableActionButton>
+                <TableActionButton tone="review" disabled={isSyntheticDemo ||
+                  (!admissionsProjectBlock(item) && (confirmedRecord(item) ||
+                    item.status === "ARCHIVED" || countStatus(item.id, "PROPOSED") === 0))}
+                  onClick={() => {
+                    if (admissionsProjectBlock(item)) {
+                      showSection(item, "roster");
+                    } else {
+                      setSectionId(item.id);
+                      openTransfer("");
+                    }
+                  }}>Transfer</TableActionButton>
                 <TableActionButton tone="schedule" onClick={() => openSchedule(item)}>Schedule</TableActionButton>
               </TableActions> },
             ]} />
@@ -532,9 +736,13 @@ export default function AcademicCoordinatorSectionsSchedules() {
             ["Curriculum", curriculumOf(section) ? curriculumLabel(curriculumOf(section)) : "Not assigned"],
             ["Status", section.status],
             ["Capacity", section.capacity],
-            ["Proposed Assignments", countStatus(section.id, "PROPOSED")],
-            ["Confirmed Assignments", countStatus(section.id, "CONFIRMED")],
-            ["Available Places", Math.max(0, Number(section.capacity) - count(section.id))],
+            ["Original Proposed Assignments", countStatus(section.id, "PROPOSED")],
+            ["Original Confirmed Assignments", countStatus(section.id, "CONFIRMED")],
+            ...(admissionsProjectBlock(section) ? [
+              ["Admissions Demo Reservations", capacityText(reservedAdmissions(section))],
+              ["Total Occupied", capacityText(count(section.id))],
+            ] : []),
+            ["Available Places", capacityText(availablePlaces(section))],
           ]} />
           <h3 className="block-title">Curriculum Subjects</h3>
           <DataTable rowKey="subjectCode" rows={curriculumSubjects(section)} emptyMessage="No subject allocations match the current curriculum and term."
@@ -543,8 +751,8 @@ export default function AcademicCoordinatorSectionsSchedules() {
               { key: "subjectName", label: "Subject Name", render: (item) => subjects.find((row) => row.code === item.subjectCode)?.name || "Subject" },
               { key: "units", label: "Units", render: (item) => subjects.find((row) => row.code === item.subjectCode)?.units ?? "Not specified" },
             ]} />
-          <h3 className="block-title">Block Student Roster</h3>
-          <DataTable rowKey="id" rows={roster} emptyMessage="No proposed or confirmed block assignments are recorded."
+          <h3 className="block-title">Original Project Roster ({roster.length})</h3>
+          <DataTable rowKey="id" rows={roster} emptyMessage="No original project assignments are recorded."
             columns={[
               { key: "studentNumber", label: "Student Number", render: (item) => studentOf(item)?.studentNumber },
               { key: "fullName", label: "Student", render: (item) => nameOf(studentOf(item)) },
@@ -553,21 +761,51 @@ export default function AcademicCoordinatorSectionsSchedules() {
               { key: "progression", label: "Progression", render: (item) => studentOf(item)?.progressionStatus || studentOf(item)?.progression || "Refer to Academic Review" },
               { key: "status", label: "Assignment", render: (item) => <StatusBadge value={item.status} label={item.status || "Proposed"} /> },
             ]} />
+          {admissionsVisible ? <section aria-label="Admissions demonstration roster" style={{ marginTop: 24 }}>
+            <h3 className="block-title">Admissions Demonstration Roster ({Array.isArray(admissionsCapacityStudents)
+              ? admissionsDetailRoster.length : capacityText(null)})</h3>
+            <p className="academic-demo-note">These real Admissions student identities have separate project demonstration placements.
+              Confirmation here is demonstration only and does not mean official university enrollment.</p>
+            <DataTable rowKey="id" rows={admissionsDetailRoster}
+              emptyMessage={Array.isArray(admissionsCapacityStudents)
+                ? "No Admissions demonstration placements are recorded in this block."
+                : admissionsCapacityError || "Checking authorized Admissions demonstration placements..."}
+              columns={[
+                { key: "studentNumber", label: "University ID" },
+                { key: "name", label: "Admissions Student" },
+                { key: "type", label: "Student Type" },
+                { key: "assignedStatus", label: "Demonstration Status", render: (person) =>
+                  <StatusBadge value={person.assignedStatus || "UNKNOWN"}
+                    label={person.assignedStatus || "Unknown"} /> },
+              ]} />
+          </section> : null}
           <div className="action-row block-dialog-actions">
-            <Button variant="secondary" disabled={isSyntheticDemo || confirmedRecord(section) || section.status === "ARCHIVED"} onClick={() => showSection(section, "roster")}>Manage Roster</Button>
+            <Button variant="secondary" disabled={isSyntheticDemo ||
+              (!admissionsProjectBlock(section) && (confirmedRecord(section) || section.status === "ARCHIVED"))}
+              onClick={() => showSection(section, "roster")}>Manage Roster</Button>
             <Button variant="secondary" onClick={() => openSchedule(section)}>Open Class Schedule</Button>
           </div>
         </>}
       </Modal>
 
-      <Modal open={dialog === "roster" && Boolean(section)} title={section ? "Proposed Roster · " + section.code : "Proposed Roster"}
+      <Modal open={dialog === "roster" && Boolean(section)} title={section ? "Block Student Roster · " + section.code : "Block Student Roster"}
         className="academic-setup-wide-modal" onClose={close}
-        footer={<><Button variant="ghost" onClick={close}>Close</Button><Button disabled={isSyntheticDemo || !studentIds.length || confirmedRecord(section) || section?.status === "ARCHIVED"}
-          onClick={() => result(assignBlockStudents({ sectionId, studentIds }), "Proposed assignments saved.")}>Assign Selected ({studentIds.length})</Button></>}>
+        footer={<><Button variant="ghost" onClick={close}>Close</Button><Button disabled={isSyntheticDemo || !studentIds.length ||
+          availablePlaces(section) === null || confirmedRecord(section) || section?.status === "ARCHIVED"}
+          onClick={() => result(assignBlockStudents({ sectionId, studentIds }), "Proposed assignments saved.")}>Assign Selected ({studentIds.length})</Button>
+          {admissionsVisible ? <Button disabled={!admissionsCanAssign || admissionsLoading ||
+              admissionsLoadedBlockId !== sectionId || Boolean(admissionsError)}
+            onClick={() => openAdmissionsEditor("ASSIGN")}>Assign Admissions Student</Button> : null}</>}>
         {section && <>
-          <p className="academic-demo-note">Remaining capacity: {Math.max(0, Number(section.capacity) - count(section.id))}. Only proposed assignments are edited here. Eligibility is checked again when assigning.</p>
-          <h3 className="block-title">Current Roster ({roster.length})</h3>
-          <DataTable rowKey="id" rows={roster} emptyMessage="No proposed students in this block."
+          <p className="academic-demo-note">
+            Available places: {capacityText(availablePlaces(section))}.
+            {admissionsVisible
+              ? ` Combined occupancy includes ${blockCounts.get(section.id)?.occupied || 0} original project roster assignments and ${capacityText(reservedAdmissions(section))} Admissions demonstration reservations.`
+              : " Only proposed assignments are edited here."}
+            {" "}Official enrollment and Registrar confirmation remain unchanged.
+          </p>
+          <h3 className="block-title">Existing Project Roster ({roster.length})</h3>
+          <DataTable rowKey="id" rows={roster} emptyMessage="No original project assignments in this block."
             columns={[
               { key: "number", label: "Student Number", render: (item) => studentOf(item)?.studentNumber },
               { key: "student", label: "Student", render: (item) => nameOf(studentOf(item)) },
@@ -575,13 +813,51 @@ export default function AcademicCoordinatorSectionsSchedules() {
               { key: "classification", label: "Classification", render: (item) => studentOf(item)?.classification || "Unknown" },
               { key: "actions", label: "Actions", render: (item) => <TableActions><TableActionButton tone="edit" disabled={item.status === "CONFIRMED" || confirmedRecord(section)} onClick={() => openTransfer(item.studentId)}>Transfer</TableActionButton></TableActions> },
             ]} />
+          {admissionsVisible ? <section aria-label="Admissions demonstration roster" style={{ marginTop: 24 }}>
+            <h3 className="block-title">Admissions demonstration roster ({admissionsRoster.length})</h3>
+            <p className="academic-demo-note">
+              This is a separately labeled project demonstration assignment for real Admissions
+              student identities. It does not create an official enrollment, change Admissions
+              decisions, or generate an official Certificate of Registration. Existing fictional
+              project students remain in the roster above.
+            </p>
+            <div className="action-row" style={{ marginBlock: 12 }}>
+              <Button variant="secondary" disabled={admissionsLoading}
+                onClick={() => loadAdmissionsRoster(section)}>
+                {admissionsLoading ? "Loading Admissions students..." : "Refresh Admissions Roster"}
+              </Button>
+            </div>
+            {admissionsError ? <p className="block-error" role="alert">{admissionsError}</p> : null}
+            <DataTable rowKey="id" rows={admissionsRoster}
+              emptyMessage={admissionsLoading
+                ? "Loading authorized Admissions roster..."
+                : "No Admissions demonstration assignments are recorded for this block."}
+              columns={[
+                { key: "studentNumber", label: "University ID" },
+                { key: "name", label: "Admissions Student" },
+                { key: "type", label: "Student Type" },
+                { key: "assignment", label: "Placement", render: (person) =>
+                  <StatusBadge value={person.assignedStatus || "PROPOSED"}
+                    label={`${person.assignedStatus || "PROPOSED"} · Demonstration only`} /> },
+                { key: "actions", label: "Actions", render: (person) =>
+                  <TableActions><TableActionButton tone="edit"
+                    disabled={!isAdmissionsPhase8Transferable(person) ||
+                      !admissionsCandidates.some((candidate) => candidate.id === person.id) ||
+                      !admissionsDestinationBlocks.length}
+                    onClick={() => openAdmissionsEditor("TRANSFER", person.id)}>
+                    Transfer Admissions Student
+                  </TableActionButton></TableActions> },
+              ]} />
+          </section> : null}
           <div className="block-student-heading">
             <h3>Eligible Student Selection ({allowed.length})</h3>
             <div className="action-row">
               <Button variant="secondary" disabled={!studentIds.length} onClick={() => setStudentIds([])}>Deselect All</Button>
-              <Button variant="secondary" disabled={isSyntheticDemo || !allowed.length || confirmedRecord(section) || section?.status === "ARCHIVED"}
+              <Button variant="secondary" disabled={isSyntheticDemo || !allowed.length ||
+                availablePlaces(section) === null || availablePlaces(section) === 0 ||
+                confirmedRecord(section) || section?.status === "ARCHIVED"}
                 onClick={() => setStudentIds(allowed.filter((item) => (nameOf(item) + " " + item.studentNumber).toLowerCase().includes(rosterSearch.toLowerCase()))
-                  .slice(0, Math.max(0, Number(section.capacity) - count(section.id))).map((item) => item.id))}>Select Available</Button>
+                  .slice(0, availablePlaces(section) ?? 0).map((item) => item.id))}>Select Available</Button>
             </div>
           </div>
           <SearchControl value={rosterSearch} onChange={setRosterSearch} label="Search students for block assignment" placeholder="Search student name or number" />
@@ -600,6 +876,89 @@ export default function AcademicCoordinatorSectionsSchedules() {
           </div>
           {formError && <p className="block-error" role="alert">{formError}</p>}
         </>}
+      </Modal>
+
+      <Modal open={dialog === "admissions-editor" && admissionsVisible}
+        title={admissionsMode === "TRANSFER" ? "Transfer Admissions Student" : "Assign Admissions Student"}
+        className="academic-setup-wide-modal"
+        onClose={() => { setDialog("roster"); setFormError(""); }}
+        footer={<>
+          <Button variant="ghost" onClick={() => { setDialog("roster"); setFormError(""); }}>Back to Roster</Button>
+          <Button type="submit" form="admissions-project-assignment-form"
+            disabled={admissionsSaving || !admissionsStudentId || !admissionsReason.trim() ||
+              (admissionsMode === "TRANSFER" && !admissionsDestinationId)}>
+            {admissionsSaving ? "Saving..." : admissionsMode === "TRANSFER"
+              ? "Transfer Admissions Student" : "Save Demonstration Assignment"}
+          </Button>
+        </>}>
+        {admissionsVisible ? <form id="admissions-project-assignment-form"
+          className="form-grid" onSubmit={submitAdmissionsAssignment}>
+          <div className="notice">
+            Project demonstration only. Your choice links the real Admissions identity to
+            fictional P8F26 demonstration block resources, without official registration
+            or changes to the original fictional student roster.
+          </div>
+          {admissionsMode === "ASSIGN" ? (
+            <>
+              <Field label="Find Admissions student by name or university ID">
+                <input type="search" value={rosterSearch}
+                  onChange={(event) => setRosterSearch(event.target.value)}
+                  placeholder="Search Admissions students" />
+              </Field>
+              <Field label="Eligible Admissions student">
+                <SelectField required value={admissionsStudentId} onChange={setAdmissionsStudentId}
+                  placeholder="Choose verified Admissions student"
+                  choices={options(admissionsAvailable.filter((person) =>
+                    (person.name + " " + person.studentNumber).toLowerCase().includes(rosterSearch.toLowerCase())),
+                  (person) => person.id, (person) =>
+                    `${person.studentNumber} · ${person.name} · ${person.type || "Admissions"}`)} />
+              </Field>
+              {alreadyAssignedAdmissions.map((person) => <p className="academic-demo-note"
+                key={person.id} role="status">
+                {person.studentNumber} · {person.name} is already assigned to
+                {" "}{person.assignedBlockCode || "a demonstration block"}
+                {" "}({person.assignedStatus || "PROPOSED"}).
+                {person.assignedBlockId === section?.id
+                  ? " View the Admissions demonstration roster instead of assigning again."
+                  : " A transfer requires the existing block's authorized transfer action."}
+              </p>)}
+            </>
+          ) : (
+            <Details items={[
+              ["Student", selectedAdmissionsStudent?.name || "Not available"],
+              ["University ID", selectedAdmissionsStudent?.studentNumber || "Not available"],
+              ["Current Project Block", section?.code],
+            ]} />
+          )}
+          <Details items={[
+            ["Program", section?.programCode],
+            ["Recorded Year Level", section?.yearLevel],
+            ["Current Project Term", termLabel(section)],
+          ]} />
+          {selectedAdmissionsStudent?.needsGwaVerification ? <p className="notice warning">
+            Academic GWA verification is pending for this student. The protected
+            assignment action will decide whether the student can be placed.
+          </p> : null}
+          {admissionsMode === "TRANSFER" ? (
+            <Field label="Destination Project Block">
+              <SelectField required value={admissionsDestinationId}
+                placeholder="Select matching P8F26 demonstration block"
+                onChange={setAdmissionsDestinationId}
+                choices={options(admissionsDestinationBlocks,
+                  (item) => item.id, (item) => item.code + " · " + termLabel(item))} />
+            </Field>
+          ) : (
+            <Details items={[["Destination Project Block", section?.code]]} />
+          )}
+          <Field label={admissionsMode === "TRANSFER"
+            ? "Reason for project demonstration transfer"
+            : "Reason for project demonstration assignment"}>
+            <textarea required maxLength={1000} value={admissionsReason}
+              onChange={(event) => setAdmissionsReason(event.target.value)}
+              placeholder="Record the Coordinator's academic or demonstration placement rationale" />
+          </Field>
+          {formError ? <p className="block-error" role="alert">{formError}</p> : null}
+        </form> : null}
       </Modal>
 
       <Modal open={dialog === "transfer" && Boolean(section)} title="Transfer Proposed Student" onClose={close}

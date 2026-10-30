@@ -1,20 +1,28 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DataTable, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { LinkButton, Metric, Panel } from "@/components/registrar/RegistrarShared";
 import { summarizeBlockOccupancy } from "@/features/academic/sections-schedules-live-summary.mjs";
+import { listAdmissionsPhase8Candidates } from "@/features/admissions/admissions-phase8-demo-actions";
+import {
+  admissionsPhase8ReservationsByBlock, combinedPhase8Occupied, isAdmissionsPhase8Block,
+} from "@/features/academic/coordinator-admissions-phase8-roster.mjs";
 import { getBlockOccupancy } from "@/features/block-planning/block-planning-service";
 import { displayAcademicReference } from "@/features/academic/project-academic-display-aliases.mjs";
 
 export default function AcademicCoordinatorDashboard() {
   const liveData = useLiveAcademicCoordinator();
   const isLive = Boolean(liveData);
+  const isProjectLive = isLive && !liveData?.isSyntheticDemo;
   const router = useRouter();
   const { catalog, registrar, student, academicCoordinatorData, blockPlanning, notifications } = useDemoData();
+  const [admissionsStudents, setAdmissionsStudents] = useState(null);
+  const [admissionsCapacityError, setAdmissionsCapacityError] = useState("");
 
   const activePrograms = catalog.programs.filter((item) => item.status === "Active").length;
   const activeCurricula = academicCoordinatorData.curricula.filter((item) => item.status === "Active").length;
@@ -26,20 +34,56 @@ export default function AcademicCoordinatorDashboard() {
           `${curriculum.id}:${subject.subjectCode}:${prerequisite}`)))).size
     : catalog.subjects.reduce((sum, item) => sum + (item.prerequisites?.length || 0), 0);
   const planningSections = blockPlanning?.blockSections || [];
+  const curricula = blockPlanning?.curricula || [];
+  const hasAdmissionsBlocks = isProjectLive &&
+    planningSections.some((block) => isAdmissionsPhase8Block(block, curricula));
+  useEffect(() => {
+    if (!hasAdmissionsBlocks) return undefined;
+    let active = true;
+    // Read the same authorized Admissions reservations as Sections & Schedules.
+    // An unavailable response is not an empty roster or spare capacity.
+    listAdmissionsPhase8Candidates().then((response) => {
+      if (!active) return;
+      if (response?.ok !== true || !Array.isArray(response.students)) {
+        setAdmissionsStudents(null);
+        setAdmissionsCapacityError(response?.message || "Admissions reservations unavailable.");
+        return;
+      }
+      setAdmissionsStudents(response.students);
+      setAdmissionsCapacityError("");
+    }).catch(() => {
+      if (!active) return;
+      setAdmissionsStudents(null);
+      setAdmissionsCapacityError("Admissions reservations unavailable.");
+    });
+    return () => { active = false; };
+  }, [hasAdmissionsBlocks]);
+  const admissionsReservations = Array.isArray(admissionsStudents)
+    ? admissionsPhase8ReservationsByBlock(admissionsStudents, planningSections, curricula)
+    : null;
   const activePlanningTerm = blockPlanning?.terms?.find((item) =>
     isLive && !liveData?.isSyntheticDemo ? item.status === "Open" : item.status === "CURRENT");
   const currentSections = planningSections.filter((item) => item.termId === activePlanningTerm?.id);
-  const occupancy = isLive && !liveData?.isSyntheticDemo
+  const occupancy = isProjectLive
     ? summarizeBlockOccupancy(planningSections, blockPlanning.assignments || [],
         blockPlanning.students || [], registrar.enrollments || [])
     : null;
-  const occupied = (item) => occupancy
-    ? occupancy.get(item.id)?.occupied ?? 0
-    : getBlockOccupancy(blockPlanning, item.id)?.occupied ?? 0;
+  const occupied = (item) => {
+    if (!occupancy) return getBlockOccupancy(blockPlanning, item.id)?.occupied ?? 0;
+    const original = occupancy.get(item.id)?.occupied ?? 0;
+    return isAdmissionsPhase8Block(item, curricula)
+      ? combinedPhase8Occupied(original, admissionsReservations?.get(item.id) ?? null)
+      : original;
+  };
+  const capacityPending = currentSections.some((item) => occupied(item) === null);
+  const capacityLabel = admissionsCapacityError ? "Unavailable" : "Checking...";
+  const capacityValue = (value) => capacityPending ? capacityLabel : value;
+  const sectionsWithSlots = currentSections.filter((item) =>
+    occupied(item) !== null && occupied(item) < Number(item.capacity)).length;
   const fullSections = currentSections.filter((item) =>
-    Number(item.capacity) > 0 && occupied(item) >= Number(item.capacity));
+    Number(item.capacity) > 0 && occupied(item) !== null && occupied(item) >= Number(item.capacity));
   const nearSections = currentSections.filter((item) =>
-    Number(item.capacity) > 0 && occupied(item) < Number(item.capacity) &&
+    Number(item.capacity) > 0 && occupied(item) !== null && occupied(item) < Number(item.capacity) &&
     occupied(item) >= Number(item.capacity) * 0.9);
   const reviewRecords = isLive && !liveData?.isSyntheticDemo
     ? (academicCoordinatorData.reviews || []) : [];
@@ -82,8 +126,8 @@ export default function AcademicCoordinatorDashboard() {
         <Metric label="Active Subjects" value={activeSubjects} hint="Subject catalog" />
         <Metric label="Prerequisite Rules" value={prerequisiteRules} hint="Active relationships" />
         <Metric label="Subject Classes" value={blockPlanning?.subjectClasses?.filter((item) => currentSections.some((section) => section.id === item.sectionId)).length || 0} hint="Current term academic proposals" />
-        <Metric label="Full Sections" value={fullSections.length} hint="No remaining slots" />
-        <Metric label="Near Capacity" value={nearSections.length} hint="At least 90% assigned" />
+        <Metric label="Full Sections" value={capacityValue(fullSections.length)} hint="No remaining slots, including Admissions demo reservations" />
+        <Metric label="Near Capacity" value={capacityValue(nearSections.length)} hint="At least 90% assigned" />
         <Metric label="Pending Reviews" value={pendingReviews.length} hint="Academic decisions required" />
       </div>
 
@@ -112,9 +156,9 @@ export default function AcademicCoordinatorDashboard() {
         <Panel title="Section Planning Summary" className="span-6">
           <div className="detail-list">
             <div className="detail-row"><span>Future Draft Sections</span><strong>{planningSections.filter((item) => item.status === "DRAFT" && item.termId !== activePlanningTerm?.id).length}</strong></div>
-            <div className="detail-row"><span>Current Blocks with Slots</span><strong>{currentSections.filter((item) => occupied(item) < Number(item.capacity)).length}</strong></div>
-            <div className="detail-row"><span>Full Sections</span><strong>{fullSections.length}</strong></div>
-            <div className="detail-row"><span>Near Capacity Sections</span><strong>{nearSections.length}</strong></div>
+            <div className="detail-row"><span>Current Blocks with Slots</span><strong>{capacityValue(sectionsWithSlots)}</strong></div>
+            <div className="detail-row"><span>Full Sections</span><strong>{capacityValue(fullSections.length)}</strong></div>
+            <div className="detail-row"><span>Near Capacity Sections</span><strong>{capacityValue(nearSections.length)}</strong></div>
           </div>
         </Panel>
 
@@ -128,9 +172,9 @@ export default function AcademicCoordinatorDashboard() {
 
         <Panel title="Demand Summary" subtitle="Capacity concerns are academic planning signals." className="span-5">
           <div className="detail-list">
-            <div className="detail-row"><span>High Demand Subjects</span><strong>{highDemandSubjects.length}</strong></div>
-            <div className="detail-row"><span>Full Sections</span><strong>{fullSections.length}</strong></div>
-            <div className="detail-row"><span>Subjects Requiring Capacity Review</span><strong>{highDemandSubjects.length}</strong></div>
+            <div className="detail-row"><span>High Demand Subjects</span><strong>{capacityValue(highDemandSubjects.length)}</strong></div>
+            <div className="detail-row"><span>Full Sections</span><strong>{capacityValue(fullSections.length)}</strong></div>
+            <div className="detail-row"><span>Subjects Requiring Capacity Review</span><strong>{capacityValue(highDemandSubjects.length)}</strong></div>
           </div>
         </Panel>
 

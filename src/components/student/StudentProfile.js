@@ -158,7 +158,7 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
   const isProject = mode === "project";
   const displayName = formatStudentName({ fullName: profile.fullName });
   const classification = isProject ? (profile.academicClassification || "Not verified") : missing(profile.academicClassification);
-  const academicStatus = isProject ? "No official record" : missing(profile.studentStatus);
+  const academicStatus = isProject ? "No official record" : missing(profile.officialEnrollmentStatus || "Pending");
 
   return (
     <>
@@ -232,16 +232,30 @@ export default function StudentProfile({ mode = "unavailable", profile }) {
             <Detail label="Academic Classification" value={classification} />
             <Detail label="Official Enrollment Status" value={academicStatus} />
           </InfoCard>
+          {!isProject && profile.admissionsDemonstration?.block ? (
+            <InfoCard icon="academic" title="Phase 8 Project Demonstration Assignment">
+              <p className={styles.cardNote}>
+                These are fictional classroom resources shared with your real Admissions
+                student account. They are not official academic assignments or a university COR.
+              </p>
+              <Detail label="Demonstration Curriculum" value={profile.admissionsDemonstration.curriculum} />
+              <Detail label="Project Block Section" value={profile.admissionsDemonstration.block} />
+              <Detail label="Project Term" value={profile.admissionsDemonstration.term} />
+              <Detail label="Demo Registration Status" value={profile.admissionsDemonstration.status} />
+            </InfoCard>
+          ) : null}
 
           <InfoCard icon="admission" title="Admission Record" footer={(
             <p className={styles.cardNote}>
               {isProject
                 ? "No verified admission approval or applicant record has been imported for this fictional student."
-                : "Verified Admission details are not available from the linked Admission source."}
+                : profile.admissionSource === "PLP Admissions"
+                  ? "Your admission was received from PLP Admissions. Official enrollment is a separate Registrar decision."
+                  : "Admission details are not available from an identified source."}
             </p>
           )}>
-            <Detail label="Admission Source" value={isProject ? "Not institutionally verified" : "Not linked"} />
-            <Detail label="Admission Decision" value="Not available" />
+            <Detail label="Admission Source" value={isProject ? "Not institutionally verified" : profile.admissionSource} />
+            <Detail label="Admission Decision" value={isProject ? "Not applicable" : profile.admissionDecision} />
           </InfoCard>
 
           <InfoCard icon="lock" title="Account & Security">

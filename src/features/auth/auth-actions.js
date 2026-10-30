@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PORTAL_META } from "@/config/portal-navigation";
 import { allowProjectOnlyLogin } from "@/lib/auth/project-only-login-guard";
 import { requireProjectOnlyInitialPasswordRotation } from "@/lib/auth/project-only-first-login-rotation.mjs";
+import { signInFailureMessage } from "@/features/auth/sign-in-error.mjs";
 import {
   auditSuccessfulLogin,
   denySignedInAccount,
@@ -68,15 +69,17 @@ export async function signInPortalUser({ email, password }) {
       password: plainPassword,
     });
 
-  if (authError || !authData.user) {
+  if (authError || !authData?.user) {
     await auditSuccessfulLogin(() => recordFailedLogin({
       email: normalizedEmail,
-      reason: "Supabase Auth rejected the supplied credentials.",
+      reason: authError
+        ? "Supabase Auth sign-in failed."
+        : "Supabase Auth rejected the supplied credentials.",
     }));
 
     return {
       ok: false,
-      message: "The registered email or password is incorrect.",
+      message: signInFailureMessage(authError),
     };
   }
 
@@ -112,6 +115,18 @@ export async function signInPortalUser({ email, password }) {
         email: normalizedEmail,
         actorLabel: authData.user.email || normalizedEmail,
         reason: "Authenticated Supabase user is not linked to an application account.",
+      }),
+    });
+  }
+  if (String(appUser.source_account_key || "").startsWith("PLP_ADMISSIONS:") &&
+      !authData.user.email_confirmed_at) {
+    return denySignedInAccount({
+      message: "Verify your Admissions invitation email before signing in.",
+      signOut: () => supabase.auth.signOut({ scope: "local" }),
+      audit: () => recordFailedLogin({
+        email: normalizedEmail,
+        actorUserId: appUser.id,
+        reason: "Admissions email verification is incomplete.",
       }),
     });
   }
@@ -185,7 +200,8 @@ export async function signInPortalUser({ email, password }) {
     user: {
       role: appUser.role_code,
       name: appUser.full_name,
-      identifier: appUser.email,
+      identifier: String(appUser.source_account_key || "").startsWith("PLP_ADMISSIONS:")
+        ? normalizedEmail : appUser.email,
       sourceAccountKey: appUser.source_account_key,
       redirect: initialPasswordChangeRequired ? "/student/change-password" : redirect,
       initialPasswordChangeRequired,

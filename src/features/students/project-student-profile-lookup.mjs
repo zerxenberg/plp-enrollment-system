@@ -51,6 +51,8 @@ function liveDisplay(record, appUser) {
     curriculum: record.current_curriculum_code || null,
     academicClassification: record.academic_classification || null,
     studentStatus: record.student_status || null,
+    admissionSource: appUser.source_account_key?.startsWith("PLP_ADMISSIONS:") ? "PLP Admissions" : "Institutional",
+    admissionDecision: appUser.source_account_key?.startsWith("PLP_ADMISSIONS:") ? "Accepted" : "Not recorded",
     accountStatus: appUser.account_status,
   };
 }

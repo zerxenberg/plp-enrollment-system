@@ -143,13 +143,29 @@ export function buildVerifiedCorDocument(cor, options = {}) {
     project ? cor.registered_schedule : cor.schedule,
     project ? cor.registered_units : undefined,
   );
+  const verifiedDisplayCodes = options.subjectDisplayCodes;
+  if (verifiedDisplayCodes !== undefined) {
+    // Server verified lookups must cover the complete registration. A missing
+    // catalog row must never be silently replaced by a guessed display code.
+    if (!(verifiedDisplayCodes instanceof Map) ||
+        verifiedDisplayCodes.size !== subjects.length ||
+        new Set(verifiedDisplayCodes.values()).size !== subjects.length ||
+        subjects.some((subject) => {
+          const display = verifiedDisplayCodes.get(subject.code);
+          return typeof display !== "string" || !display.trim() ||
+            (subject.code.startsWith("P8F26-") && display === subject.code);
+        })) {
+      throw new Error("The registered COR subject display codes could not be verified.");
+    }
+  }
   for (const subject of subjects) {
     // Preserve the immutable P8F26 subject identity for every registration,
     // meeting, fee lookup and validation. Only the COR-facing label is aliased.
     // The server's verified subject catalog map takes precedence; the shared
     // Academic Coordinator formatter covers direct previews and PDF builders.
-    subject.displayCode = options.subjectDisplayCodes?.get(subject.code) ||
-      displaySubjectCode(subject.code);
+    subject.displayCode = verifiedDisplayCodes === undefined
+      ? displaySubjectCode(subject.code)
+      : verifiedDisplayCodes.get(subject.code);
   }
   const totalFee = project ? verifiedPrice(subjects, options.projectFeeEstimate) : null;
   const year = options.academicYear || cor.academic_year ||

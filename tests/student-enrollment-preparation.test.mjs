@@ -62,7 +62,11 @@ function fixture({ status = null, ready = true, termStart = "2026-10-01",
     term: { id: "TERM-2026-1", label: "2026 · First Semester",
       enrollment_start: termStart, enrollment_end: termEnd, status: "Open" },
     simulation: status ? { id: "sim-1", status, submitted_at: "2026-10-02" } : null,
-    sectionCodes: new Map([ ["IT301", "BSIT-3A"], ["IT201", "BSIT-3A"], ["IT402", "BSIT-3A"] ]),
+    sectionCodes: new Map([
+      ["IT301", { code: "BSIT-3A", status: "OPEN", scheduleStatus: "FINALIZED" }],
+      ["IT201", { code: "BSIT-3A", status: "OPEN", scheduleStatus: "FINALIZED" }],
+      ["IT402", { code: "BSIT-3A", status: "OPEN", scheduleStatus: "FINALIZED" }],
+    ]),
     priceRows: [
       { subject_code: "IT301", rate_per_unit: 100, classification: "SYNTHETIC_DEVELOPMENT_ONLY" },
       { subject_code: "IT201", rate_per_unit: 100, classification: "SYNTHETIC_DEVELOPMENT_ONLY" },

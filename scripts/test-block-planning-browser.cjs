@@ -2,16 +2,21 @@
 // node scripts/test-block-planning-browser.cjs
 // Uses an isolated browser context, so test demo edits never reach a user profile.
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
+const test = require("node:test");
 const { chromium } = require("playwright-core");
 
 const url = process.env.PLP_TEST_URL || "http://localhost:3000";
 const chrome = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const accounts = JSON.parse(fs.readFileSync(path.join(__dirname, "../src/data/mock/auth-accounts.json"), "utf8"));
-const coordinator = accounts.find((item) => item.role === "academic-coordinator");
-assert.ok(coordinator, "Academic Coordinator demo identity is required");
+// This script changes real block planning data. Only run when a dedicated
+// authenticated test account and an explicitly approved test environment exist.
+const runAuthenticated = process.env.PLP_RUN_AUTHENTICATED_BROWSER_TESTS === "1" &&
+  Boolean(process.env.PLP_TEST_COORDINATOR_ID && process.env.PLP_TEST_COORDINATOR_PASSWORD);
 
+if (!runAuthenticated) {
+  test("Academic Coordinator browser smoke", {
+    skip: "Requires explicit browser test opt-in and an authenticated Coordinator test account",
+  }, () => {});
+} else {
 (async () => {
   const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
   try {
@@ -20,11 +25,11 @@ assert.ok(coordinator, "Academic Coordinator demo identity is required");
     const problems = [];
     page.on("pageerror", (error) => problems.push(error.message));
     await page.goto(url, { waitUntil: "domcontentloaded" });
-    const session = {
-      role: coordinator.role, name: coordinator.name,
-      identifier: coordinator.identifier, redirect: coordinator.redirect,
-    };
-    await page.evaluate((value) => window.localStorage.setItem("plp-demo-session", JSON.stringify(value)), session);
+    await page.locator("#login-identity").fill(process.env.PLP_TEST_COORDINATOR_ID);
+    await page.locator("#login-password").fill(process.env.PLP_TEST_COORDINATOR_PASSWORD);
+    await page.waitForTimeout(500);
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL((next) => next.pathname.startsWith("/academic-coordinator/"), { timeout: 15000 });
     await page.goto(`${url}/academic-coordinator/sections-schedules`, { waitUntil: "domcontentloaded" });
     await page.getByRole("heading", { name: "Sections & Schedules" }).waitFor({ timeout: 20000 });
     const tabs = await page.getByRole("tab").allTextContents();
@@ -108,3 +113,4 @@ assert.ok(coordinator, "Academic Coordinator demo identity is required");
   process.stderr.write(`FAIL: Coordinator browser smoke: ${error.stack}\n`);
   process.exitCode = 1;
 });
+}

@@ -1,0 +1,25 @@
+# Admissions Students using Phase 8 Demonstration Classes
+
+## Data authority
+
+Real Admissions identities may share published Current Project 2026 / Phase 8 fictional curricula, blocks, sections, times, rooms and instructors **only as clearly labeled project demonstration data**. Never change their real student number, Auth identity, institutional admission status, official term/curriculum, academic grades, transfer credits, official enrollment or official COR. Existing Phase 8 fictional students keep independent project records.
+
+The connected Enrollment Supabase database now has a separate private admissions_phase8_demo_enrollments ledger, append-only admissions_phase8_demo_events, and trusted service-only assignment and transition RPCs. All demo rows enforce simulation_only=true, is_official=false and source_kind=ADMISSIONS_PHASE8_DEMONSTRATION. Authenticated Student, Academic Coordinator and Registrar server actions check role and source before invoking the trusted RPCs. A targeted cross-roster capacity trigger prevents combined fictitious and Admissions demonstration reservations from overfilling a published Phase 8 block. These changes were applied directly as controlled SQL; **no local migration files were created**.
+
+Automatic/manual assignment requires accepted and synchronized Admissions handoff, active Auth account, compatible program/track and evaluated year, a published P8 block, current project demonstration window, finalized synthetic schedule, and available combined capacity. Transferees require authorized year-level placement and a verified Admissions GWA; no transfer credits/prerequisites are fabricated. Student submission captures actual published classroom subjects, meetings and synthetic development-only fee estimates. Registrar validation and confirmation are separate audited steps; confirmation yields CONFIRMED_SIMULATION, not official enrollment.
+
+## Manggi test record
+
+Manggi Miguelito Jr., 26-50604, currently has a user-authorized **PROPOSED** demonstration assignment to BSIT-1A for TERM-2026-1. The actual BSIT project plan has seven first-semester subjects totaling 19 units, with a PHP 1,900 **demonstration-only** tuition estimate. BSIT-1A now reserves 12 original Phase 8 project seats plus one Admissions demonstration seat, totaling **13 of 40**, with 27 currently remaining. His real academic profile stays ADMITTED without an official curriculum or term, and no official enrollment or COR was generated.
+
+## Beginner click-by-click test
+
+1. **Academic Coordinator:** Log in at http://localhost:3000/academic-coordinator/sections-schedules, stay on the default **Live Academic Planning** view, filter for BSIT, find **BSIT-1A**, and select **Roster**. Under the separate Admissions demonstration roster, verify Manggi 26-50604 is **PROPOSED**. Do not assign him again or create a duplicate block.
+2. **Academic Coordinator:** To test another eligible active Freshman, choose **Assign Admissions Student**, select the real applicant and an existing compatible published project block, enter an assignment reason, and save. Use **Transfer Admissions Student** to move a proposed student only when permitted and with the reason recorded. Check combined capacity.
+3. **Student:** Log in as Manggi and open **Enrollment**. In the separate **Phase 8 Project Demonstration** area, verify BSIT-1A, all seven existing subjects, 19 units, published meeting rooms and instructors, and the PHP 1,900 demonstration estimate. Review Class Schedule, click **Submit Demonstration Enrollment**, and confirm the review prompt. Expected status is **SUBMITTED**, not officially enrolled.
+4. **Registrar:** Go to http://localhost:3000/registrar/enrollment and find **Admissions Students · Phase 8 Demonstration Enrollment**. Select Manggi, enter at least ten characters for the reason and choose **Validate Demonstration Enrollment**. When status is **VALIDATED**, reopen the record, provide a reference/reason, and select **Confirm Demonstration Registration**. Expected final status: **CONFIRMED_SIMULATION**.
+5. **Student:** Refresh Enrollment and Class Schedule. After Registrar confirmation, open **View Demonstration Registration PDF** to print/download the confirmed project snapshot. The PDF must clearly say **PROJECT_ONLY DEMONSTRATION | NOT AN OFFICIAL UNIVERSITY RECORD**. Actual official enrollment remains pending.
+6. **Transferee:** First complete real account activation, authorized year-level evaluation and Admissions GWA verification. Do not invent transfer credits or prerequisite grades. Only then assign an appropriate existing Phase 8 project block.
+7. **Regression:** Check that existing 600 Phase 8 fictional accounts, their rosters, grade imports and the independent official Enrollment/COR system remain unchanged.
+
+Trusted SQL rollback tests exercised assign, submit, Registrar validate and confirm, return/reopen and negative identity cases without persisting test enrollments. Real authenticated browser tests remain to be run with suitable test credentials. No changes were committed or deployed.

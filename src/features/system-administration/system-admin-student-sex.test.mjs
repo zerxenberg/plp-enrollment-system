@@ -13,6 +13,7 @@ assert.ok(declaration, "System Administrator accounts loader exists");
 
 test("System Administrator account projection preserves canonical suffix and nullable sex", async () => {
   const calls = [];
+  let authorized = false;
   const tables = {
     app_users: [
       { id: "account-student", role_code: "student", full_name: "Juan Miguel Santos Jr.",
@@ -30,6 +31,9 @@ test("System Administrator account projection preserves canonical suffix and nul
   };
   const client = {
     from(table) {
+      if (["app_users", "student_profiles", "user_login_identifiers"].includes(table)) {
+        assert.ok(authorized, "Administrator role must be checked before privileged reads");
+      }
       const filters = [];
       return {
         select(columns) { calls.push({ table, columns }); return this; },
@@ -47,8 +51,10 @@ test("System Administrator account projection preserves canonical suffix and nul
     },
   };
   const load = runInNewContext(`(${source.slice(declaration.start, declaration.end)})`, {
+    requireRole: async (role) => { assert.equal(role, "system-administrator"); authorized = true; },
     createClient: async () => client,
     createAdminClient: () => client,
+    fetchAllRows: async (factory) => factory(),
     currentAccountScope: (query) => query,
     CURRENT_PROJECT_COHORT_ID: "PLP_PROJECT_600_2026_1",
     CURRENT_TERM_ID: "TERM-2026-1",

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card, PageHeader, StatusBadge } from "@/components/ui/PortalUI";
 import { displayCurriculumCode } from "@/features/academic/project-academic-display-aliases.mjs";
+import { formatStudentWelcomeDetails } from "@/utils/student-welcome-format.mjs";
 
 function Notice({ children }) {
   return <div className="notice" role="note">{children}</div>;
@@ -50,6 +51,11 @@ function getNextAction(data) {
     description: "Your prepared subjects and class sections are ready for review.",
     label: "Review Enrollment", href: "/student/enrollment",
   };
+  if (data.canPrepare) return {
+    title: "Prepare your demonstration enrollment",
+    description: "Your existing admissions account can request a compatible published Phase 8 project block.",
+    label: "Prepare Enrollment", href: "/student/enrollment",
+  };
   return {
     title: "Check enrollment requirements",
     description: data.blockingReasons?.[0] || "Enrollment requires a currently open Registrar enrollment period and valid academic preparation.",
@@ -93,18 +99,20 @@ export default function StudentDashboardLive({ enrollment, notices }) {
     <PageHeader title="Student Dashboard" description="Your academic identity, enrollment condition, and next required action." />
     <Card className="hero-card">
       <h2>Welcome, {data.student.name}</h2>
-      <p>{data.student.number} · {data.student.program} · Year {data.student.yearLevel} · {String(data.student.type || "").replaceAll("_", " ")}</p>
+      <p>{formatStudentWelcomeDetails(data.student)}</p>
       <div className="hero-meta">
         <span className="hero-chip">{data.term.label}</span>
         <span className="hero-chip">{displayCurriculumCode(data.student.curriculum)}</span>
         <span className="hero-chip">Demonstration account</span>
       </div>
-      <Link className="portal-button portal-button-secondary" href="/student/student-profile">View Profile</Link>
+      <div className="student-hero-actions">
+        <Link className="portal-button portal-button-secondary" href="/student/student-profile">View Profile</Link>
+      </div>
     </Card>
 
     <div className="content-grid" style={{ marginTop: 16 }}>
       <Card className="section-card span-7">
-        <div className="section-header"><div><h2>Next Required Action</h2><p>{data.student.classification} · {data.student.progression?.replaceAll("_", " ")}</p></div></div>
+        <div className="section-header"><div><h2>Next Required Action</h2><p>{data.student.classification}{data.student.progression ? ` · ${data.student.progression.replaceAll("_", " ")}` : ""}</p></div></div>
         <Notice><strong>{action.title}</strong><p>{action.description}</p></Notice>
         <div className="action-row" style={{ marginTop: 12 }}>
           <Link className="portal-button portal-button-primary" href={action.href}>{action.label}</Link>

@@ -3,6 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { allowProjectOnlyLogin } from "@/lib/auth/project-only-login-guard";
 import { requireProjectOnlyInitialPasswordRotation } from "@/lib/auth/project-only-first-login-rotation.mjs";
+import {
+  AUTH_SERVICE_UNAVAILABLE_MESSAGE,
+  isAuthServiceUnavailable,
+  isAuthConfigurationError,
+  AUTH_CONFIGURATION_ERROR_MESSAGE,
+} from "@/features/auth/sign-in-error.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,13 +84,40 @@ export async function POST(request) {
     if (!account || !account.auth_user_id || account.login_enabled !== true ||
         account.account_status !== "Active") return reply(FAILURE, 401);
 
+    let authenticationEmail = account.email;
+    if (String(account.source_account_key || "").startsWith("PLP_ADMISSIONS:")) {
+      // Invited Admissions students verify their PERSONAL mailbox; their
+      // institutional @plp.edu.ph alias is retained separately in app_users.
+      // Check the actual Auth identity and source contact before using it.
+      const ref = account.source_account_key.slice("PLP_ADMISSIONS:".length);
+      const [linkedAuth, contact] = await Promise.all([
+        admin.auth.admin.getUserById(account.auth_user_id),
+        admin.from("admissions_student_source_details")
+          .select("personal_email").eq("applicant_reference", ref).maybeSingle(),
+      ]);
+      if (linkedAuth.error || !linkedAuth.data?.user?.email_confirmed_at ||
+          contact.error) return reply(FAILURE, 401);
+      const authEmail = linkedAuth.data.user.email?.toLowerCase();
+      if (authEmail !== account.email?.toLowerCase() &&
+          authEmail !== contact.data?.personal_email?.toLowerCase()) {
+        return reply(FAILURE, 401);
+      }
+      authenticationEmail = authEmail;
+    }
+
     const auth = createClient(url, publicKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
     const { data, error } = await auth.auth.signInWithPassword({
-      email: account.email, password,
+      email: authenticationEmail, password,
     });
-    if (error || !data.user || !data.session ||
+    if (isAuthServiceUnavailable(error)) {
+      return reply(AUTH_SERVICE_UNAVAILABLE_MESSAGE, 503);
+    }
+    if (isAuthConfigurationError(error)) {
+      return reply(AUTH_CONFIGURATION_ERROR_MESSAGE, 503);
+    }
+    if (error || !data?.user || !data?.session ||
         data.user.id !== account.auth_user_id || !data.user.email_confirmed_at) {
       return reply(FAILURE, 401);
     }

@@ -120,7 +120,7 @@ test("Registrar route remains role-gated and does not fabricate subject snapshot
   assert.match(detail, /loadStudentPublishedReadiness/);
   assert.match(detail, /project_phase8_demonstration_cor_v1/);
   assert.match(component, /projectDetail\?\.corReady === true/);
-  assert.match(component, /older project simulation was confirmed before registered subjects were saved/);
+  assert.match(component, /older demonstration enrollment was confirmed before registered subjects were saved/);
   assert.doesNotMatch(component, /Current Semester Subject Eligibility/);
   assert.match(component, /projectDetail\?\.selectedSubjects \|\| \[\]/);
   assert.match(component, /Student Submitted Subject Registration/);

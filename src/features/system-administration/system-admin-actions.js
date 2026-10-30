@@ -6,6 +6,10 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/require-role";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
+import {
+  autoProvisionAdmissionsStudent,
+  configuredAdmissionsInvitation,
+} from "@/features/admissions/admissions-auto-provision.mjs";
 
 const SYSTEM_ADMIN_ROLE = "system-administrator";
 const STAFF_ROLES = new Set([
@@ -219,35 +223,42 @@ export async function provisionExistingApplicationUser(payload) {
       return failure(messageFromError(authError, "Supabase Auth account could not be created."));
     }
 
-    const targetStatus =
-      payload?.accountStatus === "Inactive" ? "Inactive" : "Active";
+    // Provisioning an existing institutional application account activates it immediately.
+    // Deactivation remains an explicit, separate administrator action.
+    const targetStatus = "Active";
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await adminClient
       .from("app_users")
       .update({
+        auth_user_id: authData.user.id,
         account_status: targetStatus,
         login_enabled: targetStatus === "Active",
       })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .is("auth_user_id", null);
 
     if (updateError) {
       await adminClient.auth.admin.deleteUser(authData.user.id);
       return failure(
-        `Auth user was rolled back because the application account could not be updated: ${updateError.message}`,
+        `Auth user was rolled back because the application account could not be linked: ${updateError.message}`,
       );
     }
 
-    if (targetStatus === "Inactive") {
-      const { error: banError } = await adminClient.auth.admin.updateUserById(
-        authData.user.id,
-        { ban_duration: "876000h" },
-      );
+    const { data: linkedUser, error: linkCheckError } = await adminClient
+      .from("app_users")
+      .select("id")
+      .eq("id", user.id)
+      .eq("auth_user_id", authData.user.id)
+      .maybeSingle();
 
-      if (banError) {
-        return failure(
-          `Application account was created, but Supabase Auth could not be disabled: ${banError.message}`,
-        );
-      }
+    if (linkCheckError || !linkedUser) {
+      await adminClient.from("app_users").update({
+        auth_user_id: null,
+        account_status: user.account_status,
+        login_enabled: user.login_enabled,
+      }).eq("id", user.id).eq("auth_user_id", authData.user.id);
+      await adminClient.auth.admin.deleteUser(authData.user.id);
+      return failure("Auth account was rolled back because the application identity link could not be verified.");
     }
 
     await writeAudit(supabase, actor, {
@@ -268,7 +279,7 @@ export async function provisionExistingApplicationUser(payload) {
     });
 
     revalidateSystemAdministrator("/system-administrator/users-access");
-    return success(`Supabase Auth account created for ${user.full_name}.`);
+    return success(`Supabase Auth account created and login activated for ${user.full_name}.`);
   } catch (error) {
     return failure(messageFromError(error, "Account provisioning failed."));
   }
@@ -1137,6 +1148,113 @@ export async function queueSynchronizationRetry(payload) {
     return success("A new pending synchronization attempt was queued.");
   } catch (error) {
     return failure(messageFromError(error, "Synchronization retry failed."));
+  }
+}
+
+export async function retryAdmissionsSourceSync() {
+  try {
+    const { actor, supabase } = await getAdminContext("system.integration_manage");
+    // Local development already runs Admissions on port 8000.
+    // Production still requires an explicit trusted HTTPS source URL.
+    const rawUrl = process.env.ADMISSIONS_RETRY_SYNC_URL ||
+      (process.env.NODE_ENV !== "production"
+        ? "http://localhost:8000/api/enrollment-retry-sync"
+        : null);
+    const secret = process.env.ENROLLMENT_INTAKE_SECRET;
+    if (!rawUrl || !secret) {
+      return failure("Configure ADMISSIONS_RETRY_SYNC_URL and ENROLLMENT_INTAKE_SECRET in the Enrollment server environment.");
+    }
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:" && !(process.env.NODE_ENV !== "production" && ["localhost","127.0.0.1"].includes(url.hostname))) {
+      return failure("Admissions retry sync must use HTTPS outside local development.");
+    }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + secret, Accept: "application/json" },
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.timeout(25000),
+    });
+    const body = await response.json().catch(() => null);
+    const validCounters = body && ["processed", "sent", "failed"].every((key) =>
+      Number.isSafeInteger(body[key]) && body[key] >= 0) &&
+      body.processed === body.sent + body.failed &&
+      ["completed", "partial"].includes(body.status);
+    const succeeded = response.ok && validCounters && body.status === "completed" && body.failed === 0;
+    const summary = !response.ok
+      ? "Admissions retry endpoint responded with HTTP " + response.status + "."
+      : !validCounters
+        ? "Admissions retry endpoint returned an invalid response."
+        : "Admissions processed " + body.processed +
+          " handoff(s): " + body.sent + " sent, " +
+          body.failed + " unsuccessful.";
+    await writeAudit(supabase, actor, {
+      module: "System Integration",
+      action: "Admissions REST retry sync triggered",
+      entityType: "external_integration",
+      entityKey: "PLP Admissions",
+      newValue: { http_status: response.status, processed: body?.processed, sent: body?.sent, failed: body?.failed },
+      result: succeeded ? "Successful" : "Failed",
+      reason: summary,
+    });
+    revalidateSystemAdministrator("/system-administrator/system-integration");
+    return succeeded ? success(summary) : failure(summary);
+  } catch (error) {
+    return failure("Admissions retry sync request failed: " + (error?.message || "Network error") + ".");
+  }
+}
+
+// One-click reconciliation for historical successful handoffs. Normal new
+// handoffs use the trusted intake endpoint automatically. No backfill runs
+// on a page load or on a schedule without explicit administrator approval.
+export async function sendPendingAdmissionsInvitations() {
+  try {
+    await getAdminContext("system.users_manage");
+    const configuration = configuredAdmissionsInvitation({
+      enabled: process.env.ADMISSIONS_AUTO_PROVISION_ENABLED === "true",
+      redirectUrl: process.env.ADMISSIONS_INVITE_REDIRECT_URL,
+    });
+    if (!configuration.enabled) {
+      return failure("Automatic Admissions invitations are disabled or the approved redirect URL is missing.");
+    }
+    const admin = createAdminClient();
+    const { data: rows, error: rowsError } = await admin.from("admission_handoffs")
+      .select("applicant_reference")
+      .eq("source_name", "PLP Admissions")
+      .eq("admission_status", "ACCEPTED")
+      .eq("synchronization_status", "Successful")
+      .order("received_at", { ascending: false }).limit(50);
+    if (rowsError) return failure("Admissions handoff records could not be checked.");
+    const refs = (rows || []).map((row) => row.applicant_reference);
+    if (refs.length === 0) return success("No accepted Admissions handoffs require inspection.");
+    const { data: contacts, error: contactsError } = await admin
+      .from("admissions_student_source_details")
+      .select("applicant_reference,personal_email")
+      .in("applicant_reference", refs);
+    if (contactsError) return failure("Admissions source email records could not be checked.");
+    const recipientMap = new Map((contacts || [])
+      .map((row) => [row.applicant_reference, row.personal_email]));
+    const counters = { invitation_sent: 0, already_linked: 0, manual_review: 0 };
+    for (const ref of refs) {
+      let result;
+      try {
+        result = await autoProvisionAdmissionsStudent({
+          admin, applicantRef: ref, email: recipientMap.get(ref), configuration,
+        });
+      } catch {
+        result = { status: "manual_review" };
+      }
+      counters[result.status] = (counters[result.status] || 0) + 1;
+    }
+    revalidateSystemAdministrator(
+      "/system-administrator/users-access",
+      "/system-administrator/system-integration",
+    );
+    return success(
+      `Invitations sent: ${counters.invitation_sent}. Already linked: ${counters.already_linked}. Requiring review: ${counters.manual_review}.`,
+    );
+  } catch {
+    return failure("Admissions invitation reconciliation could not be completed.");
   }
 }
 

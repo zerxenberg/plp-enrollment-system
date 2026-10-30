@@ -9,6 +9,11 @@ import {
   hasVerifiedProjectCor,
   verifiedRegistrarSelectedSubjects,
 } from "./registrar-project-enrollment-view.mjs";
+import {
+  currentDemonstrationRecords,
+  officialEnrollmentStatus,
+  rosterDemonstrationStatus,
+} from "./registrar-student-roster.mjs";
 
 const PROJECT_TERM_ID = "TERM-2026-1";
 const PROJECT_COHORT_ID = "PLP_PROJECT_600_2026_1";
@@ -86,6 +91,56 @@ async function loadRowsByInChunks(
   return rows;
 }
 
+async function loadAcceptedAdmissionsHandoffs(admin) {
+  const pageSize = 500;
+  const rows = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin.from("admission_handoffs")
+      .select("student_id,admission_status,synchronization_status,source_name")
+      .eq("source_name", "PLP Admissions")
+      .eq("admission_status", "ACCEPTED")
+      .eq("synchronization_status", "Successful")
+      .order("student_id")
+      .range(offset, offset + pageSize - 1);
+    assertQuery(error, "Load verified PLP Admissions handoffs");
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) return rows;
+  }
+}
+
+const ACTIVE_DEMO_SEAT_STATUSES = new Set([
+  "PROPOSED", "SUBMITTED", "VALIDATED", "RETURNED", "CONFIRMED_SIMULATION",
+]);
+
+async function loadAdmissionsReservationsByBlock(admin, blockIds) {
+  const ids = [...new Set(blockIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const rows = [];
+  for (let index = 0; index < ids.length; index += 50) {
+    const chunk = ids.slice(index, index + 50);
+    for (let offset = 0; ; offset += 500) {
+      const { data, error } = await admin.from("admissions_phase8_demo_enrollments")
+        .select("id,student_id,term_id,block_id,status,source_kind,simulation_only,is_official")
+        .in("block_id", chunk)
+        .eq("term_id", PROJECT_TERM_ID)
+        .eq("source_kind", "ADMISSIONS_PHASE8_DEMONSTRATION")
+        .eq("simulation_only", true).eq("is_official", false)
+        .order("id").range(offset, offset + 499);
+      assertQuery(error, "Load current Admissions demonstration reservations");
+      rows.push(...(data || []));
+      if (!data || data.length < 500) break;
+    }
+  }
+  const verified = currentDemonstrationRecords(rows, { source: "ADMISSIONS", termId: PROJECT_TERM_ID });
+  const occupied = new Map(ids.map((id) => [id, 0]));
+  for (const row of verified.values()) {
+    if (ACTIVE_DEMO_SEAT_STATUSES.has(row.status)) {
+      occupied.set(row.block_id, (occupied.get(row.block_id) || 0) + 1);
+    }
+  }
+  return occupied;
+}
+
 async function loadOwnNotifications(supabase, userId) {
   const { data: deliveries, error: deliveryError } = await supabase
     .from("user_notifications")
@@ -132,29 +187,24 @@ async function loadProjectQueue(supabase) {
 async function loadVisibleStudentProfiles(supabase) {
   const selection =
     "id,user_id,student_number,program_code,current_term_id,current_curriculum_code,contact_number,address,emergency_contact_name,emergency_contact_number,alternate_contact_number,year_level,year_level_number,student_type,student_status,academic_classification,progression_status,record_kind,project_cohort_id,is_synthetic_demo,institutional_verified_at,created_at,updated_at";
-
-  const [projectResult, institutionalResult] = await Promise.all([
-    supabase
-      .from("student_profiles")
-      .select(selection)
-      .eq("record_kind", "PROJECT_ONLY")
-      .eq("project_cohort_id", PROJECT_COHORT_ID)
-      .eq("is_synthetic_demo", true)
-      .order("student_number"),
-    supabase
-      .from("student_profiles")
-      .select(selection)
-      .eq("is_synthetic_demo", false)
-      .order("student_number"),
-  ]);
-
-  assertQuery(projectResult.error, "Load Phase 8 PROJECT_ONLY student profiles");
-  assertQuery(institutionalResult.error, "Load institutional student profiles");
-
-  return [
-    ...(projectResult.data || []),
-    ...(institutionalResult.data || []),
-  ];
+  const pageSize = 500;
+  const load = async (projectOnly) => {
+    const rows = [];
+    for (let offset = 0; ; offset += pageSize) {
+      let query = supabase.from("student_profiles").select(selection);
+      if (projectOnly) query = query.eq("record_kind", "PROJECT_ONLY")
+        .eq("project_cohort_id", PROJECT_COHORT_ID).eq("is_synthetic_demo", true);
+      else query = query.eq("is_synthetic_demo", false);
+      const { data, error } = await query.order("student_number").order("id")
+        .range(offset, offset + pageSize - 1);
+      assertQuery(error, projectOnly
+        ? "Load Phase 8 PROJECT_ONLY student profiles" : "Load institutional student profiles");
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) return rows;
+    }
+  };
+  const [projectProfiles, institutionalProfiles] = await Promise.all([load(true), load(false)]);
+  return [...projectProfiles, ...institutionalProfiles];
 }
 
 
@@ -517,6 +567,9 @@ export async function getRegistrarDashboardData() {
     ? enrichTerms([termsResult.data])[0]
     : null;
 
+  const admissionsSeats = await loadAdmissionsReservationsByBlock(
+    createAdminClient(), projectBlocks.map(({ block }) => block.id));
+
   const capacityConcerns = projectBlocks
     .map(({ block, students }) => ({
       id: block.id,
@@ -524,7 +577,7 @@ export async function getRegistrarDashboardData() {
       programCode: block.program_code || "Not available",
       yearLevel: block.year_level || "Not available",
       capacity: block.capacity || 0,
-      assigned: students.length,
+      assigned: students.length + (admissionsSeats.get(block.id) || 0),
     }))
     .filter((row) => row.capacity > 0 && row.capacity - row.assigned <= 5)
     .sort((a, b) => (a.capacity - a.assigned) - (b.capacity - b.assigned));
@@ -564,6 +617,7 @@ export async function getRegistrarStudentsData() {
     termResult,
     curriculaResult,
     gradeImportContexts,
+    projectQueue,
   ] = await Promise.all([
     loadVisibleStudentProfiles(supabase),
     loadProjectBlocksAndRosters(supabase, { strict: true }),
@@ -578,6 +632,7 @@ export async function getRegistrarStudentsData() {
       .like("code", `${PROJECT_CURRICULUM_PREFIX}%`)
       .order("code"),
     loadOfficialGradeImportContexts(supabase),
+    loadProjectQueue(supabase),
   ]);
 
   assertQuery(termResult.error, "Load current academic term");
@@ -587,6 +642,9 @@ export async function getRegistrarStudentsData() {
   const projectProfiles = profiles.filter((row) =>
     row.record_kind === "PROJECT_ONLY" && row.project_cohort_id === PROJECT_COHORT_ID);
   const projectProfilesById = new Map(projectProfiles.map((row) => [row.id, row]));
+  const registeredProjectStudents = currentDemonstrationRecords(projectQueue, {
+    source: "PROJECT", termId: PROJECT_TERM_ID,
+  });
   const visibleProgramCodes = [
     ...new Set([
       ...p8Curricula.map((row) => row.program_code),
@@ -641,7 +699,11 @@ export async function getRegistrarStudentsData() {
       yearLevel: block.year_level,
       capacity: block.capacity,
       assignedStudents: roster.length,
-      confirmedStudents: 0,
+      confirmedStudents: roster.filter((member) => {
+        const record = registeredProjectStudents.get(`${member.student_id}|${block.term_id}`);
+        return record?.home_block_id === block.id &&
+          record.status === "CONFIRMED_SIMULATION" && Boolean(record.confirmed_at);
+      }).length,
       source: "Demonstration",
     });
 
@@ -652,6 +714,10 @@ export async function getRegistrarStudentsData() {
         throw new Error("Phase 8 student roster and cohort profiles are inconsistent.");
       }
       seenStudentIds.add(member.student_id);
+      const projectRegistration = registeredProjectStudents.get(`${member.student_id}|${block.term_id}`);
+      if (projectRegistration && projectRegistration.home_block_id !== block.id) {
+        throw new Error("Phase 8 enrollment and section roster block assignments disagree.");
+      }
       students.push({
         student_id: profile.id,
         user_id: profile.user_id,
@@ -668,7 +734,8 @@ export async function getRegistrarStudentsData() {
         student_status: profile.student_status || "Not available",
         academic_classification: member.academic_classification || "Not available",
         progression_status: profile.progression_status || "Not available",
-        enrollment_status: member.enrollment_status || "Not available",
+        enrollment_status: rosterDemonstrationStatus(projectRegistration),
+        official_enrollment_status: "NOT_CONFIRMED",
         project_only: true,
         home_block_id: block.id,
         home_block: block.code,
@@ -682,13 +749,170 @@ export async function getRegistrarStudentsData() {
     throw new Error("The verified Phase 8 roster does not cover the current project cohort.");
   }
 
+  // Admissions account identities are traced from successful handoffs first.
+  // Never load arbitrary thousands of student_profiles and silently lose real
+  // applicants to the Data API's default 1,000-row response cap.
+  const admin = createAdminClient();
+  const handoffs = await loadAcceptedAdmissionsHandoffs(admin);
+  const admittedStudentIds = [...new Set(handoffs.map((row) => row.student_id).filter(Boolean))];
+  const institutionalProfiles = await loadRowsByInChunks(admin, "student_profiles",
+    "id,user_id,student_number,program_code,student_type,student_status,year_level_number,year_level,academic_classification,current_term_id,is_synthetic_demo,record_kind",
+    "id", admittedStudentIds);
+  const sourceProfiles = institutionalProfiles.filter((row) =>
+    row.is_synthetic_demo === false && row.record_kind !== "PROJECT_ONLY");
+  const sourceStudentIds = sourceProfiles.map((row) => row.id);
+  const userIds = [...new Set(sourceProfiles.map((row) => row.user_id).filter(Boolean))];
+  const [users, sourceDetails, demoRecords, officialRows, assignments] = await Promise.all([
+    loadRowsByInChunks(admin, "app_users",
+      "id,full_name,email,auth_user_id,account_status,source_account_key,role_code",
+      "id", userIds),
+    loadRowsByInChunks(admin, "admissions_student_source_details",
+      "student_id,inputted_gwa,gwa_verified", "student_id", sourceStudentIds),
+    loadRowsByInChunks(admin, "admissions_phase8_demo_enrollments",
+      "id,student_id,term_id,block_id,status,source_kind,simulation_only,is_official,confirmed_at",
+      "student_id", sourceStudentIds),
+    loadRowsByInChunks(admin, "enrollments",
+      "id,student_id,term_id,status,confirmed_at", "student_id", sourceStudentIds),
+    loadRowsByInChunks(admin, "block_student_assignments",
+      "student_id,term_id,block_id,status,ended_at", "student_id", sourceStudentIds),
+  ]);
+  const registeredAdmissions = currentDemonstrationRecords(demoRecords, { source: "ADMISSIONS" });
+  const sourceDetailsByStudent = new Map(sourceDetails.map((row) => [row.student_id, row]));
+  const institutionalUsers = new Map(users.map((row) => [row.id, row]));
+  const groupByBlock = new Map(groups.map((group) => [group.blockId, group]));
+  const assignedBlockIds = [...new Set([
+    ...demoRecords.map((row) => row.block_id),
+    ...assignments.filter((row) => !row.ended_at).map((row) => row.block_id),
+  ].filter(Boolean))];
+  const referencedBlocks = await loadRowsByInChunks(admin, "block_sections",
+    "id,code,term_id,program_code,year_level,capacity,curriculum_code,planning_status,is_synthetic_demo",
+    "id", assignedBlockIds);
+  const blockById = new Map(referencedBlocks.map((row) => [row.id, row]));
+  const additionalPrograms = await loadRowsByInChunks(admin, "programs",
+    "code,name,organizational_unit_code,status", "code",
+    referencedBlocks.map((row) => row.program_code).filter((code) => !programMap.has(code)));
+  for (const program of additionalPrograms) programMap.set(program.code, program);
+  const additionalUnits = await loadRowsByInChunks(admin, "organizational_units",
+    "code,name,is_active", "code",
+    additionalPrograms.map((row) => row.organizational_unit_code).filter((code) => !unitMap.has(code)));
+  for (const college of additionalUnits) unitMap.set(college.code, college);
+  const referenceTermIds = [...new Set(referencedBlocks.map((row) => row.term_id).filter(Boolean))];
+  const otherTerms = await loadRowsByInChunks(admin, "academic_terms",
+    "id,label,short_label,academic_year,semester,status", "id", referenceTermIds);
+  const knownTerms = new Map([...(termResult.data ? [termResult.data] : []), ...otherTerms]
+    .map((row) => [row.id, row]));
+
+  const admittedStudents = sourceProfiles.map((profile) => {
+    const person = institutionalUsers.get(profile.user_id);
+    const currentKey = `${profile.id}|${PROJECT_TERM_ID}`;
+    const demo = registeredAdmissions.get(currentKey) ||
+      [...registeredAdmissions.values()]
+        .filter((row) => row.student_id === profile.id)
+        .sort((a, b) => String(b.term_id).localeCompare(String(a.term_id)))[0];
+    const currentTermId = demo?.term_id || PROJECT_TERM_ID;
+    const officialStatus = officialEnrollmentStatus(officialRows, profile.id, currentTermId);
+    const officialBlock = assignments.find((row) => row.student_id === profile.id &&
+      row.term_id === currentTermId && !row.ended_at);
+    const assignedBlock = blockById.get(demo?.block_id || officialBlock?.block_id);
+    if (demo && (!assignedBlock || assignedBlock.term_id !== demo.term_id ||
+        assignedBlock.program_code !== profile.program_code)) {
+      throw new Error("Admissions demonstration enrollment block and profile are inconsistent.");
+    }
+    return {
+      id: profile.id,
+      student_number: profile.student_number,
+      full_name: person?.full_name || "Unlinked student record",
+      email: person?.email || "Not available",
+      program_code: profile.program_code,
+      student_type: profile.student_type,
+      student_status: profile.student_status,
+      year_level: profile.year_level_number ?? assignedBlock?.year_level ?? null,
+      assigned_block: assignedBlock?.code || null,
+      enrollment_term_id: currentTermId,
+      admission_status: "ACCEPTED",
+      demonstration_review_status: rosterDemonstrationStatus(demo),
+      official_enrollment_status: officialStatus,
+      account_status: person?.account_status || "Not available",
+      auth_status: person?.auth_user_id ? "Provisioned" : "Awaiting provisioning",
+      inputted_gwa: sourceDetailsByStudent.get(profile.id)?.inputted_gwa ?? null,
+      gwa_status: sourceDetailsByStudent.get(profile.id)?.gwa_verified ? "Verified" : "Not verified",
+      enrollment_status: rosterDemonstrationStatus(demo),
+      source: person?.source_account_key?.startsWith("PLP_ADMISSIONS:") ? "PLP Admissions" : "Institutional",
+    };
+  });
+
+  // Keep legacy Phase 8 rosters and real Admissions placements in separate
+  // ledgers while showing both in the same block's Registrar student list.
+  for (const profile of sourceProfiles) {
+    for (const demo of [...registeredAdmissions.values()].filter((record) =>
+      record.student_id === profile.id && ACTIVE_DEMO_SEAT_STATUSES.has(record.status))) {
+    let group = groupByBlock.get(demo.block_id);
+    const block = blockById.get(demo.block_id);
+    if (!block || block.term_id !== demo.term_id || !knownTerms.has(demo.term_id) ||
+        block.is_synthetic_demo !== true || block.program_code !== profile.program_code) {
+      throw new Error("Admissions demonstration placement cannot be matched to a verified academic block and term.");
+    }
+    if (!group) {
+      const program = programMap.get(block.program_code);
+      const college = unitMap.get(program?.organizational_unit_code);
+      group = {
+        id: block.id, blockId: block.id, blockSection: block.code,
+        college: college?.name || "Not available",
+        programCode: block.program_code,
+        programName: program?.name || block.program_code,
+        curriculumCode: block.curriculum_code, termId: block.term_id,
+        yearLevel: block.year_level, capacity: block.capacity,
+        assignedStudents: 0, confirmedStudents: 0, source: "Demonstration",
+      };
+      groups.push(group);
+      groupByBlock.set(block.id, group);
+    }
+    const person = institutionalUsers.get(profile.user_id);
+    if (students.some((row) => row.student_id === profile.id &&
+        row.current_term_id === demo.term_id)) {
+      throw new Error("A Registrar block roster has duplicate student membership.");
+    }
+    group.assignedStudents += 1;
+    if (demo.status === "CONFIRMED_SIMULATION" && demo.confirmed_at) group.confirmedStudents += 1;
+    students.push({
+      student_id: profile.id,
+      user_id: profile.user_id,
+      student_number: profile.student_number,
+      full_name: person?.full_name || "Unlinked student record",
+      program_code: profile.program_code,
+      program_name: group.programName,
+      college: group.college,
+      current_term_id: demo.term_id,
+      curriculum_code: block.curriculum_code,
+      year_level: profile.year_level_number ?? block.year_level,
+      student_type: profile.student_type,
+      student_status: profile.student_status,
+      academic_classification: profile.academic_classification || "Not available",
+      progression_status: "Not available",
+      enrollment_status: demo.status,
+      official_enrollment_status: officialEnrollmentStatus(officialRows, profile.id, demo.term_id),
+      project_only: false,
+      admissions_demonstration: true,
+      home_block_id: block.id,
+      home_block: block.code,
+      block_capacity: block.capacity,
+      block_planning_status: block.planning_status,
+    });
+    }
+  }
+  if (groups.some((group) => group.assignedStudents > group.capacity)) {
+    throw new Error("Registrar combined demonstration roster exceeds configured block capacity.");
+  }
+
   return {
     students,
+    admittedStudents,
     groups: groups.sort((a, b) =>
+      a.termId.localeCompare(b.termId) ||
       a.programCode.localeCompare(b.programCode) ||
       a.yearLevel - b.yearLevel ||
       a.blockSection.localeCompare(b.blockSection)),
-    terms: termResult.data ? [termResult.data] : [],
+    terms: [...knownTerms.values()],
     programs: programsResult.data || [],
     curricula: p8Curricula,
     colleges: unitsResult.data || [],
@@ -977,6 +1201,7 @@ export async function getRegistrarAcademicData() {
   assertQuery(subjectsResult.error, "Load P8F26 subjects");
 
   const blockIds = projectBlocks.map(({ block }) => block.id);
+  const admissionsSeats = await loadAdmissionsReservationsByBlock(projectReader, blockIds);
   const blockLinks = await loadRowsByInChunks(
     projectReader,
     "block_subject_sections",
@@ -1113,7 +1338,10 @@ export async function getRegistrarAcademicData() {
 
     return {
       ...block,
-      projectAssignedCount: rosterCountByBlock.get(block.id) || 0,
+      originalProjectAssignedCount: rosterCountByBlock.get(block.id) || 0,
+      admissionsDemoReservedCount: admissionsSeats.get(block.id) || 0,
+      projectAssignedCount: (rosterCountByBlock.get(block.id) || 0) +
+        (admissionsSeats.get(block.id) || 0),
       officialConfirmedCount: 0,
       sections: linkedSections.map((section) => ({
         ...section,

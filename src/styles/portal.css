@@ -140,6 +140,7 @@
 .hero-card p { max-width: 720px; margin-top: 7px; color: rgba(255,255,255,.84); font-size: .82rem; line-height: 1.5; }
 .hero-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .hero-chip { padding: 6px 9px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; background: rgba(255,255,255,.12); font-size: .68rem; font-weight: 700; }
+.student-hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 
 .section-card { padding: 17px; }
 .section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }

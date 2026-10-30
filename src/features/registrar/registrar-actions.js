@@ -98,7 +98,7 @@ export async function performProjectEnrollmentAction(payload) {
     }
 
     const data = await simulateProjectEnrollmentAction(studentId, action, reason);
-    revalidateRegistrar("/registrar/enrollment", "/registrar/dashboard", "/registrar/reports-monitoring");
+    revalidateRegistrar("/registrar/enrollment", "/registrar/dashboard", "/registrar/reports-monitoring", "/registrar/students");
 
     const label =
       action === "CONFIRM"
@@ -214,6 +214,253 @@ export async function confirmOfficialEnrollment(payload) {
     return success("Official institutional enrollment was confirmed.", data);
   } catch (error) {
     return failure(messageFromError(error, "Official enrollment confirmation was rejected."));
+  }
+}
+
+function requireVerifiedRows(result, message) {
+  if (result.error || !Array.isArray(result.data)) throw new Error(message);
+  return result.data;
+}
+
+const OFFICIAL_REVIEW_REFUSALS = new Set([
+  "Official subject, eligibility, or schedule evidence could not be verified.",
+  "The enrollment is not linked to a verified institutional 2026 academic record.",
+  "Submitted subjects or declared academic units are incomplete.",
+  "The submitted subjects require current institutional eligibility and OPEN finalized sections.",
+  "The subject offerings are not verified institutional offerings.",
+  "Every selected section requires recorded active meetings, rooms, and primary instructors.",
+  "The current class timetable has unverified room or faculty assignments.",
+  "The student's registered classes have overlapping meetings.",
+  "The official section capacity could not be verified.",
+  "A selected class section has reached its approved capacity.",
+]);
+
+async function verifyOfficialRegistrarSelection(client, enrollment) {
+  const unavailable = "Official subject, eligibility, or schedule evidence could not be verified.";
+  const [profileResult, termResult, curriculumResult, selectionResult] = await Promise.all([
+    client.from("student_profiles")
+      .select("id,user_id,record_kind,is_synthetic_demo,student_status,program_code,current_curriculum_code,current_term_id")
+      .eq("id", enrollment.student_id).maybeSingle(),
+    client.from("academic_terms")
+      .select("id,academic_year,semester").eq("id", enrollment.term_id).maybeSingle(),
+    client.from("curricula")
+      .select("code,program_code,status").eq("code", enrollment.curriculum_code).maybeSingle(),
+    client.from("enrollment_subjects")
+      .select("enrollment_id,subject_code,section_id,registration_status,units_at_enrollment")
+      .eq("enrollment_id", enrollment.id),
+  ]);
+  const student = profileResult.data;
+  const term = termResult.data;
+  const curriculum = curriculumResult.data;
+  if (profileResult.error || termResult.error || curriculumResult.error ||
+      !student || !term || !curriculum ||
+      student.record_kind === "PROJECT_ONLY" || student.is_synthetic_demo !== false ||
+      student.student_status !== "ACTIVE" ||
+      student.program_code !== enrollment.program_code ||
+      student.current_curriculum_code !== enrollment.curriculum_code ||
+      student.current_term_id !== enrollment.term_id ||
+      curriculum.program_code !== enrollment.program_code ||
+      String(curriculum.status || "").toLowerCase() !== "active" ||
+      !String(term.academic_year || "").startsWith("2026")) {
+    throw new Error("The enrollment is not linked to a verified institutional 2026 academic record.");
+  }
+
+  const selected = requireVerifiedRows(selectionResult, unavailable);
+  if (!selected.length || selected.some((row) =>
+    row.registration_status !== "SELECTED" || !row.section_id || !row.subject_code ||
+    !Number.isInteger(Number(row.units_at_enrollment)) ||
+    Number(row.units_at_enrollment) <= 0) ||
+    new Set(selected.map((row) => row.subject_code)).size !== selected.length ||
+    new Set(selected.map((row) => row.section_id)).size !== selected.length ||
+    selected.reduce((sum, row) => sum + Number(row.units_at_enrollment), 0) !==
+      Number(enrollment.declared_units)) {
+    throw new Error("Submitted subjects or declared academic units are incomplete.");
+  }
+  const codes = selected.map((row) => row.subject_code);
+  const sectionIds = selected.map((row) => row.section_id);
+  const [eligibilityResult, placementResult, sectionResult] = await Promise.all([
+    client.from("student_subject_eligibility")
+      .select("subject_code,eligibility_status,source_name")
+      .eq("student_id", student.id).eq("term_id", term.id).in("subject_code", codes),
+    client.from("curriculum_subjects")
+      .select("subject_code").eq("curriculum_code", curriculum.code).in("subject_code", codes),
+    client.from("sections")
+      .select("id,subject_code,term_id,status,schedule_status,capacity,subject_offering_id,is_synthetic_demo")
+      .in("id", sectionIds),
+  ]);
+  const eligibility = requireVerifiedRows(eligibilityResult, unavailable);
+  const placements = requireVerifiedRows(placementResult, unavailable);
+  const sections = requireVerifiedRows(sectionResult, unavailable);
+  const eligibilityByCode = new Map(eligibility.map((row) => [row.subject_code, row]));
+  const sectionById = new Map(sections.map((row) => [row.id, row]));
+  if (eligibilityByCode.size !== codes.length || sections.length !== codes.length ||
+      !codes.every((code) => placements.some((row) => row.subject_code === code)) ||
+      selected.some((row) => {
+        const allowed = eligibilityByCode.get(row.subject_code);
+        const section = sectionById.get(row.section_id);
+        return !allowed || !["ELIGIBLE", "RETAKE"].includes(allowed.eligibility_status) ||
+          !allowed.source_name || /PROJECT_ONLY|FICTIONAL|SYNTHETIC|PHASE8/i.test(allowed.source_name) ||
+          !section || section.is_synthetic_demo !== false ||
+          section.term_id !== term.id || section.subject_code !== row.subject_code ||
+          section.status !== "OPEN" || section.schedule_status !== "FINALIZED" ||
+          !section.subject_offering_id || !Number.isInteger(Number(section.capacity)) ||
+          Number(section.capacity) <= 0;
+      })) {
+    throw new Error("The submitted subjects require current institutional eligibility and OPEN finalized sections.");
+  }
+
+  const offeringIds = [...new Set(sections.map((section) => section.subject_offering_id))];
+  const [offeringsResult, meetingsResult, instructorLinksResult, occupiedResult] = await Promise.all([
+    client.from("subject_offerings")
+      .select("id,term_id,program_code,curriculum_code,subject_code,status,is_synthetic_demo")
+      .in("id", offeringIds),
+    client.from("section_meetings")
+      .select("section_id,day_of_week,start_time,end_time,room_id,meeting_status,is_synthetic_demo")
+      .in("section_id", sectionIds).eq("meeting_status", "ACTIVE"),
+    client.from("section_instructors")
+      .select("section_id,instructor_id,assignment_role")
+      .in("section_id", sectionIds).eq("assignment_role", "PRIMARY"),
+    client.from("enrollment_subjects")
+      .select("enrollment_id,section_id,registration_status")
+      .in("section_id", sectionIds).eq("registration_status", "CONFIRMED"),
+  ]);
+  const offerings = requireVerifiedRows(offeringsResult, unavailable);
+  const meetings = requireVerifiedRows(meetingsResult, unavailable);
+  const links = requireVerifiedRows(instructorLinksResult, unavailable);
+  const occupied = requireVerifiedRows(occupiedResult, unavailable);
+  const offeringById = new Map(offerings.map((row) => [row.id, row]));
+  if (offerings.length !== offeringIds.length || sections.some((section) => {
+    const offering = offeringById.get(section.subject_offering_id);
+    return !offering || offering.is_synthetic_demo !== false || offering.status !== "ACTIVE" ||
+      offering.term_id !== term.id || offering.subject_code !== section.subject_code ||
+      offering.program_code !== enrollment.program_code ||
+      offering.curriculum_code !== curriculum.code;
+  })) {
+    throw new Error("The subject offerings are not verified institutional offerings.");
+  }
+
+  const roomIds = [...new Set(meetings.map((row) => row.room_id).filter(Boolean))];
+  const instructorIds = [...new Set(links.map((row) => row.instructor_id).filter(Boolean))];
+  if (!roomIds.length || !instructorIds.length || meetings.some((row) =>
+    row.is_synthetic_demo !== false || row.day_of_week == null ||
+    !row.start_time || !row.end_time || row.start_time >= row.end_time || !row.room_id) ||
+    sections.some((section) => !meetings.some((row) => row.section_id === section.id) ||
+      !links.some((row) => row.section_id === section.id && row.instructor_id))) {
+    throw new Error("Every selected section requires recorded active meetings, rooms, and primary instructors.");
+  }
+  const [roomsResult, instructorsResult] = await Promise.all([
+    client.from("rooms").select("id,is_active,is_synthetic_demo").in("id", roomIds),
+    client.from("instructors").select("id,is_synthetic_demo,display_name").in("id", instructorIds),
+  ]);
+  const rooms = requireVerifiedRows(roomsResult, unavailable);
+  const instructors = requireVerifiedRows(instructorsResult, unavailable);
+  if (rooms.length !== roomIds.length || instructors.length !== instructorIds.length ||
+      rooms.some((room) => !room.is_active || room.is_synthetic_demo !== false) ||
+      instructors.some((teacher) => teacher.is_synthetic_demo !== false || !teacher.display_name)) {
+    throw new Error("The current class timetable has unverified room or faculty assignments.");
+  }
+
+  for (let index = 0; index < meetings.length; index++) {
+    for (let next = index + 1; next < meetings.length; next++) {
+      const first = meetings[index];
+      const second = meetings[next];
+      if (first.section_id !== second.section_id &&
+          first.day_of_week === second.day_of_week &&
+          first.start_time < second.end_time && second.start_time < first.end_time) {
+        throw new Error("The student's registered classes have overlapping meetings.");
+      }
+    }
+  }
+
+  const occupiedEnrollmentIds = [...new Set(occupied.map((row) => row.enrollment_id)
+    .filter((id) => id !== enrollment.id))];
+  const activeEnrollmentRows = occupiedEnrollmentIds.length
+    ? requireVerifiedRows(await client.from("enrollments")
+      .select("id,student_id,term_id,status").in("id", occupiedEnrollmentIds), unavailable)
+    : [];
+  if (activeEnrollmentRows.length !== occupiedEnrollmentIds.length) {
+    throw new Error("The official section capacity could not be verified.");
+  }
+  for (const section of sections) {
+    const participants = new Set(occupied.filter((row) =>
+      row.section_id === section.id && row.enrollment_id !== enrollment.id)
+      .flatMap((row) => activeEnrollmentRows.filter((item) =>
+        item.id === row.enrollment_id && item.term_id === term.id &&
+        item.status === "CONFIRMED").map((item) => item.student_id)));
+    if (participants.size >= Math.min(Number(section.capacity), 40)) {
+      throw new Error("A selected class section has reached its approved capacity.");
+    }
+  }
+}
+
+export async function reviewOfficialEnrollment(payload) {
+  try {
+    await requireRole("registrar");
+    const enrollmentId = String(payload?.enrollmentId || "");
+    const action = String(payload?.action || "");
+    const reason = String(payload?.reason || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(enrollmentId) ||
+        !["VALIDATE", "RETURN"].includes(action)) {
+      return failure("Select a valid official enrollment and Registrar review action.");
+    }
+    if (reason.length < 10 || reason.length > 1000) {
+      return failure("A Registrar review reason of 10 to 1000 characters is required.");
+    }
+    const client = await createClient();
+    const { data: enrollment, error: readError } = await client.from("enrollments")
+      .select("id,student_id,program_code,term_id,curriculum_code,status,declared_units")
+      .eq("id", enrollmentId).maybeSingle();
+    if (readError || !enrollment || enrollment.status !== "FOR_VALIDATION" ||
+        !enrollment.curriculum_code) {
+      return failure("Only an eligible official enrollment awaiting Registrar validation can be reviewed.");
+    }
+    if (action === "VALIDATE") {
+      await verifyOfficialRegistrarSelection(client, enrollment);
+    } else {
+      const [profileResult, termResult, curriculumResult] = await Promise.all([
+        client.from("student_profiles")
+          .select("id,record_kind,is_synthetic_demo,program_code,current_curriculum_code,current_term_id")
+          .eq("id", enrollment.student_id).maybeSingle(),
+        client.from("academic_terms")
+          .select("id,academic_year").eq("id", enrollment.term_id).maybeSingle(),
+        client.from("curricula")
+          .select("code,program_code,status").eq("code", enrollment.curriculum_code).maybeSingle(),
+      ]);
+      const profile = profileResult.data;
+      const term = termResult.data;
+      const curriculum = curriculumResult.data;
+      const profileError = profileResult.error || termResult.error || curriculumResult.error;
+      if (profileError || !profile || profile.record_kind === "PROJECT_ONLY" ||
+          profile.is_synthetic_demo !== false || profile.program_code !== enrollment.program_code ||
+          profile.current_curriculum_code !== enrollment.curriculum_code ||
+          profile.current_term_id !== enrollment.term_id ||
+          !term || !String(term.academic_year || "").startsWith("2026") ||
+          !curriculum || curriculum.code !== enrollment.curriculum_code ||
+          curriculum.program_code !== enrollment.program_code ||
+          String(curriculum.status || "").toLowerCase() !== "active") {
+        return failure("The institutional student record could not be verified.");
+      }
+    }
+    const newStatus = action === "VALIDATE" ? "VALIDATED" : "REQUIRES_CORRECTION";
+    // The authenticated, Registrar-only transaction must recheck the live
+    // selection and persist the enrollment transition with its audit history.
+    const { data: changed, error: actionError } = await client.rpc(
+      "registrar_review_verified_admissions_enrollment_v1", {
+        p_enrollment_id: enrollmentId, p_action: action, p_reason: reason,
+      });
+    if (actionError || changed?.enrollment_id !== enrollmentId ||
+        changed?.status !== newStatus || changed?.reviewed !== true) {
+      return failure("Registrar review was not saved or its audit history could not be verified.");
+    }
+    revalidateRegistrar("/registrar/enrollment", "/registrar/dashboard",
+      "/registrar/reports-monitoring", "/student/enrollment", "/student/dashboard");
+    return success(action === "VALIDATE"
+      ? "Official enrollment passed Registrar validation and is ready for separate confirmation."
+      : "Official enrollment was returned for correction with the recorded reason.",
+    { enrollmentId, status: newStatus });
+  } catch (error) {
+    return failure(OFFICIAL_REVIEW_REFUSALS.has(error?.message)
+      ? error.message : "Registrar official enrollment review could not be completed.");
   }
 }
 

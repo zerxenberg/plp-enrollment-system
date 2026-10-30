@@ -11,7 +11,7 @@ import { getLiveSession } from "@/lib/auth/live-auth";
 import { LoadingState } from "@/components/ui/PortalUI";
 import { markStudentNotificationRead } from "@/features/students/student-portal-actions";
 
-export default function PortalLayout({ role, authUser, projectOnly = false,
+export default function PortalLayout({ role, authUser, projectOnly = false, institutionalStudent = false,
   portalTerm = null, portalNotifications = null, children }) {
   const router = useRouter();
   const {
@@ -64,9 +64,12 @@ export default function PortalLayout({ role, authUser, projectOnly = false,
 
   // Real fictional PROJECT_ONLY students must not inherit another demo
   // student's term or notification inbox from the shared mock provider.
-  const term = portalTerm || (projectOnly ? null : student.term);
-  const roleNotifications = projectOnly ? (portalNotifications || []) : (notifications[role] || []);
-  const markHeaderNotification = projectOnly && role === "student"
+  // Neither verified institutional students nor fictional project accounts may
+  // inherit another student's shared mock term or notification inbox.
+  const isolatedStudent = projectOnly || institutionalStudent;
+  const term = portalTerm || (isolatedStudent ? null : student.term);
+  const roleNotifications = isolatedStudent ? (portalNotifications || []) : (notifications[role] || []);
+  const markHeaderNotification = isolatedStudent && role === "student"
     ? (_role, id) => markStudentNotificationRead(id, true)
       .then(() => router.refresh()).catch(() => {})
     : markNotification;

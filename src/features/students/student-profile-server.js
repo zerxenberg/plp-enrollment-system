@@ -9,6 +9,7 @@ import {
 import { resolveStudentProfile } from "./project-student-profile-lookup.mjs";
 import { getStudentContext } from "./student-context-server";
 import { loadStudentEnrollmentForPage } from "./student-enrollment-server";
+import { loadAdmissionsPhase8DemoForStudent } from "@/features/admissions/admissions-phase8-demo-server";
 import { isOwnStudentPhotoPath } from "./student-profile-photo-path.mjs";
 
 export async function loadStudentProfileForPage() {
@@ -34,6 +35,48 @@ export async function loadStudentProfileForPage() {
         )) === false;
       },
     });
+    if (result.mode === "live") {
+      // Real admitted students have an official institution-owned profile,
+      // not an approved PROJECT_ONLY demonstration link or snapshot.
+      const ctx = await getStudentContext();
+      if (ctx.kind !== "live" || ctx.studentNumber !== result.profile.studentNumber) {
+        return { mode: "unavailable" };
+      }
+      const [contactResult, enrollmentResult] = await Promise.all([
+        ctx.admin.from("student_profiles")
+          .select("contact_number,alternate_contact_number,address")
+          .eq("id", ctx.studentId).eq("user_id", ctx.appUserId).maybeSingle(),
+        ctx.admin.from("enrollments")
+          .select("status,confirmed_at")
+          .eq("student_id", ctx.studentId).order("created_at", { ascending: false }).limit(50),
+      ]);
+      const { data: contact, error: contactError } = contactResult;
+      const officialEnrollment = !enrollmentResult.error &&
+        (enrollmentResult.data || []).some((row) => row.status === "CONFIRMED" && row.confirmed_at);
+      if (contactError || !contact) return { mode: "unavailable" };
+      const demonstration = await loadAdmissionsPhase8DemoForStudent(ctx);
+      return {
+        ...result,
+        profile: {
+          ...result.profile,
+          contactEditingReady: false,
+          contact: {
+            contactNumber: contact.contact_number || "",
+            alternateContactNumber: contact.alternate_contact_number || "",
+            address: contact.address || "",
+          },
+          enrollmentEligibility: officialEnrollment ? "Registrar confirmed" : "Pending Registrar evaluation",
+          officialEnrollmentStatus: officialEnrollment ? "Officially Enrolled" : "Pending",
+          admissionsDemonstration: demonstration?.projectOnly === true &&
+            demonstration.verifiedInstitutionally === false &&
+            demonstration.provenance === "PROJECT_ONLY_FICTIONAL"
+            ? { status: demonstration.status, block: demonstration.homeBlock?.code || null,
+              curriculum: demonstration.curriculum?.label || demonstration.curriculum?.code || null,
+              term: demonstration.term?.label || null } : null,
+          photoUrl: null,
+        },
+      };
+    }
     if (result.mode !== "project") return result;
 
     // Resolve the same linked student again at the write-authority boundary;

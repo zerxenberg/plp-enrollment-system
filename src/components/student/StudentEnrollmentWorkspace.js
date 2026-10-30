@@ -44,7 +44,13 @@ function ScheduleText({ meetings }) {
     <span key={line} style={{ display: "block" }}>{line}</span>)}</div>;
 }
 
-export default function StudentEnrollmentWorkspace({ data }) {
+export default function StudentEnrollmentWorkspace({
+  data,
+  submitEnrollmentAction = submitPreparedProjectEnrollment,
+  prepareEnrollmentAction = null,
+  reopenEnrollmentAction = null,
+  demonstrationCorUrl = null,
+}) {
   const [activeTab, setActiveTab] = useState("current");
   const [detail, setDetail] = useState(null);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -56,7 +62,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
   const [semesterFilter, setSemesterFilter] = useState("ALL");
   const [isPending, startTransition] = useTransition();
 
-  const history = useMemo(() => data.kind === "ready" && data.simulation ? [{
+  const history = useMemo(() => data.kind === "ready" && data.simulation?.id ? [{
     id: data.simulation.id,
     academicYear: data.term.academicYear,
     semester: data.term.semester,
@@ -78,7 +84,8 @@ export default function StudentEnrollmentWorkspace({ data }) {
     setMessage("");
     startTransition(async () => {
       try {
-        await submitPreparedProjectEnrollment();
+        const result = await submitEnrollmentAction();
+        if (result?.ok === false) throw new Error(result.message || "Submission was not accepted.");
         setReviewOpen(false);
         setMessage("Your demonstration enrollment was submitted for Registrar review. Your official university enrollment remains unconfirmed.");
         window.location.reload();
@@ -90,6 +97,10 @@ export default function StudentEnrollmentWorkspace({ data }) {
 
   function openDemonstrationCor() {
     setMessage("");
+    if (demonstrationCorUrl) {
+      setCor({ registration_snapshot_complete: true });
+      return;
+    }
     startTransition(async () => {
       try {
         const result = await getConfirmedProjectDemonstrationCor();
@@ -99,6 +110,20 @@ export default function StudentEnrollmentWorkspace({ data }) {
         setCor(result);
       } catch (error) {
         setMessage(error?.message || "The registration demonstration is unavailable.");
+      }
+    });
+  }
+
+  function runPlacementAction(action) {
+    setMessage("");
+    startTransition(async () => {
+      try {
+        const result = await action();
+        if (result?.ok === false) throw new Error(result.message || "The request was not accepted.");
+        setMessage(result?.message || "Enrollment preparation updated.");
+        window.location.reload();
+      } catch (error) {
+        setMessage(error?.message || "Please review your eligibility requirements.");
       }
     });
   }
@@ -221,6 +246,12 @@ export default function StudentEnrollmentWorkspace({ data }) {
             ]} />
           </>}
           <div className="action-row" style={{ marginTop: 18 }}>
+            {data.canPrepare && typeof prepareEnrollmentAction === "function" &&
+              <Button onClick={() => runPlacementAction(prepareEnrollmentAction)} disabled={isPending}>
+                Prepare Enrollment</Button>}
+            {data.canReopen && typeof reopenEnrollmentAction === "function" &&
+              <Button variant="secondary" onClick={() => runPlacementAction(reopenEnrollmentAction)} disabled={isPending}>
+                Reopen Returned Enrollment</Button>}
             {canReview ? <Button onClick={() => setReviewOpen(true)} disabled={isPending}>Review Enrollment</Button> : null}
             {confirmedRegistration ? <Button onClick={openDemonstrationCor} disabled={isPending}>View Demonstration Registration</Button> : null}
           </div>
@@ -288,7 +319,7 @@ export default function StudentEnrollmentWorkspace({ data }) {
 
     <CorDocumentPreview open={Boolean(cor)}
       onClose={() => setCor(null)}
-      documentUrl={cor ? "/api/student/project-cor" : null}
+      documentUrl={cor ? demonstrationCorUrl || "/api/student/project-cor" : null}
       project />
   </>;
 }
