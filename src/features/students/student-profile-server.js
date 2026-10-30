@@ -34,6 +34,33 @@ export async function loadStudentProfileForPage() {
         )) === false;
       },
     });
+    if (result.mode === "live") {
+      // Real admitted students have an official institution-owned profile,
+      // not an approved PROJECT_ONLY demonstration link or snapshot.
+      const ctx = await getStudentContext();
+      if (ctx.kind !== "live" || ctx.studentNumber !== result.profile.studentNumber) {
+        return { mode: "unavailable" };
+      }
+      const { data: contact, error: contactError } = await ctx.admin
+        .from("student_profiles")
+        .select("contact_number,alternate_contact_number,address")
+        .eq("id", ctx.studentId).eq("user_id", ctx.appUserId).maybeSingle();
+      if (contactError || !contact) return { mode: "unavailable" };
+      return {
+        ...result,
+        profile: {
+          ...result.profile,
+          contactEditingReady: false,
+          contact: {
+            contactNumber: contact.contact_number || "",
+            alternateContactNumber: contact.alternate_contact_number || "",
+            address: contact.address || "",
+          },
+          enrollmentEligibility: "Pending Registrar evaluation",
+          photoUrl: null,
+        },
+      };
+    }
     if (result.mode !== "project") return result;
 
     // Resolve the same linked student again at the write-authority boundary;
