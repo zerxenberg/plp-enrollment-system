@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getProjectOnlyInitialPasswordState } from "@/lib/auth/project-only-first-login-server";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
 
@@ -11,6 +12,31 @@ const PROJECT_COHORT = "PLP_PROJECT_600_2026_1";
 export async function getStudentContext() {
   try {
     const state = await getProjectOnlyInitialPasswordState();
+    if (state.kind === "legacy" && state.account?.role_code === "student" && state.user?.id) {
+      const admin = state.admin || createAdminClient();
+      const { data: profile, error: profileError } = await admin
+        .from("student_profiles")
+        .select("id,user_id,student_number,student_type,student_status,is_synthetic_demo,record_kind,program_code")
+        .eq("user_id", state.account.id).maybeSingle();
+      if (profileError || !profile || profile.user_id !== state.account.id ||
+          profile.is_synthetic_demo !== false || profile.record_kind === "PROJECT_ONLY") {
+        return { kind: "unavailable" };
+      }
+      return {
+        kind: "live",
+        studentId: profile.id,
+        studentNumber: profile.student_number,
+        studentType: profile.student_type,
+        studentStatus: profile.student_status,
+        programCode: profile.program_code,
+        appUserId: state.account.id,
+        account: state.account,
+        authUser: state.user,
+        client: state.supabase,
+        admin,
+      };
+    }
+
     if (state.kind !== "complete" || state.account?.role_code !== "student" ||
         !state.admin || !state.supabase || !state.user?.id) {
       return { kind: "unavailable" };
@@ -61,7 +87,7 @@ export async function getStudentContext() {
 
 export async function requireStudentContext() {
   const context = await getStudentContext();
-  if (context.kind !== "project") {
+  if (!["project", "live"].includes(context.kind)) {
     throw new Error("Student account verification is required.");
   }
   return context;
