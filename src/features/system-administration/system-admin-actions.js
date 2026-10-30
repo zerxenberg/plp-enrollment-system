@@ -1150,7 +1150,12 @@ export async function queueSynchronizationRetry(payload) {
 export async function retryAdmissionsSourceSync() {
   try {
     const { actor, supabase } = await getAdminContext("system.integration_manage");
-    const rawUrl = process.env.ADMISSIONS_RETRY_SYNC_URL;
+    // Local development already runs Admissions on port 8000.
+    // Production still requires an explicit trusted HTTPS source URL.
+    const rawUrl = process.env.ADMISSIONS_RETRY_SYNC_URL ||
+      (process.env.NODE_ENV !== "production"
+        ? "http://localhost:8000/api/enrollment-retry-sync"
+        : null);
     const secret = process.env.ENROLLMENT_INTAKE_SECRET;
     if (!rawUrl || !secret) {
       return failure("Configure ADMISSIONS_RETRY_SYNC_URL and ENROLLMENT_INTAKE_SECRET in the Enrollment server environment.");
