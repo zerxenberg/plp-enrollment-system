@@ -329,6 +329,20 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
     if (response.ok) setPreview(response.data);
   }
 
+  async function downloadRosterTemplate() {
+    if (!block || !subject || busy) return;
+    const response = await execute(() => downloadProjectGradeTemplate(block.id, subject.code));
+    if (!response.ok || !response.data?.content || !response.data?.fileName) return;
+    const url = URL.createObjectURL(new Blob([response.data.content], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = response.data.fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
   async function stageFile() {
     if (!preview || preview.invalidRows || preview.missingStudents.length ||
       preview.rowCount !== preview.requiredRows) return;
@@ -515,8 +529,12 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
         {!historyOnly && !release && subject ? <div className={styles.subSection}>
           <h4 className={styles.sectionTitle}>Stage a Historical Subject Workbook</h4>
           <p className={styles.helperText}>
-            Choose one CSV or XLSX file for <strong>{displaySubjectCode(subject.code)}</strong> covering all {subject.expected?.length || 0} historical students. Records stay PROJECT_ONLY.
+            Choose one CSV or XLSX file for <strong>{displaySubjectCode(subject.code)}</strong> covering all {subject.expected?.length || 0} verified prior-semester continuing students. Students admitted as transferees into the current block are not part of this historical grade roster. Records stay PROJECT_ONLY.
           </p>
+          <div className={`action-row ${styles.actionBar}`}>
+            <Button variant="secondary" disabled={busy || block.mappingRequired || !subject.previousProfessor}
+              onClick={downloadRosterTemplate}>Download Verified Historical Roster Template (CSV)</Button>
+          </div>
           <details className={styles.compactNotice}>
             <summary>View required spreadsheet columns</summary>
             <p>Nine required columns: student_number, student_full_name, subject_code, academic_year, semester, section_code, grade_value, completion_status, source_record_reference. Optional columns: previous_block_section and previous_subject_professor. XLSX files require a Grades sheet; a second Instructions sheet is allowed. A project fictional professor is accepted only when its name matches the protected assignment below. Such names do not establish institutional faculty verification.</p>
@@ -602,12 +620,19 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
               <Button disabled={busy || block.mappingRequired || !subject.previousProfessor} onClick={stageFile}>Upload for Review</Button> : null}
           </div>
           {preview ? <div className={styles.subSection}>
+            {preview.outsideRosterRows > 0 ? <p className="notice warning" role="alert">
+              This workbook includes {preview.outsideRosterRows} student(s) who are not in the verified historical roster for {block.code}.
+              The current block may also contain transferees, whose prior learning must be evaluated separately.
+              Download the verified roster template above, keep only the authorized continuing students and their
+              existing source grades, then preview the corrected file. No file is staged until you select Upload for Review.
+            </p> : null}
             <Details items={[
               ["File", preview.fileName], ["Rows in File", preview.rowCount],
               ["Expected Historical Students", preview.requiredRows],
               ["Matching Existing Results", preview.alreadyPresentRows],
               ["Conflicting Results", preview.conflictRows],
               ["Rows Requiring Correction", preview.invalidRows],
+              ["Outside Historical Roster", preview.outsideRosterRows || 0],
               ["Missing Students", preview.missingStudents.length],
             ]} />
             <div className={styles.tableWrap}><DataTable rows={preview.rows} rowKey="rowNumber" columns={[
@@ -627,7 +652,12 @@ export default function RegistrarProjectGradeWorkspace({ historyOnly = false }) 
 
         {release ? <p className={`${styles.compactNotice} notice`}>This historical project block has already been published. Review the preserved import history or open Publish Grades to see the release record.</p> : null}
         <div className={styles.secondaryActions}>
-          <Button variant="secondary" disabled={busy} onClick={() => moveToStep("review")}>Continue to Review Grades</Button>
+          {blockBatches.length ? <Button variant="secondary" disabled={busy}
+            onClick={() => moveToStep("review")}>View Staged Review Batches</Button>
+            : <p className={styles.helperText} role="status">
+              Review Grades is empty until a valid subject file has been staged with Upload for Review.
+              Preview Grades alone does not upload the workbook.
+            </p>}
         </div>
         </section>
 

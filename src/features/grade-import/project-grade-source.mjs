@@ -125,7 +125,7 @@ export function matchesProjectCanonicalGrade(sourceGrade, sourceStatus, canonica
     Number(sourceGrade) === Number(canonicalGrade);
 }
 
-/** Exact historical source precheck: 12 continuing students, their prior BSIT-1A term and subject. */
+/** Exact historical source precheck for the verified prior-term continuing roster. */
 export function validateProjectGradeRows(parsed, block, subject) {
   const expected = Array.isArray(subject.expected) ? subject.expected : [];
   const roster = new Map(expected.map((student) => [key(student.studentNumber), student]));
@@ -148,7 +148,8 @@ export function validateProjectGradeRows(parsed, block, subject) {
       }
     }
     const student = roster.get(key(row.student_number));
-    if (!student) issues.push(problem("OUTSIDE_PROJECT_ROSTER", "Student is not in this verified PROJECT_ONLY block and subject roster."));
+    if (!student) issues.push(problem("OUTSIDE_PROJECT_ROSTER",
+      "Student is not in the verified prior-semester continuing-student roster. Current-block transferees are not historical members of this section."));
     const exactName = student && loose(row.student_full_name) === loose(student.studentName);
     const authorizedOriginalName = student &&
       /^jr\.?$/i.test(normalize(student.studentSuffix)) &&
@@ -208,12 +209,15 @@ export function validateProjectGradeRows(parsed, block, subject) {
   });
   const missingStudents = expected.filter((student) => !counts.has(key(student.studentNumber)));
   const invalidRows = previewRows.filter((row) => row.validationStatus === "INVALID").length;
+  const outsideRosterRows = previewRows.filter((row) =>
+    row.issues.some((issue) => issue.code === "OUTSIDE_PROJECT_ROSTER")).length;
   const alreadyPresentRows = previewRows.filter((row) => row.validationStatus === "ALREADY_PRESENT").length;
   const conflictRows = previewRows.filter((row) => row.validationStatus === "CONFLICT").length;
   return {
     fileName: parsed.fileName, checksum: parsed.checksum, rowCount: previewRows.length,
     requiredRows: expected.length, validRows: previewRows.length - invalidRows,
     alreadyPresentRows, conflictRows, invalidRows,
+    outsideRosterRows,
     missingStudents: missingStudents.map((student) => student.studentNumber), rows: previewRows,
   };
 }

@@ -363,8 +363,10 @@ async function prepareProjectUpload(formData) {
 export async function previewProjectGradeFile(formData) {
   try {
     const { preview } = await prepareProjectUpload(formData);
-    return { ok: true, data: preview, message: preview.invalidRows || preview.missingStudents.length
-      ? "The file has roster or row issues. Correct them before staging."
+    return { ok: true, data: preview, message: preview.outsideRosterRows
+      ? `${preview.outsideRosterRows} workbook row(s) are outside this subject's verified historical continuing-student roster. Current-block transferees cannot be imported as prior-section students. Use the protected roster template and remove nonhistorical rows before staging.`
+      : preview.invalidRows || preview.missingStudents.length
+        ? "The file has roster or row issues. Correct them before staging."
       : preview.conflictRows
         ? `${preview.conflictRows} grade results conflict with existing project history. You may stage the file for protected review; publication remains blocked.`
         : "Every grade row matches its historical project roster and canonical result." };

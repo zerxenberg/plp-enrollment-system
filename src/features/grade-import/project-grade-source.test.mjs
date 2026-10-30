@@ -90,6 +90,24 @@ test("two-sheet XLSX parses exact 11 headers, 12 roster rows and unverified prof
   assert.equal(preview.alreadyPresentRows, 12);
 });
 
+test("transferees added to a current block are not historical students and cannot be staged", async () => {
+  const matrix = matrixFor("CP2");
+  matrix.push(...["26-50104", "26-50106", "26-50108"].map((id) => [
+    id, `New Transfer ${id}`, "CP2", BLOCK.academicYear, BLOCK.semester,
+    "BSIT-1A", 5, "FAILED", `CP2-${id}`, "BSIT-1A", "NOT_VERIFIED_IN_SOURCE",
+  ]));
+  const parsed = await parseProjectGradeSource(workbookFile(matrix, "CP2"));
+  const preview = validateProjectGradeRows(parsed, BLOCK, subjectContext("CP2"));
+  assert.equal(preview.rowCount, 15);
+  assert.equal(preview.requiredRows, 12);
+  assert.equal(preview.outsideRosterRows, 3);
+  assert.equal(preview.invalidRows, 3);
+  assert.equal(preview.alreadyPresentRows, 12);
+  assert.equal(preview.missingStudents.length, 0);
+  assert.ok(preview.rows.filter((row) => row.validationStatus === "INVALID")
+    .every((row) => row.issues.some((issue) => issue.code === "OUTSIDE_PROJECT_ROSTER")));
+});
+
 test("only an explicit canonical Jr. suffix produces a historical unsuffixed alias", () => {
   const name = "Juan Miguel Antonio Dela Cruz Jr.";
   assert.equal(canonicalProjectNameWithoutJr({ full_name: name, suffix: "Jr." }),

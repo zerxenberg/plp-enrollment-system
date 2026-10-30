@@ -254,6 +254,20 @@ test("preview/stage/validate/verify/corrections/publish each have a reachable UI
   // exposing it is optional, not a regression required by this workflow.
 });
 
+test("invalid roster preview never offers staging or a misleading continue button", () => {
+  assert.ok(hasReference(functions.get("stageFile"), "preview"));
+  assert.ok(hasReference(functions.get("stageFile"), "stageProjectGradeFile"));
+  assert.match(source, /preview\.invalidRows\s*\|\|\s*preview\.missingStudents\.length/);
+  assert.match(source, /preview\.requiredRows === preview\.rowCount/);
+  assert.match(source, /preview\.outsideRosterRows > 0/);
+  assert.ok(controlsForAction("downloadProjectGradeTemplate").length > 0,
+    "Registrar can download the trusted eligible continuing student roster");
+  assert.doesNotMatch(source, />Continue to Review Grades<\/Button>/,
+    "a tab change must not masquerade as uploading or staging a file");
+  assert.match(source, /Preview Grades alone does not upload the workbook/);
+  assert.match(source, /View Staged Review Batches/);
+});
+
 test("protected operations remain on their appropriate stage, with publishing behind a dialog", () => {
   const placements = new Map([
     ["previewProjectGradeFile", "upload"],
