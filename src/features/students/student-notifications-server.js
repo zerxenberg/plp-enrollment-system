@@ -9,7 +9,7 @@ function safeStudentLink(value) {
 
 export async function loadStudentNotifications({ limit = 100 } = {}) {
   const context = await getStudentContext();
-  if (context.kind !== "project") return { kind: "unavailable", items: [] };
+  if (!["project", "live"].includes(context.kind)) return { kind: "unavailable", items: [] };
   const { data, error } = await context.client.from("user_notifications")
     .select("notification_id,is_read,created_at,notifications!inner(id,title,message,category,related_path,published_at)")
     .eq("user_id", context.appUserId)
