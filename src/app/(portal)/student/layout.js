@@ -14,9 +14,23 @@ export default async function StudentPortalLayout({ children }) {
     redirect("/");
   }
   const projectOnly = state.kind === "complete";
+  const liveInstitutional = state.kind === "legacy" && state.account?.role_code === "student";
   let accountDisplay;
   let term;
   let notifications;
+  if (liveInstitutional) {
+    const context = await getStudentContext();
+    if (context.kind === "live") {
+      const { data: identity } = await context.admin.from("app_users")
+        .select("full_name").eq("id", context.appUserId).maybeSingle();
+      accountDisplay = {
+        full_name: identity?.full_name || context.studentNumber,
+        source_account_key: context.studentNumber,
+      };
+      const messages = await loadStudentNotifications({ limit: 5 });
+      notifications = messages.kind === "ready" ? messages.items : [];
+    }
+  }
   if (projectOnly) {
     const context = await getStudentContext();
     if (context.kind === "project") {
@@ -51,7 +65,7 @@ export default async function StudentPortalLayout({ children }) {
     <PortalLayout role="student" projectOnly={projectOnly}
       authUser={accountDisplay} portalTerm={term} portalNotifications={notifications}>
       <ProjectOnlyStudentModuleBoundary authenticatedProfile={{
-        mode: projectOnly ? "project" : "demo",
+        mode: projectOnly ? "project" : liveInstitutional ? "live" : "unavailable",
       }}>
         {children}
       </ProjectOnlyStudentModuleBoundary>
