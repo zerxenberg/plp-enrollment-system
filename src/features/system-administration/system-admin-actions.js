@@ -219,8 +219,9 @@ export async function provisionExistingApplicationUser(payload) {
       return failure(messageFromError(authError, "Supabase Auth account could not be created."));
     }
 
-    const targetStatus =
-      payload?.accountStatus === "Inactive" ? "Inactive" : "Active";
+    // Provisioning an existing institutional application account activates it immediately.
+    // Deactivation remains an explicit, separate administrator action.
+    const targetStatus = "Active";
 
     const { error: updateError } = await adminClient
       .from("app_users")
@@ -256,19 +257,6 @@ export async function provisionExistingApplicationUser(payload) {
       return failure("Auth account was rolled back because the application identity link could not be verified.");
     }
 
-    if (targetStatus === "Inactive") {
-      const { error: banError } = await adminClient.auth.admin.updateUserById(
-        authData.user.id,
-        { ban_duration: "876000h" },
-      );
-
-      if (banError) {
-        return failure(
-          `Application account was created, but Supabase Auth could not be disabled: ${banError.message}`,
-        );
-      }
-    }
-
     await writeAudit(supabase, actor, {
       module: "Users & Access",
       action: "Auth account provisioned",
@@ -287,7 +275,7 @@ export async function provisionExistingApplicationUser(payload) {
     });
 
     revalidateSystemAdministrator("/system-administrator/users-access");
-    return success(`Supabase Auth account created for ${user.full_name}.`);
+    return success(`Supabase Auth account created and login activated for ${user.full_name}.`);
   } catch (error) {
     return failure(messageFromError(error, "Account provisioning failed."));
   }
