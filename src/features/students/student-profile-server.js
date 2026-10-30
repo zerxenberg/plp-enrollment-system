@@ -41,10 +41,17 @@ export async function loadStudentProfileForPage() {
       if (ctx.kind !== "live" || ctx.studentNumber !== result.profile.studentNumber) {
         return { mode: "unavailable" };
       }
-      const { data: contact, error: contactError } = await ctx.admin
-        .from("student_profiles")
-        .select("contact_number,alternate_contact_number,address")
-        .eq("id", ctx.studentId).eq("user_id", ctx.appUserId).maybeSingle();
+      const [contactResult, enrollmentResult] = await Promise.all([
+        ctx.admin.from("student_profiles")
+          .select("contact_number,alternate_contact_number,address")
+          .eq("id", ctx.studentId).eq("user_id", ctx.appUserId).maybeSingle(),
+        ctx.admin.from("enrollments")
+          .select("status,confirmed_at")
+          .eq("student_id", ctx.studentId).order("created_at", { ascending: false }).limit(50),
+      ]);
+      const { data: contact, error: contactError } = contactResult;
+      const officialEnrollment = !enrollmentResult.error &&
+        (enrollmentResult.data || []).some((row) => row.status === "CONFIRMED" && row.confirmed_at);
       if (contactError || !contact) return { mode: "unavailable" };
       return {
         ...result,
@@ -56,7 +63,8 @@ export async function loadStudentProfileForPage() {
             alternateContactNumber: contact.alternate_contact_number || "",
             address: contact.address || "",
           },
-          enrollmentEligibility: "Pending Registrar evaluation",
+          enrollmentEligibility: officialEnrollment ? "Registrar confirmed" : "Pending Registrar evaluation",
+          officialEnrollmentStatus: officialEnrollment ? "Officially Enrolled" : "Pending",
           photoUrl: null,
         },
       };
