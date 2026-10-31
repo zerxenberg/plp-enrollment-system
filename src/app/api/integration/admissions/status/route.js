@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveAdmissionsEnrollmentStatus } from "@/features/admissions/admissions-enrollment-status.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Only the Admissions server knows this same shared handoff secret.
-// No direct access to either project's database is needed by the other app.
+// The bearer secret is shared by the two trusted servers, never the browser.
 function isAuthorized(request) {
   const secret = process.env.ENROLLMENT_INTAKE_SECRET;
   const value = request.headers.get("authorization") || "";
@@ -38,26 +38,45 @@ export async function POST(request) {
     if (handoffResult.error) throw handoffResult.error;
     const handoffs = handoffResult.data || [];
     const studentIds = [...new Set(handoffs.map((row) => row.student_id).filter(Boolean))];
-    const [profilesResult, enrollmentsResult] = await Promise.all([
+    const empty = { data: [], error: null };
+    const [profilesResult, enrollmentsResult, demoResult] = await Promise.all([
       studentIds.length ? admin.from("student_profiles").select("id,student_number").in("id", studentIds)
-        : Promise.resolve({ data: [], error: null }),
+        : Promise.resolve(empty),
       studentIds.length ? admin.from("enrollments")
-        .select("student_id,status,confirmed_at,created_at")
+        .select("student_id,status,confirmed_at,updated_at,created_at")
+        .in("student_id", studentIds).order("updated_at", { ascending: false })
+        : Promise.resolve(empty),
+      studentIds.length ? admin.from("admissions_phase8_demo_enrollments")
+        .select("student_id,status,confirmed_at,updated_at,created_at,source_kind,is_official,simulation_only")
         .in("student_id", studentIds)
-        .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [], error: null }),
+        .eq("source_kind", "ADMISSIONS_PHASE8_DEMONSTRATION")
+        .eq("simulation_only", true).eq("is_official", false)
+        .order("updated_at", { ascending: false })
+        : Promise.resolve(empty),
     ]);
-    if (profilesResult.error || enrollmentsResult.error) throw (profilesResult.error || enrollmentsResult.error);
+    if (profilesResult.error || enrollmentsResult.error || demoResult.error) {
+      throw (profilesResult.error || enrollmentsResult.error || demoResult.error);
+    }
     const numbers = new Map((profilesResult.data || []).map((p) => [p.id, p.student_number]));
-    const hasOfficialEnrollment = new Set((enrollmentsResult.data || [])
-      .filter((e) => e.status === "CONFIRMED" && Boolean(e.confirmed_at))
-      .map((e) => e.student_id));
-    const records = handoffs.map((row) => ({
-      applicant_ref: row.applicant_reference,
-      student_number: numbers.get(row.student_id) || null,
-      enrollment_status: hasOfficialEnrollment.has(row.student_id) ? "officially_enrolled" : "pending",
-      stage: hasOfficialEnrollment.has(row.student_id) ? "enrolled" : "student",
-    }));
+    const officialByStudent = new Map();
+    for (const entry of enrollmentsResult.data || []) {
+      if (!officialByStudent.has(entry.student_id)) officialByStudent.set(entry.student_id, entry);
+    }
+    const demoByStudent = new Map();
+    for (const entry of demoResult.data || []) {
+      if (!demoByStudent.has(entry.student_id)) demoByStudent.set(entry.student_id, entry);
+    }
+    const records = handoffs.filter((row) => numbers.has(row.student_id)).map((row) => {
+      const state = resolveAdmissionsEnrollmentStatus({
+        official: officialByStudent.get(row.student_id),
+        demonstration: demoByStudent.get(row.student_id),
+      });
+      return {
+        applicant_ref: row.applicant_reference,
+        student_number: numbers.get(row.student_id),
+        ...state,
+      };
+    });
     return NextResponse.json({ records }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("Admissions REST status lookup failed", { code: error?.code, message: error?.message });

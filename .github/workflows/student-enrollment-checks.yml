@@ -2,6 +2,7 @@ name: Student Enrollment Checks
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,4 +15,4 @@ jobs:
         with:
           persist-credentials: false
       - name: Run current semester academic rules and schedule formatting tests
-        run: node --test tests/published-grade-readiness.test.mjs tests/class-meeting-format.test.mjs
+        run: node --test tests/published-grade-readiness.test.mjs tests/class-meeting-format.test.mjs src/features/admissions/admissions-enrollment-status.test.mjs
