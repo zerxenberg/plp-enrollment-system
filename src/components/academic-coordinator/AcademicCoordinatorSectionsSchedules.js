@@ -8,6 +8,7 @@ import {
   SearchControl, StatusBadge, TableActionButton, TableActions,
 } from "@/components/ui/PortalUI";
 import { useDemoData } from "@/features/demo-data/DemoDataProvider";
+import { supabase } from "@/lib/supabase/client";
 import { useLiveAcademicCoordinator } from "@/features/academic/LiveAcademicCoordinatorProvider";
 import { displayCurriculumName, displaySubjectCode } from "@/features/academic/project-academic-display-aliases.mjs";
 import { getTrackCode } from "@/features/block-planning/block-planning-seed";
@@ -115,6 +116,52 @@ export default function AcademicCoordinatorSectionsSchedules() {
   const [feedback, setFeedback] = useState(null);
   const [formError, setFormError] = useState("");
   const [activationRunning, setActivationRunning] = useState(false);
+  const [verifiedAdmissions, setVerifiedAdmissions] = useState([]);
+  const [verifiedAdmissionsError, setVerifiedAdmissionsError] = useState("");
+  const [verifiedAdmissionsLoading, setVerifiedAdmissionsLoading] = useState(false);
+  const [verifiedSelectedId, setVerifiedSelectedId] = useState("");
+  const [verifiedPlacementBusy, setVerifiedPlacementBusy] = useState(false);
+
+  async function refreshVerifiedAdmissions() {
+    setVerifiedAdmissionsLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("coordinator_verified_admissions_v1");
+      if (error) throw error;
+      if (!Array.isArray(data)) throw new Error("Verified Admissions response was invalid.");
+      setVerifiedAdmissions(data);
+      setVerifiedAdmissionsError("");
+    } catch (error) {
+      setVerifiedAdmissionsError(error?.message || "Verified Admissions records could not be loaded.");
+    } finally {
+      setVerifiedAdmissionsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!isLive || isSyntheticDemo) return;
+    void refreshVerifiedAdmissions();
+  }, [isLive, isSyntheticDemo]);
+
+  async function placeVerifiedAdmission() {
+    if (!section || !verifiedSelectedId || verifiedPlacementBusy) return;
+    setVerifiedPlacementBusy(true);
+    try {
+      const { error } = await supabase.rpc("coordinator_assign_verified_admission_v1", {
+        p_block_id: section.id, p_student_id: verifiedSelectedId,
+      });
+      if (error) throw error;
+      setFeedback({ message: "Verified Admissions proposed placement saved. Refresh the section roster to see the new assignment.", warning: false });
+      setVerifiedSelectedId("");
+      await refreshVerifiedAdmissions();
+      close();
+      window.location.reload();
+    } catch (error) {
+      setFeedback({ message: error?.message || "The placement was rejected.", warning: true });
+    } finally {
+      setVerifiedPlacementBusy(false);
+    }
+  }
+
   const [admissionsStudents, setAdmissionsStudents] = useState([]);
   const [admissionsCapacityStudents, setAdmissionsCapacityStudents] = useState(null);
   const [admissionsCapacityError, setAdmissionsCapacityError] = useState("");
@@ -804,6 +851,40 @@ export default function AcademicCoordinatorSectionsSchedules() {
               : " Only proposed assignments are edited here."}
             {" "}Official enrollment and Registrar confirmation remain unchanged.
           </p>
+          {isLive && !isSyntheticDemo ? <section aria-label="Verified institutional Admissions students" style={{ marginTop: 20, marginBottom: 20 }}>
+            <h3 className="block-title">Verified Admissions Students ({verifiedAdmissions.length})</h3>
+            <p className="academic-demo-note">Real Admissions students are listed separately from demonstration reservations. Transferees who have not undergone year level and curriculum evaluation remain visible but cannot be assigned yet.</p>
+            <Button variant="secondary" disabled={verifiedAdmissionsLoading} onClick={refreshVerifiedAdmissions}>
+              {verifiedAdmissionsLoading ? "Loading..." : "Refresh Verified Admissions"}
+            </Button>
+            {verifiedAdmissionsError ? <p role="alert" className="block-error">{verifiedAdmissionsError}</p> : null}
+            <DataTable rowKey="id"
+              rows={verifiedAdmissions.filter((person) => person.programCode === section.programCode)}
+              emptyMessage="No verified real Admissions students match this block program."
+              columns={[
+                { key: "studentNumber", label: "Student Number" },
+                { key: "fullName", label: "Admitted Student" },
+                { key: "studentType", label: "Type" },
+                { key: "yearLevelNumber", label: "Evaluated Year", render: (person) => person.yearLevelNumber ? "Year " + person.yearLevelNumber : "Pending evaluation" },
+                { key: "curriculumCode", label: "Curriculum", render: (person) => person.curriculumCode || "Pending evaluation" },
+                { key: "studentStatus", label: "Admission" },
+              ]} />
+            <label className="field">Propose eligible institutional student
+              <select value={verifiedSelectedId} onChange={(event) => setVerifiedSelectedId(event.target.value)}>
+                <option value="">Select evaluated Admissions student</option>
+                {verifiedAdmissions.filter((person) => person.programCode === section.programCode &&
+                  person.yearLevelNumber === year(section.yearLevel) &&
+                  person.curriculumCode === section.curriculumId &&
+                  person.accountStatus === "Active" &&
+                  (person.studentType !== "TRANSFEREE" || person.classification) &&
+                  !section.syntheticSourceKey && !curricula.find((item) => item.id === section.curriculumId)?.isProjectOnly)
+                  .map((person) => <option key={person.id} value={person.id}>{person.fullName} · {person.studentNumber}</option>)}
+              </select>
+            </label>
+            <Button disabled={!verifiedSelectedId || verifiedPlacementBusy || confirmedRecord(section) || section?.status === "ARCHIVED"}
+              onClick={placeVerifiedAdmission}>{verifiedPlacementBusy ? "Saving..." : "Propose Institutional Placement"}</Button>
+            <p className="academic-demo-note">Only real blocks with an official active curriculum are accepted by the protected database function. This never confirms Registrar enrollment.</p>
+          </section> : null}
           <h3 className="block-title">Existing Project Roster ({roster.length})</h3>
           <DataTable rowKey="id" rows={roster} emptyMessage="No original project assignments in this block."
             columns={[
